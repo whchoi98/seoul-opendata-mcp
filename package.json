@@ -1,0 +1,29 @@
+{
+  "name": "seoul-opendata-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Seoul Open Data Plaza real-time city APIs (서울 열린데이터광장 실시간 도시데이터 MCP 서버)",
+  "type": "module",
+  "license": "MIT",
+  "bin": { "seoul-opendata-mcp": "dist/index.js" },
+  "main": "dist/index.js",
+  "files": ["dist", "README.md", "README.ko.md", "LICENSE"],
+  "engines": { "node": ">=18" },
+  "keywords": ["mcp", "model-context-protocol", "seoul", "open-data", "korea"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "inspect": "npx @modelcontextprotocol/inspector tsx src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "fast-xml-parser": "^5.2.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.0"
+  }
+}
