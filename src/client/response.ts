@@ -43,6 +43,12 @@ export function unwrap(service: string, payload: any): Unwrapped {
     const rows = toArray(payload.realtimeArrivalList)
     return { rows, totalCount: payload.errorMessage.total ?? rows.length, raw: payload, note }
   }
+  // 형태 B': swopenapi 에러 시 errorMessage 래퍼 없이 top-level { status, code, message }로 응답
+  if (payload?.code != null && payload?.status != null) {
+    const note = assertOk(service, payload)
+    const rows = toArray(payload.realtimeArrivalList)
+    return { rows, totalCount: payload.total ?? rows.length, raw: payload, note }
+  }
   // 형태 C: citydata_ppltn — { "SeoulRtd.citydata_ppltn": [...], RESULT: {...} }
   if (payload?.['SeoulRtd.citydata_ppltn']) {
     const note = assertOk(service, pickResult(payload))

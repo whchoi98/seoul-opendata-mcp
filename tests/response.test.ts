@@ -60,4 +60,18 @@ describe('unwrap', () => {
       expect(e.message).toContain('서버 오류')
     }
   })
+  it("swopenapi 에러가 errorMessage 래퍼 없이 top-level로 와도 처리 (형태 B')", () => {
+    // 심야 시간대 실응답: {"status":500,"code":"INFO-200","message":"해당하는 데이터가 없습니다.",...}
+    const bare = { status: 500, code: 'INFO-200', message: '해당하는 데이터가 없습니다.', total: 0 }
+    const u = unwrap('realtimeStationArrival', bare)
+    expect(u.rows).toHaveLength(0)
+    expect(u.note).toContain('데이터가 없습니다')
+  })
+  it("top-level 에러 코드는 SeoulApiError throw (형태 B')", () => {
+    const bare = { status: 500, code: 'ERROR-337', message: '샘플키는 초당 요청 제한이 있습니다.' }
+    expect(() => unwrap('realtimeStationArrival', bare)).toThrowError(SeoulApiError)
+    try { unwrap('realtimeStationArrival', bare) } catch (e: any) {
+      expect(e.code).toBe('ERROR-337')
+    }
+  })
 })

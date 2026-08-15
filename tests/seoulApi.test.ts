@@ -64,4 +64,18 @@ describe('SeoulApiClient', () => {
     const c = new SeoulApiClient({ apiKey: 'SECRETKEY123', fetchFn: vi.fn() as any })
     expect(c.maskedKey()).toBe('SECR…(masked)')
   })
+
+  it('JSON 요청에 XML 에러가 오면 폴백 파싱해 SeoulApiError로 변환', async () => {
+    // 호출 제한 시 실제 응답: JSON 엔드포인트인데 XML 에러 반환
+    const xmlError = '<RESULT><CODE>ERROR-337</CODE><MESSAGE>샘플키는 초당 요청 제한이 있습니다.</MESSAGE></RESULT>'
+    const fetchFn = vi.fn().mockResolvedValue(new Response(xmlError, { status: 200 }))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any })
+    await expect(c.getJson('bikeList', 1, 5)).rejects.toMatchObject({ name: 'SeoulApiError', code: 'ERROR-337' })
+  })
+
+  it('JSON도 XML도 아닌 응답은 PARSE 코드의 SeoulApiError', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response('not json at all', { status: 200 }))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any })
+    await expect(c.getJson('bikeList', 1, 5)).rejects.toMatchObject({ name: 'SeoulApiError', code: 'PARSE' })
+  })
 })

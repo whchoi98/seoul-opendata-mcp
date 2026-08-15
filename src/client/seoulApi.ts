@@ -59,12 +59,22 @@ export class SeoulApiClient {
     }
   }
 
+  /** API가 호출 제한 등 에러를 JSON 요청에도 XML(<RESULT>...)로 반환하는 경우가 있어 폴백 파싱한다 */
+  private parseJsonWithXmlFallback(service: string, text: string): any {
+    try {
+      return JSON.parse(text)
+    } catch {
+      if (text.trimStart().startsWith('<')) return this.xml.parse(text)
+      throw new SeoulApiError('PARSE', `응답 파싱 실패 (${service}): ${text.slice(0, 120)}`)
+    }
+  }
+
   private async fetchUnwrapped(base: string, type: 'json' | 'xml', service: string, start: number, end: number, path: string[]): Promise<Unwrapped> {
     const url = this.buildUrl(base, type, service, start, end, path)
     const cached = this.cache.get(url)
     if (cached) return cached
     const text = await this.request(url)
-    const payload = type === 'xml' ? this.xml.parse(text) : JSON.parse(text)
+    const payload = type === 'xml' ? this.xml.parse(text) : this.parseJsonWithXmlFallback(service, text)
     const result = unwrap(service, payload)
     this.cache.set(url, result, TTL[service] ?? 60_000)
     return result
