@@ -27,6 +27,25 @@ describe('filterEvents', () => {
     expect(filterEvents(evts, { from: '2026-08-10', to: '2026-08-20' }).map(e => e.title)).toEqual(['B']))
   it('freeOnly: 요금 빈 문자열/무료만', () =>
     expect(filterEvents(evts, { freeOnly: true }).map(e => e.title)).toEqual(['B']))
+
+  describe('boundary overlap regression cases', () => {
+    it('경계 겹침: startDate === f.to 일 때 포함', () => {
+      const evt = normalizeEvents([{ TITLE: 'C', STRTDATE: '2026-08-20 00:00:00.0', END_DATE: '2026-08-25 00:00:00.0' }])[0]
+      expect(filterEvents([evt], { from: '2026-08-10', to: '2026-08-20' })).toHaveLength(1)
+    })
+    it('경계 겹침: endDate === f.from 일 때 포함', () => {
+      const evt = normalizeEvents([{ TITLE: 'D', STRTDATE: '2026-08-01 00:00:00.0', END_DATE: '2026-08-10 00:00:00.0' }])[0]
+      expect(filterEvents([evt], { from: '2026-08-10', to: '2026-08-20' })).toHaveLength(1)
+    })
+    it('완전 비겹침: endDate < from 일 때 제외', () => {
+      const evt = normalizeEvents([{ TITLE: 'E', STRTDATE: '2026-08-01 00:00:00.0', END_DATE: '2026-08-09 00:00:00.0' }])[0]
+      expect(filterEvents([evt], { from: '2026-08-10', to: '2026-08-20' })).toHaveLength(0)
+    })
+    it('빈 날짜 통과: empty startDate/endDate는 date 필터를 회피', () => {
+      const evt = normalizeEvents([{ TITLE: 'F', STRTDATE: '', END_DATE: '' }])[0]
+      expect(filterEvents([evt], { from: '2026-08-10', to: '2026-08-20' })).toHaveLength(1)
+    })
+  })
 })
 
 describe('normalizeEvents - fixture mapping equality', () => {
