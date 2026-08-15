@@ -2,8 +2,10 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Ctx } from './context.js'
 import { ok } from './envelope.js'
+import { resolvePlace } from './resolve.js'
 import { searchPlace } from '../data/placeMatcher.js'
 import { HOTSPOTS } from '../data/hotspots.js'
+import { extractSnapshot } from '../normalize/citydata.js'
 
 export function registerCommonTools(server: McpServer, ctx: Ctx) {
   server.registerTool(
@@ -32,6 +34,24 @@ export function registerCommonTools(server: McpServer, ctx: Ctx) {
         },
         { source: 'built-in hotspots.ts (매뉴얼 V8.5 표 2-2)', sample: ctx.client.isSample },
       )
+    },
+  )
+
+  server.registerTool(
+    'get_city_snapshot',
+    {
+      title: 'One-shot city snapshot of a hotspot',
+      description:
+        'Get a combined snapshot (population/congestion + weather + road + top events) of a Seoul hotspot in ONE call. Prefer this for broad "how is X right now?" questions. ' +
+        '핫스팟 종합 현황 1회 요약. "지금 홍대 어때?" 같은 포괄 질문에 사용.',
+      inputSchema: { place: z.string().describe('핫스팟 장소명') },
+    },
+    async ({ place }) => {
+      const r = resolvePlace(place, ctx)
+      if ('early' in r) return r.early
+      const u = await ctx.client.getXml('citydata', 1, 5, [r.name])
+      const data = extractSnapshot(u.rows[0] ?? {})
+      return ok(data, { source: 'OA-21285 (citydata)', asOf: data.population.measuredAt || null, notes: ['인구는 약 15분 지연. 세부 분야는 개별 tool로 조회하세요.'], sample: ctx.client.isSample })
     },
   )
 }

@@ -2,9 +2,11 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Ctx } from './context.js'
 import { ok } from './envelope.js'
+import { resolvePlace } from './resolve.js'
 import { normalizeArrivals } from '../normalize/subway.js'
 import { normalizeBikeStations, haversineM } from '../normalize/bike.js'
 import { normalizeParkingLots } from '../normalize/parking.js'
+import { extractRoadTraffic } from '../normalize/citydata.js'
 
 export function registerTrafficTools(server: McpServer, ctx: Ctx) {
   server.registerTool(
@@ -98,6 +100,24 @@ export function registerTrafficTools(server: McpServer, ctx: Ctx) {
           sample: ctx.client.isSample,
         },
       )
+    },
+  )
+
+  server.registerTool(
+    'get_road_traffic',
+    {
+      title: 'Road traffic & incidents around a hotspot',
+      description:
+        'Get average road speed, congestion message, and accident/control incidents around a Seoul hotspot. ' +
+        '핫스팟 주변 도로소통·사고통제 현황. "광화문 근처 길 막혀?" 류 질문에 사용.',
+      inputSchema: { place: z.string().describe('핫스팟 장소명') },
+    },
+    async ({ place }) => {
+      const r = resolvePlace(place, ctx)
+      if ('early' in r) return r.early
+      const u = await ctx.client.getXml('citydata', 1, 5, [r.name])
+      const data = extractRoadTraffic(u.rows[0] ?? {})
+      return ok({ place: r.name, ...data }, { source: 'OA-21285 (citydata ROAD_TRAFFIC_STTS)', asOf: data.measuredAt || null, sample: ctx.client.isSample })
     },
   )
 }
