@@ -4,10 +4,17 @@ import type { Ctx } from './context.js'
 import { ok } from './envelope.js'
 import { resolvePlace } from './resolve.js'
 import { normalizePopulation } from '../normalize/population.js'
-import { HOTSPOTS } from '../data/hotspots.js'
+import { HOTSPOTS, type Hotspot } from '../data/hotspots.js'
 import { normalizeCommercial } from '../normalize/commercial.js'
 
 const DELAY_NOTE = '실시간 인구는 통신사 집계·보정으로 약 15분 지연됩니다.'
+
+/** 상권 미지원 장소에 제안할 지원 장소 목록 — 같은 카테고리 우선, 없으면 대표 상권 폴백 */
+export function suggestCommercialAlternatives(spot: Hotspot): string[] {
+  const sameCategory = HOTSPOTS.filter(h => h.commercial && h.category === spot.category)
+  const pool = sameCategory.length > 0 ? sameCategory : HOTSPOTS.filter(h => h.commercial && (h.category === '발달상권' || h.category === '관광특구'))
+  return pool.slice(0, 5).map(h => h.name)
+}
 
 export function registerPopulationTools(server: McpServer, ctx: Ctx) {
   server.registerTool(
@@ -48,9 +55,9 @@ export function registerPopulationTools(server: McpServer, ctx: Ctx) {
       if ('early' in r) return r.early
       const spot = HOTSPOTS.find(h => h.name === r.name)!
       if (!spot.commercial) {
-        const nearby = HOTSPOTS.filter(h => h.commercial && h.category === spot.category).slice(0, 5).map(h => h.name)
+        const alternatives = suggestCommercialAlternatives(spot)
         return ok(
-          { place: r.name, supported: false, alternatives: nearby },
+          { place: r.name, supported: false, alternatives },
           { source: 'OA-22385 (citydata_cmrcl)', notes: ['이 장소는 상권 데이터 미지원(82곳 한정)입니다. alternatives에서 인접 후보를 안내하세요.'], sample: ctx.client.isSample },
         )
       }
