@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { SeoulApiClient } from './client/seoulApi.js'
@@ -32,7 +34,17 @@ export function buildServer(client: SeoulApiClient = new SeoulApiClient()): McpS
 }
 
 // CLI 실행 시에만 stdio 연결 (테스트 import 시에는 연결 안 함)
-const isCli = process.argv[1]?.endsWith('index.js') || process.argv[1]?.endsWith('index.ts')
+// realpath 비교: npm/npx가 만드는 bin 심볼릭 링크(예: seoul-opendata-mcp -> dist/index.js)로
+// 실행되면 process.argv[1]이 index.js로 끝나지 않으므로, 파일명 접미사 비교 대신
+// 실제 경로(symlink 해석 후)를 이 모듈의 경로와 비교한다.
+const isCli = (() => {
+  if (!process.argv[1]) return false
+  try {
+    return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
+  } catch {
+    return false
+  }
+})()
 if (isCli) {
   const client = new SeoulApiClient()
   if (client.isSample) {
