@@ -6,6 +6,7 @@ const ppltn = { 'SeoulRtd.citydata_ppltn': [{ AREA_NM: '광화문·덕수궁', A
 const cmrcl = { list_total_count: 3, LIVE_CMRCL_STTS: { AREA_CMRCL_LVL: '한산한', CMRCL_RSB: [] } }
 const subway = { errorMessage: { status: 200, code: 'INFO-000', message: '정상 처리되었습니다.', total: 7 }, realtimeArrivalList: [{ subwayId: '1002' }] }
 const citydataXml = { 'SeoulRtd.citydata': { RESULT: { 'RESULT.CODE': 'INFO-000' }, CITYDATA: { AREA_NM: '광화문·덕수궁' } } }
+const rentBikeStatus = { rentBikeStatus: { list_total_count: 1, RESULT: { CODE: 'INFO-000', MESSAGE: 'ok' }, row: [{ stationName: 'x' }] } }
 const keyError = { RESULT: { CODE: 'INFO-100', MESSAGE: '인증키가 유효하지 않습니다.' } }
 const noData = { culturalEventInfo: { list_total_count: 0, RESULT: { CODE: 'INFO-200', MESSAGE: '해당하는 데이터가 없습니다.' } } }
 const ppltnNoData = { 'SeoulRtd.citydata_ppltn': [], RESULT: { 'RESULT.CODE': 'INFO-200', 'RESULT.MESSAGE': '해당하는 데이터가 없습니다.' } }
@@ -28,6 +29,12 @@ describe('unwrap', () => {
   })
   it('citydata XML: CITYDATA 객체를 rows[0]으로', () => {
     expect(unwrap('citydata', citydataXml).rows[0].AREA_NM).toBe('광화문·덕수궁')
+  })
+  it('rentBikeStatus 봉투: bikeList 서비스로 unwrap', () => {
+    const u = unwrap('bikeList', rentBikeStatus)
+    expect(u.rows).toHaveLength(1)
+    expect(u.totalCount).toBe(1)
+    expect(u.rows[0].stationName).toBe('x')
   })
   it('INFO-200은 빈 rows + note (에러 아님)', () => {
     const u = unwrap('culturalEventInfo', noData)

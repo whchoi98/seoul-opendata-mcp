@@ -60,6 +60,12 @@ export function unwrap(service: string, payload: any): Unwrapped {
     const note = assertOk(service, body.RESULT)
     return { rows: toArray(body.CITYDATA), totalCount: 1, raw: payload, note }
   }
+  // 형태 G: bikeList — 봉투 키(rentBikeStatus)가 service명과 다른 표준형
+  if (payload?.rentBikeStatus) {
+    const body = payload.rentBikeStatus
+    const note = assertOk(service, body.RESULT)
+    return { rows: toArray(body.row), totalCount: body.list_total_count ?? 0, raw: payload, note }
+  }
   // 형태 F: 표준 — { [service]: { list_total_count, RESULT, row } }
   const body = payload?.[service]
   if (body) {
