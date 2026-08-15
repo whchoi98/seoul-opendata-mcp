@@ -43,10 +43,11 @@ export function unwrap(service: string, payload: any): Unwrapped {
     const rows = toArray(payload.realtimeArrivalList)
     return { rows, totalCount: payload.errorMessage.total ?? rows.length, raw: payload, note }
   }
-  // 형태 C: citydata_ppltn — { "SeoulRtd.citydata_ppltn": [...] }
+  // 형태 C: citydata_ppltn — { "SeoulRtd.citydata_ppltn": [...], RESULT: {...} }
   if (payload?.['SeoulRtd.citydata_ppltn']) {
+    const note = assertOk(service, pickResult(payload))
     const rows = toArray(payload['SeoulRtd.citydata_ppltn'])
-    return { rows, totalCount: rows.length, raw: payload }
+    return { rows, totalCount: rows.length, raw: payload, note }
   }
   // 형태 D: citydata_cmrcl — { list_total_count, LIVE_CMRCL_STTS: {...} }
   if (payload?.LIVE_CMRCL_STTS) {
