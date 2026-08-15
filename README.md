@@ -1,0 +1,85 @@
+# Seoul OpenData MCP
+
+[한국어 README 보기](./README.ko.md)
+
+An [MCP](https://modelcontextprotocol.io) server that wraps Seoul's real-time city data (Seoul Open Data Plaza) so Claude — or any MCP client — can answer questions like:
+
+> "지금 강남역 혼잡도 어때?" / **"Is Gangnam crowded right now?"**
+
+...using live population, commercial-activity, subway, bike-share, parking, road-traffic, cultural-event, air-quality and weather data for Seoul, with zero setup beyond an API key.
+
+## Quick Start — Claude Desktop
+
+Add this to your `claude_desktop_config.json` ([config file location](https://modelcontextprotocol.io/quickstart/user)):
+
+```json
+{
+  "mcpServers": {
+    "seoul-opendata": {
+      "command": "npx",
+      "args": ["-y", "seoul-opendata-mcp"],
+      "env": { "SEOUL_API_KEY": "YOUR_KEY" }
+    }
+  }
+}
+```
+
+Restart Claude Desktop and the 11 tools below become available.
+
+## Claude Code
+
+```bash
+claude mcp add seoul-opendata -e SEOUL_API_KEY=YOUR_KEY -- npx -y seoul-opendata-mcp
+```
+
+## Getting an API Key (5 minutes)
+
+The server works out of the box in **sample mode** (see limits below), but a real key removes the limits and is free:
+
+1. Sign in (or sign up) at [data.seoul.go.kr](https://data.seoul.go.kr).
+2. Open the authentication-key request page ("인증키 신청") and submit the short application form.
+3. The key is issued immediately — no waiting for approval.
+4. Put it in `SEOUL_API_KEY` (as shown above) and restart your MCP client.
+
+Without `SEOUL_API_KEY`, the server falls back to a built-in `sample` key: the `citydata`-family tools (`get_city_snapshot`, `get_population`, `get_commercial_activity`, `get_road_traffic`, `get_weather`) only work for **광화문 (Gwanghwamun)** and **덕수궁 (Deoksugung)**, and the other tools return at most **5 rows**. Every sample-mode response includes a note reminding you of this.
+
+## Tools
+
+| Tool | Description | Key arguments |
+|---|---|---|
+| `search_place` | Resolve a free-form place name to one of Seoul's 121 official real-time hotspots. Use this first when the user mentions a Seoul location. | `query` (string) |
+| `get_city_snapshot` | One-shot combined snapshot (population/congestion + weather + road traffic + top events) of a hotspot. Best for broad "how is X right now?" questions. | `place` (string) |
+| `get_population` | Real-time population, congestion level (여유/보통/약간 붐빔/붐빔), demographics, and optional 12-hour AI forecast. | `place` (string), `includeForecast` (boolean, optional) |
+| `get_commercial_activity` | Real-time card-payment-based commercial activity level and per-industry breakdown (82 supported places). | `place` (string) |
+| `get_subway_arrivals` | Real-time subway train arrivals for a station. | `station` (string), `limit` (1-30, default 10) |
+| `get_bike_stations` | Find Ttareungi (서울 공공자전거) stations by name keyword and/or coordinates, with real-time available bike counts. | `query` (string, optional), `lat`/`lng` (optional), `radiusM` (default 500), `limit` (1-50, default 10) |
+| `get_parking` | Real-time available spaces in Seoul public parking lots, filtered by a place/district keyword. | `query` (string), `limit` (1-50, default 10) |
+| `get_road_traffic` | Average road speed, congestion message, and accident/control incidents around a hotspot. | `place` (string) |
+| `search_cultural_events` | Search Seoul cultural events (concerts, exhibitions, festivals) by keyword/category/district/date range/free-only. | `keyword`, `category`, `district`, `from`, `to`, `freeOnly`, `limit` (all optional) |
+| `get_air_quality` | Real-time air quality (PM10/PM2.5, grade) by district. Omit district for all 25. | `district` (string, optional) |
+| `get_weather` | Current temperature, precipitation, fine dust (PM10/PM2.5), UV, sunrise/sunset and weather warnings at a hotspot. | `place` (string) |
+
+## Coverage & Limits
+
+- **121 official hotspots** — `search_place`, `get_city_snapshot`, `get_population`, `get_road_traffic`, and `get_weather` only cover these named locations (major stations, tourist spots, commercial districts, parks, and dense residential areas).
+- **Commercial activity: 82 of the 121 hotspots** — `get_commercial_activity` returns `supported: false` with nearby alternatives for the other 39.
+- **Population has ~15 minutes of delay** — it's a telecom-based estimate with correction, not instantaneous.
+- **Free quota is ~1,000 calls/day per key** — the server caches responses in memory (60s for city data, 5 min for air/bike/parking, 1 hour for cultural events) to help stay within this.
+- Bike stations, parking lots, air quality, cultural events, and subway arrivals are **not** limited to the 121 hotspots — they cover their respective full Seoul-wide datasets (e.g. all 25 districts for air quality, ~3,000 bike stations).
+
+## Data Attribution
+
+Data is provided by the **Seoul Open Data Plaza** (서울 열린데이터광장, [data.seoul.go.kr](https://data.seoul.go.kr)) "Seoul Real-time City Data" (서울 실시간 도시데이터) service, which fuses telecom population data (KT/SKT), card-payment data (Shinhan Card), and transit tap-in/tap-out data (Tmoney), along with the Seoul public bike, parking, air-quality, cultural-event, and subway-arrival open APIs.
+
+## Example Prompts
+
+- "지금 강남역 혼잡도 어때?" — congestion level right now
+- "홍대 앞으로 12시간 동안 인구가 어떻게 변할까?" — 12-hour population forecast
+- "성수동 상권 요즘 분위기 어때?" — commercial activity trend
+- "여의도 근처에 따릉이 자전거 있어?" — nearby Ttareungi bike availability
+- "이번 주말 마포구 무료 공연 있어?" — free cultural events this weekend
+- "오늘 강남구 미세먼지 어때?" — today's fine dust level
+
+## License
+
+[MIT](./LICENSE) © 2026 whchoi98

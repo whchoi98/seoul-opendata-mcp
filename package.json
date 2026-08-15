@@ -4,6 +4,14 @@
   "description": "MCP server for Seoul Open Data Plaza real-time city APIs (서울 열린데이터광장 실시간 도시데이터 MCP 서버)",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/whchoi98/Seoul-OpenData-MCP.git"
+  },
+  "bugs": {
+    "url": "https://github.com/whchoi98/Seoul-OpenData-MCP/issues"
+  },
+  "homepage": "https://github.com/whchoi98/Seoul-OpenData-MCP#readme",
   "bin": { "seoul-opendata-mcp": "dist/index.js" },
   "main": "dist/index.js",
   "files": ["dist", "README.md", "README.ko.md", "LICENSE"],
