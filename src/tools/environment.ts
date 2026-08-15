@@ -4,6 +4,7 @@ import type { Ctx } from './context.js'
 import { ok } from './envelope.js'
 import { resolvePlace } from './resolve.js'
 import { extractWeather } from '../normalize/citydata.js'
+import { normalizeAir } from '../normalize/air.js'
 
 export function registerEnvironmentTools(server: McpServer, ctx: Ctx) {
   server.registerTool(
@@ -21,6 +22,33 @@ export function registerEnvironmentTools(server: McpServer, ctx: Ctx) {
       const u = await ctx.client.getXml('citydata', 1, 5, [r.name])
       const data = extractWeather(u.rows[0] ?? {})
       return ok({ place: r.name, ...data }, { source: 'OA-21285 (citydata WEATHER_STTS, 기상청 연계)', asOf: data.measuredAt || null, sample: ctx.client.isSample })
+    },
+  )
+
+  server.registerTool(
+    'get_air_quality',
+    {
+      title: 'Real-time air quality by district',
+      description:
+        'Get real-time air quality (PM10/PM2.5, grade) for Seoul districts. Omit district to get all 25. ' +
+        '자치구별 실시간 대기질. "오늘 강남구 미세먼지 어때?" 류 질문에 사용.',
+      inputSchema: {
+        district: z.string().optional().describe('자치구명 (예: "강남구") — 생략 시 25개 전체'),
+      },
+    },
+    async ({ district }) => {
+      const u = await ctx.client.getJson('RealtimeCityAir', 1, 25)
+      let rows = normalizeAir(u.rows)
+      if (district) rows = rows.filter(a => a.district.includes(district.replace(/구$/, '')) || a.district === district)
+      return ok(
+        { count: rows.length, airQuality: rows },
+        {
+          source: '서울시 권역별 실시간 대기환경 (RealtimeCityAir)',
+          asOf: rows[0]?.measuredAt ?? null,
+          notes: rows.length === 0 ? ['해당 자치구를 찾지 못했습니다. "강남구"처럼 정식 자치구명을 쓰세요.'] : [],
+          sample: ctx.client.isSample,
+        },
+      )
     },
   )
 }
