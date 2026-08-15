@@ -1,0 +1,9 @@
+tests/
+docs/
+scripts/
+src/
+.claude/
+.superpowers/
+vitest.config.ts
+tsconfig.json
+package-lock.json
