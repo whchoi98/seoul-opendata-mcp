@@ -78,4 +78,24 @@ describe('SeoulApiClient', () => {
     const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any })
     await expect(c.getJson('bikeList', 1, 5)).rejects.toMatchObject({ name: 'SeoulApiError', code: 'PARSE' })
   })
+
+  it('샘플 키는 요청 범위를 5건으로 클램프한다 (ERROR-335 회피)', async () => {
+    delete process.env.SEOUL_API_KEY
+    const page = { culturalEventInfo: { list_total_count: 1, RESULT: { CODE: 'INFO-000', MESSAGE: 'ok' }, row: [{ a: 1 }] } }
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(page))
+    const c = new SeoulApiClient({ fetchFn: fetchFn as any })
+    expect(c.isSample).toBe(true)
+    await c.getJson('culturalEventInfo', 1, 500)
+    expect(fetchFn.mock.calls[0][0]).toMatch(/\/culturalEventInfo\/1\/5$/)
+  })
+
+  it('샘플 키의 fetchAll은 최대 5건 단일 페이지로 동작', async () => {
+    delete process.env.SEOUL_API_KEY
+    const fetchFn = vi.fn().mockResolvedValue(standardPage([{ i: 1 }, { i: 2 }, { i: 3 }, { i: 4 }, { i: 5 }], 122))
+    const c = new SeoulApiClient({ fetchFn: fetchFn as any })
+    const rows = await c.fetchAll('bikeList', { max: 3000, pageSize: 1000 })
+    expect(rows).toHaveLength(5)
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(fetchFn.mock.calls[0][0]).toContain('/bikeList/1/5')
+  })
 })

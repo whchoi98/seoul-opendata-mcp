@@ -70,6 +70,8 @@ export class SeoulApiClient {
   }
 
   private async fetchUnwrapped(base: string, type: 'json' | 'xml', service: string, start: number, end: number, path: string[]): Promise<Unwrapped> {
+    // 샘플 키는 요청당 최대 5건 제한(ERROR-335) — 범위를 클램프해 맛보기 모드로 동작시킨다
+    if (this.isSample) end = Math.min(end, start + 4)
     const url = this.buildUrl(base, type, service, start, end, path)
     const cached = this.cache.get(url)
     if (cached) return cached
@@ -93,12 +95,13 @@ export class SeoulApiClient {
   /** 표준 봉투 서비스의 페이지를 totalCount 또는 max까지 자동 순회 병합 */
   async fetchAll(service: string, opts: { max: number; pageSize?: number; path?: string[] }): Promise<any[]> {
     const pageSize = opts.pageSize ?? 1000
+    const max = this.isSample ? Math.min(opts.max, 5) : opts.max
     const rows: any[] = []
-    for (let start = 1; rows.length < opts.max; start += pageSize) {
-      const u = await this.getJson(service, start, Math.min(start + pageSize - 1, opts.max), opts.path ?? [])
+    for (let start = 1; rows.length < max; start += pageSize) {
+      const u = await this.getJson(service, start, Math.min(start + pageSize - 1, max), opts.path ?? [])
       rows.push(...u.rows)
       if (rows.length >= u.totalCount || u.rows.length === 0) break
     }
-    return rows.slice(0, opts.max)
+    return rows.slice(0, max)
   }
 }
