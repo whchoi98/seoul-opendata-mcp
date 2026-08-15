@@ -51,7 +51,12 @@ export function registerCommonTools(server: McpServer, ctx: Ctx) {
       if ('early' in r) return r.early
       const u = await ctx.client.getXml('citydata', 1, 5, [r.name])
       const data = extractSnapshot(u.rows[0] ?? {})
-      return ok(data, { source: 'OA-21285 (citydata)', asOf: data.population.measuredAt || null, notes: ['인구는 약 15분 지연. 세부 분야는 개별 tool로 조회하세요.'], sample: ctx.client.isSample })
+      return ok(data, {
+        source: 'OA-21285 (citydata)',
+        asOf: data.population.measuredAt || null,
+        notes: ['인구는 약 15분 지연. 세부 분야는 개별 tool로 조회하세요.', ...(u.note ? [u.note] : [])],
+        sample: ctx.client.isSample,
+      })
     },
   )
 }

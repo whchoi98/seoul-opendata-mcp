@@ -14,6 +14,16 @@ describe('SeoulApiClient', () => {
     expect(c.isSample).toBe(true)
   })
 
+  it('빈 문자열 apiKey는 sample 폴백 + isSample=true', () => {
+    const c = new SeoulApiClient({ apiKey: '', fetchFn: vi.fn() as any })
+    expect(c.isSample).toBe(true)
+  })
+
+  it('공백뿐인 apiKey도 sample 폴백 + isSample=true', () => {
+    const c = new SeoulApiClient({ apiKey: '  ', fetchFn: vi.fn() as any })
+    expect(c.isSample).toBe(true)
+  })
+
   it('URL을 {base}/{key}/{type}/{service}/{start}/{end}/{path...}로 조립하고 경로를 인코딩한다', async () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ 'SeoulRtd.citydata_ppltn': [{ AREA_NM: '강남역' }] }))
     const c = new SeoulApiClient({ apiKey: 'MYKEY', fetchFn: fetchFn as any })

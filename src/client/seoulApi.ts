@@ -28,7 +28,7 @@ export class SeoulApiClient {
   private xml = new XMLParser({ ignoreDeclaration: true })
 
   constructor(opts: ClientOptions = {}) {
-    this.key = opts.apiKey ?? process.env.SEOUL_API_KEY ?? 'sample'
+    this.key = (opts.apiKey ?? process.env.SEOUL_API_KEY ?? '').trim() || 'sample'
     this.isSample = this.key === 'sample'
     this.fetchFn = opts.fetchFn ?? fetch
     this.timeoutMs = opts.timeoutMs ?? 15_000

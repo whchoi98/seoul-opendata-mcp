@@ -22,7 +22,8 @@
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "inspect": "npx @modelcontextprotocol/inspector tsx src/index.ts",
-    "bundle": "npx @anthropic-ai/mcpb pack . seoul-opendata-mcp.mcpb && npx @anthropic-ai/mcpb clean seoul-opendata-mcp.mcpb"
+    "bundle": "npm run build && npx @anthropic-ai/mcpb pack . seoul-opendata-mcp.mcpb && npx @anthropic-ai/mcpb clean seoul-opendata-mcp.mcpb",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",

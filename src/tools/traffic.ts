@@ -117,7 +117,12 @@ export function registerTrafficTools(server: McpServer, ctx: Ctx) {
       if ('early' in r) return r.early
       const u = await ctx.client.getXml('citydata', 1, 5, [r.name])
       const data = extractRoadTraffic(u.rows[0] ?? {})
-      return ok({ place: r.name, ...data }, { source: 'OA-21285 (citydata ROAD_TRAFFIC_STTS)', asOf: data.measuredAt || null, sample: ctx.client.isSample })
+      return ok({ place: r.name, ...data }, {
+        source: 'OA-21285 (citydata ROAD_TRAFFIC_STTS)',
+        asOf: data.measuredAt || null,
+        notes: [...(u.note ? [u.note] : [])],
+        sample: ctx.client.isSample,
+      })
     },
   )
 }
