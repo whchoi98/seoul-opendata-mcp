@@ -4,6 +4,7 @@ import type { Ctx } from './context.js'
 import { ok } from './envelope.js'
 import { normalizeArrivals } from '../normalize/subway.js'
 import { normalizeBikeStations, haversineM } from '../normalize/bike.js'
+import { normalizeParkingLots } from '../normalize/parking.js'
 
 export function registerTrafficTools(server: McpServer, ctx: Ctx) {
   server.registerTool(
@@ -67,6 +68,35 @@ export function registerTrafficTools(server: McpServer, ctx: Ctx) {
       return ok(
         { count: stations.length, stations: stations.slice(0, limit ?? 10) },
         { source: 'OA-15493 (bikeList)', notes: stations.length === 0 ? ['조건에 맞는 대여소가 없습니다. 키워드를 줄여보세요.'] : [], sample: ctx.client.isSample },
+      )
+    },
+  )
+
+  server.registerTool(
+    'get_parking',
+    {
+      title: 'Public parking availability',
+      description:
+        'Get real-time available spaces in Seoul public parking lots, filtered by place/district keyword matched against lot name and address. ' +
+        '공영주차장 실시간 주차 가능 면수 (실시간 연계 122곳 한정). "종로 주차 자리 있어?" 류 질문에 사용.',
+      inputSchema: {
+        query: z.string().describe('장소/자치구 키워드 (예: "종로", "세종로", "강남")'),
+        limit: z.number().int().min(1).max(50).optional().describe('최대 건수 (기본 10)'),
+      },
+    },
+    async ({ query, limit }) => {
+      const rows = await ctx.client.fetchAll('GetParkingInfo', { max: 1000, pageSize: 1000 })
+      const lots = normalizeParkingLots(rows).filter(p => p.name.includes(query) || p.address.includes(query))
+      return ok(
+        { count: lots.length, lots: lots.slice(0, limit ?? 10) },
+        {
+          source: '서울시 공영주차장 실시간 (GetParkingInfo)',
+          notes: [
+            '실시간 연계 주차장(약 122곳)만 현재 주차대수를 제공합니다.',
+            ...(lots.length === 0 ? ['조건에 맞는 주차장이 없습니다. 자치구명으로 넓혀보세요.'] : []),
+          ],
+          sample: ctx.client.isSample,
+        },
       )
     },
   )
