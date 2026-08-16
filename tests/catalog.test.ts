@@ -16,8 +16,8 @@ describe('CATALOG 무결성', () => {
   it('callable=false 항목은 tool 안내 필수', () => {
     for (const e of CATALOG.filter(x => !x.callable)) expect(e.tool).toBeTruthy()
   })
-  it('XML 전용은 AccInfo와 citydata뿐', () => {
-    expect(CATALOG.filter(e => e.responseType === 'xml').map(e => e.id).sort()).toEqual(['AccInfo', 'citydata'])
+  it('XML 전용은 AccInfo, LIVE_DST_MESSAGE(파생), citydata뿐', () => {
+    expect(CATALOG.filter(e => e.responseType === 'xml').map(e => e.id).sort()).toEqual(['AccInfo', 'LIVE_DST_MESSAGE', 'citydata'])
   })
 })
 
