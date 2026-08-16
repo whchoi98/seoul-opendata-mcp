@@ -1,5 +1,5 @@
 // 샘플 키로 실응답을 tests/fixtures/에 저장한다. 실행: npx tsx scripts/capture-fixtures.ts
-import { writeFileSync, mkdirSync } from 'node:fs'
+import { writeFileSync, mkdirSync, existsSync } from 'node:fs'
 
 const PLACE = encodeURIComponent('광화문·덕수궁')
 const targets: Record<string, string> = {
@@ -11,11 +11,23 @@ const targets: Record<string, string> = {
   'parking.json': 'http://openapi.seoul.go.kr:8088/sample/json/GetParkingInfo/1/5/',
   'air.json': 'http://openapi.seoul.go.kr:8088/sample/json/RealtimeCityAir/1/5/',
   'subway.json': `http://swopenapi.seoul.go.kr/api/subway/sample/json/realtimeStationArrival/0/5/${encodeURIComponent('강남')}`,
+  'subway_stats.json': 'http://openapi.seoul.go.kr:8088/sample/json/CardSubwayStatsNew/1/5/20260801',
+  'bus_stats.json': 'http://openapi.seoul.go.kr:8088/sample/json/CardBusStatisticsServiceNew/1/5/20260801',
+  'living_pop.json': 'http://openapi.seoul.go.kr:8088/sample/json/SPOP_LOCAL_RESD_DONG/1/5/',
+  'realestate.json': 'http://openapi.seoul.go.kr:8088/sample/json/tbLnOpendataRtmsV/1/5/',
+  'pharmacy.json': 'http://openapi.seoul.go.kr:8088/sample/json/TbPharmacyOperateInfo/1/5/',
+  'accinfo.xml': 'http://openapi.seoul.go.kr:8088/sample/xml/AccInfo/1/5/',
 }
 
 mkdirSync('tests/fixtures', { recursive: true })
 for (const [file, url] of Object.entries(targets)) {
+  const path = `tests/fixtures/${file}`
+  if (existsSync(path)) {
+    console.log(`skip (exists) tests/fixtures/${file}`)
+    continue
+  }
   const res = await fetch(url)
-  writeFileSync(`tests/fixtures/${file}`, await res.text())
+  writeFileSync(path, await res.text())
   console.log(`saved tests/fixtures/${file} (${res.status})`)
+  await new Promise(r => setTimeout(r, 1200))
 }
