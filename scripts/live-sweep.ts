@@ -35,9 +35,20 @@ for (const [i, [name, args]] of CALLS.entries()) {
   let verdict = '✗ 응답 없음'
   if (line) {
     const msg = JSON.parse(line)
-    verdict = msg.result && !msg.result.isError ? '✓' : `✗ ${JSON.stringify(msg.result?.content?.[0]?.text ?? msg.error).slice(0, 60)}`
+    if (msg.result && !msg.result.isError) {
+      let info = ''
+      try {
+        const body = JSON.parse(msg.result.content?.[0]?.text ?? '{}')
+        const d = body?.data ?? {}
+        const c = d.count ?? d.rows?.length ?? d.arrivals?.length ?? d.stations?.length ?? d.datasets?.length ?? d.alerts?.length
+        info = c != null ? ` (count=${c})` : ''
+      } catch { /* 원본이 JSON이 아니면 suffix 생략 */ }
+      verdict = `✓${info}`
+    } else {
+      verdict = `✗ ${JSON.stringify(msg.result?.content?.[0]?.text ?? msg.error).slice(0, 60)}`
+    }
   }
-  if (verdict === '✓') ok++
+  if (verdict.startsWith('✓')) ok++
   console.log(`${name.padEnd(26)} ${verdict}`)
   if (i < CALLS.length - 1) await new Promise(r => setTimeout(r, 1300))
 }
