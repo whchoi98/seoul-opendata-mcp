@@ -104,6 +104,33 @@ id 유일성: 재난문자는 API가 아니라 citydata 응답 블록이므로 i
 
 공통: v1 규칙 전부 승계 — ok() 봉투, SeoulApiClient 경유, resolvePlace(place 받는 tool), 영어 ≤2문장+한국어 설명, 픽스처 불변, 매핑 동등성 테스트.
 
+## 3.5 키·설정 관리 (.env) — 사용자 요구사항 (2026-08-16)
+
+서울시 열린데이터 API 키와 실시간 지하철 키를 `.env`에 별도 저장해 안전하게 사용한다.
+
+### 키 2종 분리
+
+| 환경변수 | 용도 | 폴백 |
+|---|---|---|
+| `SEOUL_API_KEY` | 열린데이터광장 일반 인증키 (openapi.seoul.go.kr 전체) | 미설정/빈값 → `sample` |
+| `SEOUL_SUBWAY_API_KEY` | **지하철 실시간 도착 전용 인증키** (swopenapi.seoul.go.kr — 광장에서 별도 신청) | 미설정 → `SEOUL_API_KEY` → `sample` |
+
+- `SeoulApiClient`에 `subwayKey` 분리: `getSubway()`만 subway 키 사용, 마스킹(`maskedKey`)·빈값 트림 규칙 동일 적용
+- 샘플 키는 두 엔드포인트 공용이므로 키 없는 맛보기 모드는 기존과 동일
+
+### .env 로딩 규칙
+
+- 의존성 추가 없이 자체 경량 로더(~15줄): 프로세스 시작 시 CWD의 `.env`가 존재하면 파싱해 **이미 설정된 환경변수는 덮어쓰지 않고** 빈 슬롯만 채움 (명시적 env > .env > sample)
+- `KEY=VALUE` 형식, 앞뒤 공백·선택적 따옴표 제거, `#` 주석 라인 무시
+- 보안 규칙: `.env`는 `.gitignore`에 이미 등재(v1) — 추가로 `.mcpbignore`에도 명시해 번들 유출 차단 검증, 키 문자열은 기존 마스킹 경로 준수(로그·에러 노출 금지)
+- `.env.example` 커밋(키 2종 + 발급 URL 주석), README 한/영에 키 2종 발급·설정 안내 갱신
+- MCPB `user_config`에 `seoul_subway_api_key`(sensitive, optional) 추가
+
+### 테스트
+
+- .env 로더: 임시 디렉토리 픽스처로 파싱·비덮어쓰기·따옴표 처리 검증 (실제 .env 파일은 테스트에서 생성/삭제)
+- subwayKey 폴백 체인: 전용 키 → 일반 키 → sample 3단계 단위 테스트
+
 ## 4. 테스트
 
 - 신규 픽스처 캡처: scripts/capture-fixtures.ts 확장 (승격 4종 + 카탈로그 대표 2종. 검증된 파라미터 포함: 승하차 `20260801`, 대기질 `202608151100`)

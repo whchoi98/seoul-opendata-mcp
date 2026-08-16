@@ -7,3 +7,4 @@ src/
 vitest.config.ts
 tsconfig.json
 package-lock.json
+.env
