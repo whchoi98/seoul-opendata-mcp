@@ -9,6 +9,11 @@ export function routeFor(entry: DatasetEntry): 'getJson' | 'getXml' | 'getSubway
   return entry.responseType === 'xml' ? 'getXml' : 'getJson'
 }
 
+/** swopenapi(지하철)는 0-based start, 열린데이터광장 표준은 1-based */
+export function startFor(entry: DatasetEntry): number {
+  return entry.endpoint === 'subway' ? 0 : 1
+}
+
 export function clampLimit(limit: number | undefined): number {
   return Math.min(Math.max(limit ?? 10, 1), 50)
 }
@@ -98,7 +103,8 @@ export function registerMetaTools(server: McpServer, ctx: Ctx) {
         )
       }
       const n = clampLimit(limit)
-      const u = await ctx.client[routeFor(e)](e.id, 1, n, params ?? [])
+      const start = startFor(e)
+      const u = await ctx.client[routeFor(e)](e.id, start, n, params ?? [])
       return ok(
         { id: e.id, name: e.name, count: u.rows.length, totalCount: u.totalCount, rows: u.rows.slice(0, n) },
         {

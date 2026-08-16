@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { CATALOG } from '../src/data/catalog.js'
-import { routeFor, clampLimit } from '../src/tools/meta.js'
+import { routeFor, clampLimit, startFor } from '../src/tools/meta.js'
 
 describe('routeFor', () => {
   it('json+open → getJson', () => {
@@ -22,5 +22,16 @@ describe('clampLimit', () => {
     expect(clampLimit(undefined)).toBe(10)
     expect(clampLimit(3)).toBe(3)
     expect(clampLimit(500)).toBe(50)
+  })
+})
+
+describe('startFor', () => {
+  it('subway 엔드포인트는 0-based', () => {
+    const e = CATALOG.find(x => x.id === 'realtimeStationArrival')!
+    expect(startFor(e)).toBe(0)
+  })
+  it('열린데이터광장 표준은 1-based', () => {
+    const e = CATALOG.find(x => x.id === 'TbPublicWifiInfo')!
+    expect(startFor(e)).toBe(1)
   })
 })
