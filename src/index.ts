@@ -11,6 +11,7 @@ import { registerPopulationTools } from './tools/population.js'
 import { registerTrafficTools } from './tools/traffic.js'
 import { registerCultureTools } from './tools/culture.js'
 import { registerEnvironmentTools } from './tools/environment.js'
+import { registerStatsTools } from './tools/stats.js'
 
 export const SERVER_NAME = 'seoul-opendata-mcp'
 export const SERVER_VERSION = '0.1.0'
@@ -18,7 +19,7 @@ export const SERVER_VERSION = '0.1.0'
 export const TOOL_NAMES = [
   'search_place', 'get_city_snapshot',
   'get_population', 'get_commercial_activity',
-  'get_subway_arrivals', 'get_bike_stations', 'get_parking', 'get_road_traffic',
+  'get_subway_arrivals', 'get_subway_ridership', 'get_living_population', 'get_real_estate_prices', 'get_bike_stations', 'get_parking', 'get_road_traffic',
   'search_cultural_events',
   'get_air_quality', 'get_weather',
 ] as const
@@ -30,6 +31,7 @@ export function buildServer(client: SeoulApiClient = new SeoulApiClient()): McpS
   registerPopulationTools(server, ctx)
   registerTrafficTools(server, ctx)
   registerCultureTools(server, ctx)
+  registerStatsTools(server, ctx)
   registerEnvironmentTools(server, ctx)
   return server
 }
