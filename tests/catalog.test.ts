@@ -19,6 +19,10 @@ describe('CATALOG 무결성', () => {
   it('XML 전용은 AccInfo, LIVE_DST_MESSAGE(파생), citydata뿐', () => {
     expect(CATALOG.filter(e => e.responseType === 'xml').map(e => e.id).sort()).toEqual(['AccInfo', 'LIVE_DST_MESSAGE', 'citydata'])
   })
+  it('catalog의 tool 필드는 실제 TOOL_NAMES에 존재', async () => {
+    const { TOOL_NAMES } = await import('../src/index.js')
+    for (const e of CATALOG.filter(x => x.tool)) expect(TOOL_NAMES).toContain(e.tool!)
+  })
 })
 
 describe('searchCatalog', () => {
