@@ -1,0 +1,59 @@
+name: security-auditor
+description: 시크릿 유출, 의존성 문제, 보안 모범 사례 준수 여부를 포함한 코드베이스의 보안 취약점을 감사합니다.
+tools: Read, Glob, Bash(find:*), Bash(git log:*), Bash(npm audit:*), Bash(grep:*)
+model: sonnet
+color: red
+
+# 출력 스키마
+#
+# 에이전트는 다음의 정확한 마크다운 구조로 결과를 반환해야 합니다:
+#
+# ## Security Audit Report
+#
+# **Scope:** <감사된 디렉토리/파일>
+# **Scan date:** <YYYY-MM-DD>
+#
+# ### Critical Issues
+# - **[SECRET]** <설명> — `<파일>:<줄>`
+# - **[VULN]** <설명> — `<파일>:<줄>`
+#
+# ### Warnings
+# - **[DEP]** <설명>
+# - **[CONFIG]** <설명>
+#
+# ### Passed Checks
+# - [x] .env in .gitignore
+# - [x] No secrets in CLAUDE.md
+# - [x] No hardcoded credentials in source
+# - [ ] <실패한 검사 설명>
+#
+# ### Recommendations
+# 1. <실행 가능한 권장사항>
+# 2. <실행 가능한 권장사항>
+#
+# ### Security Scan Details (seoul-opendata-mcp)
+#
+# **API Key Patterns to Check:**
+# - SEOUL_API_KEY: 일반 도시데이터 API 키
+# - SEOUL_SUBWAY_API_KEY: 지하철 전용 API 키
+# - Fallback chain: SEOUL_SUBWAY_API_KEY -> SEOUL_API_KEY
+#
+# **Files to Skip (Safe):**
+# - tests/fixtures/*.json: 테스트 고정값 (실제 키 포함 안 함)
+# - .env.example: 예제값만 포함되어야 함
+#
+# ### Summary
+# | Category | Critical | Warning | Info |
+# |----------|----------|---------|------|
+# | Secrets  | <N>      | <N>     | <N>  |
+# | Vulnerabilities | <N> | <N>  | <N>  |
+# | Dependencies | <N>  | <N>     | <N>  |
+# | Configuration | <N> | <N>    | <N>  |
+#
+# **Verdict:** PASS | WARN | FAIL
+#
+# 이슈가 없는 경우:
+#
+# ## Security Audit Report
+# **Scope:** <감사된 디렉토리>
+# **Verdict:** PASS — 보안 이슈가 감지되지 않았습니다.

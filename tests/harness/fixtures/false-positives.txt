@@ -1,0 +1,11 @@
+# Samples that must NOT trigger .claude/hooks/secret-scan.sh detection patterns.
+
+# Plain text containing short hex-looking substrings, but no 32-consecutive-char hex run.
+CHANGELOG: fixed bug abcdef, cafebabe, and feedface issues in this release
+
+# Empty / too-short assignment values (pattern requires 8+ chars inside the quotes).
+password = ""
+api_key: "short"
+
+# Ordinary base64 text with no AKIA prefix.
+dGhpcyBpcyBhIHRlc3Q=
