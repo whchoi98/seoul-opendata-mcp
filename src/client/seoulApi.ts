@@ -14,6 +14,7 @@ const TTL: Record<string, number> = {
 
 export interface ClientOptions {
   apiKey?: string
+  subwayApiKey?: string
   fetchFn?: typeof fetch
   timeoutMs?: number
   now?: () => number
@@ -22,6 +23,7 @@ export interface ClientOptions {
 export class SeoulApiClient {
   readonly isSample: boolean
   private key: string
+  private subwayKey: string
   private fetchFn: typeof fetch
   private timeoutMs: number
   private cache: TtlCache
@@ -30,6 +32,7 @@ export class SeoulApiClient {
   constructor(opts: ClientOptions = {}) {
     this.key = (opts.apiKey ?? process.env.SEOUL_API_KEY ?? '').trim() || 'sample'
     this.isSample = this.key === 'sample'
+    this.subwayKey = (opts.subwayApiKey ?? process.env.SEOUL_SUBWAY_API_KEY ?? '').trim() || this.key
     this.fetchFn = opts.fetchFn ?? fetch
     this.timeoutMs = opts.timeoutMs ?? 15_000
     this.cache = new TtlCache(opts.now)
@@ -39,8 +42,12 @@ export class SeoulApiClient {
     return this.isSample ? 'sample' : `${this.key.slice(0, 4)}…(masked)`
   }
 
-  private buildUrl(base: string, type: 'json' | 'xml', service: string, start: number, end: number, path: string[]): string {
-    const segs = [this.key, type, service, String(start), String(end), ...path.map(encodeURIComponent)]
+  maskedSubwayKey(): string {
+    return this.subwayKey === 'sample' ? 'sample' : `${this.subwayKey.slice(0, 4)}…(masked)`
+  }
+
+  private buildUrl(base: string, key: string, type: 'json' | 'xml', service: string, start: number, end: number, path: string[]): string {
+    const segs = [key, type, service, String(start), String(end), ...path.map(encodeURIComponent)]
     return `${base}/${segs.join('/')}`
   }
 
@@ -70,9 +77,10 @@ export class SeoulApiClient {
   }
 
   private async fetchUnwrapped(base: string, type: 'json' | 'xml', service: string, start: number, end: number, path: string[]): Promise<Unwrapped> {
+    const key = base === SUBWAY_BASE ? this.subwayKey : this.key
     // 샘플 키는 요청당 최대 5건 제한(ERROR-335) — 범위를 클램프해 맛보기 모드로 동작시킨다
-    if (this.isSample) end = Math.min(end, start + 4)
-    const url = this.buildUrl(base, type, service, start, end, path)
+    if (key === 'sample') end = Math.min(end, start + 4)
+    const url = this.buildUrl(base, key, type, service, start, end, path)
     const cached = this.cache.get(url)
     if (cached) return cached
     const text = await this.request(url)

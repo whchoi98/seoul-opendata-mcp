@@ -98,4 +98,24 @@ describe('SeoulApiClient', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1)
     expect(fetchFn.mock.calls[0][0]).toContain('/bikeList/1/5')
   })
+
+  it('지하철 키 폴백 체인: 전용 → 일반 → sample', () => {
+    delete process.env.SEOUL_API_KEY
+    delete process.env.SEOUL_SUBWAY_API_KEY
+    const dedicated = new SeoulApiClient({ apiKey: 'GEN', subwayApiKey: 'SUB', fetchFn: vi.fn() as any })
+    expect(dedicated.maskedSubwayKey()).toBe('SUB…(masked)')
+    const inherited = new SeoulApiClient({ apiKey: 'GEN', fetchFn: vi.fn() as any })
+    expect(inherited.maskedSubwayKey()).toBe('GEN…(masked)')
+    const sample = new SeoulApiClient({ fetchFn: vi.fn() as any })
+    expect(sample.maskedSubwayKey()).toBe('sample')
+  })
+
+  it('getSubway는 subwayKey로 URL을 만든다', async () => {
+    const payload = { errorMessage: { status: 200, code: 'INFO-000', message: 'ok', total: 0 }, realtimeArrivalList: [] }
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(payload))
+    const c = new SeoulApiClient({ apiKey: 'GEN', subwayApiKey: 'SUBKEY', fetchFn: fetchFn as any })
+    await c.getSubway('realtimeStationArrival', 0, 5, ['강남'])
+    expect(fetchFn.mock.calls[0][0]).toContain('/SUBKEY/json/')
+    expect(fetchFn.mock.calls[0][0]).not.toContain('/GEN/')
+  })
 })

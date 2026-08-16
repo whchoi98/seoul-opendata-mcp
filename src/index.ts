@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { SeoulApiClient } from './client/seoulApi.js'
+import { loadDotEnv } from './client/env.js'
 import type { Ctx } from './tools/context.js'
 import { registerCommonTools } from './tools/common.js'
 import { registerPopulationTools } from './tools/population.js'
@@ -46,6 +47,7 @@ const isCli = (() => {
   }
 })()
 if (isCli) {
+  loadDotEnv()
   const client = new SeoulApiClient()
   if (client.isSample) {
     console.error(`[${SERVER_NAME}] SEOUL_API_KEY 미설정 — 샘플 키로 동작합니다 (제한: citydata 계열은 광화문·덕수궁만).`)
