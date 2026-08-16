@@ -5,7 +5,7 @@ import { ok } from './envelope.js'
 import { resolvePlace } from './resolve.js'
 import { searchPlace } from '../data/placeMatcher.js'
 import { HOTSPOTS } from '../data/hotspots.js'
-import { extractSnapshot } from '../normalize/citydata.js'
+import { extractSnapshot, extractDisasterAlerts } from '../normalize/citydata.js'
 
 export function registerCommonTools(server: McpServer, ctx: Ctx) {
   server.registerTool(
@@ -57,6 +57,31 @@ export function registerCommonTools(server: McpServer, ctx: Ctx) {
         notes: ['인구는 약 15분 지연. 세부 분야는 개별 tool로 조회하세요.', ...(u.note ? [u.note] : [])],
         sample: ctx.client.isSample,
       })
+    },
+  )
+
+  server.registerTool(
+    'get_disaster_alerts',
+    {
+      title: 'Emergency disaster alerts near a hotspot',
+      description:
+        'Get recent emergency disaster text alerts (긴급재난문자) issued for a Seoul hotspot area. ' +
+        '핫스팟 지역 긴급재난문자. "지금 재난문자 온 거 있어?" 류 질문에 사용.',
+      inputSchema: { place: z.string().describe('핫스팟 장소명') },
+    },
+    async ({ place }) => {
+      const r = resolvePlace(place, ctx)
+      if ('early' in r) return r.early
+      const u = await ctx.client.getXml('citydata', 1, 5, [r.name])
+      const alerts = extractDisasterAlerts(u.rows[0] ?? {})
+      return ok(
+        { place: r.name, count: alerts.length, alerts },
+        {
+          source: 'OA-21285 (citydata LIVE_DST_MESSAGE, 행정안전부 연계)',
+          notes: alerts.length === 0 ? ['현재 이 지역에 수신된 긴급재난문자가 없습니다.'] : [],
+          sample: ctx.client.isSample,
+        },
+      )
     },
   )
 }

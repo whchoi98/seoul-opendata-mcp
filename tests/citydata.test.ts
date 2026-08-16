@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { XMLParser } from 'fast-xml-parser'
 import { unwrap } from '../src/client/response.js'
-import { extractRoadTraffic, extractWeather, extractSnapshot } from '../src/normalize/citydata.js'
+import { extractRoadTraffic, extractWeather, extractSnapshot, extractDisasterAlerts } from '../src/normalize/citydata.js'
 
 const parsed = new XMLParser({ ignoreDeclaration: true }).parse(readFileSync('tests/fixtures/citydata.xml', 'utf8'))
 const citydata = unwrap('citydata', parsed).rows[0]
@@ -86,5 +86,14 @@ describe('citydata extractors', () => {
     const s = extractSnapshot(citydata)
     expect(s.population.congestionLevel).toBe(rawPpltn.AREA_CONGEST_LVL)
     expect(s.population.place).toBe(rawPpltn.AREA_NM)
+  })
+
+  it('재난문자: 배열 반환 (없으면 빈 배열 — 픽스처 캡처 시점 기준)', () => {
+    const alerts = extractDisasterAlerts(citydata)
+    expect(Array.isArray(alerts)).toBe(true)
+    for (const a of alerts) {
+      expect(typeof a.message).toBe('string')
+      expect(typeof a.sentAt).toBe('string')
+    }
   })
 })

@@ -5,6 +5,8 @@ import { normalizePopulation, type Population } from './population.js'
 // 내부 노드가 없으면(단일 중첩) 바깥 노드를 그대로 사용한다.
 const inner = (node: any, key: string) => node?.[key]?.[key] ?? node?.[key] ?? null
 
+export interface DisasterAlert { category: string; message: string; sentAt: string }
+
 export function extractRoadTraffic(citydata: any) {
   const road = citydata?.ROAD_TRAFFIC_STTS ?? {}
   const avg = road.AVG_ROAD_DATA ?? {}
@@ -67,4 +69,14 @@ export function extractSnapshot(citydata: any): {
     roadMessage: extractRoadTraffic(citydata).message,
     events,
   }
+}
+
+/** citydata의 LIVE_DST_MESSAGE 블록 → 재난문자 배열 (블록 부재/빈 값이면 []) */
+export function extractDisasterAlerts(citydata: any): DisasterAlert[] {
+  const block = inner(citydata, 'LIVE_DST_MESSAGE')
+  return toArray(block?.DST_MESSAGE_STTS ?? block).filter((m: any) => m && (m.DST_MSG_CN ?? m.MSG_CN)).map((m: any) => ({
+    category: m.DST_SE_NM ?? m.DST_GRD_SE ?? '',
+    message: m.DST_MSG_CN ?? m.MSG_CN ?? '',
+    sentAt: m.DST_RCPTN_DT ?? m.RCPTN_DT ?? '',
+  }))
 }

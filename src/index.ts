@@ -17,7 +17,7 @@ export const SERVER_NAME = 'seoul-opendata-mcp'
 export const SERVER_VERSION = '0.1.0'
 
 export const TOOL_NAMES = [
-  'search_place', 'get_city_snapshot',
+  'search_place', 'get_city_snapshot', 'get_disaster_alerts',
   'get_population', 'get_commercial_activity',
   'get_subway_arrivals', 'get_subway_ridership', 'get_living_population', 'get_real_estate_prices', 'get_bike_stations', 'get_parking', 'get_road_traffic',
   'search_cultural_events',
