@@ -1,5 +1,7 @@
 # Seoul OpenData MCP
 
+[![version](https://img.shields.io/badge/version-0.2.0-blue)](./CHANGELOG.md) [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE) [![node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](./package.json)
+
 [한국어 README 보기](./README.ko.md)
 
 An [MCP](https://modelcontextprotocol.io) server that wraps Seoul's real-time city data (Seoul Open Data Plaza) so Claude — or any MCP client — can answer questions like:
@@ -41,7 +43,7 @@ The server works out of the box in **sample mode** (see limits below), but real 
 3. The key is issued immediately — no waiting for approval.
 4. Put it in `SEOUL_API_KEY` (as shown above) and restart your MCP client.
 
-Without `SEOUL_API_KEY`, the server falls back to a built-in `sample` key: the `citydata`-family tools (`get_city_snapshot`, `get_population`, `get_commercial_activity`, `get_road_traffic`, `get_weather`) only work for **광화문 (Gwanghwamun)** and **덕수궁 (Deoksugung)**, and the other tools return at most **5 rows**. Every sample-mode response includes a note reminding you of this.
+Without `SEOUL_API_KEY`, the server falls back to a built-in `sample` key: the `citydata`-family tools (`get_city_snapshot`, `get_population`, `get_commercial_activity`, `get_road_traffic`, `get_weather`, `get_disaster_alerts`) only work for the single **광화문·덕수궁 (Gwanghwamun·Deoksugung)** hotspot, and the other tools return at most **5 rows**. Every sample-mode response includes a note reminding you of this.
 
 There are two keys in total:
 

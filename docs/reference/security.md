@@ -30,7 +30,7 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 - Fail open into a scope-limited sample key rather than throwing on missing configuration, so a first-time user gets a working server immediately and discovers the key-signup flow from the response `notes[]` instead of a crash.
 - Mask keys at the source (`maskedKey()`/`maskedSubwayKey()`) rather than redacting at a logging boundary, so there is no code path — including error messages — that can construct a string containing the full key.
 - Treat the subway key as an optional override of the general key, not a second mandatory credential, keeping the common case (one key) simple while still allowing quota isolation for `get_subway_arrivals`.
-- No ADRs are recorded yet for these decisions — see `docs/decisions/.template.md` to formalize one (e.g. "Sample-key fallback over startup failure").
+- The single HTTP path and env-key handling decisions above are recorded as [ADR-003](../decisions/ADR-003-single-http-path-and-env-keys.md).
 
 ### 4. Code Pointers
 
@@ -45,7 +45,7 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 
 ### 5. Cross-references
 - Related modules: `src/client/response.ts` (`SeoulApiError`, `INFO-100` key-related hint)
-- Related ADRs: none recorded yet
+- Related ADRs: [ADR-003](../decisions/ADR-003-single-http-path-and-env-keys.md) (single HTTP path and env keys)
 - Related runbooks: none recorded yet — see `docs/architecture.md` Operations section for a suggested "key rotation / sample-mode diagnosis" runbook
 
 <a id="korean"></a>
@@ -75,7 +75,7 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 - 설정이 없을 때 예외를 던지는 대신 범위가 제한된 샘플 키로 정상 동작하도록 합니다. 이를 통해 첫 사용자도 즉시 동작하는 서버를 경험하고, 크래시가 아니라 응답 `notes[]`를 통해 키 발급 절차를 알게 됩니다.
 - 로깅 경계에서 마스킹하는 대신 소스 시점에서 키를 마스킹합니다(`maskedKey()`/`maskedSubwayKey()`). 이를 통해 에러 메시지를 포함한 어떤 코드 경로도 전체 키를 담은 문자열을 만들 수 없습니다.
 - 지하철 키를 두 번째 필수 자격증명이 아니라 일반 키의 선택적 오버라이드로 취급하여, 일반적인 경우(키 1개)를 단순하게 유지하면서도 `get_subway_arrivals`의 쿼터 분리는 필요할 때 가능하게 합니다.
-- 위 결정들에 대한 ADR은 아직 기록되지 않았습니다 -- `docs/decisions/.template.md`를 참고하여 (예: "샘플 키 폴백 vs. 시작 실패") 하나를 정식화할 수 있습니다.
+- 위 단일 HTTP 경로 및 env 키 처리 결정은 [ADR-003](../decisions/ADR-003-single-http-path-and-env-keys.md)로 기록되어 있습니다.
 
 ### 4. 코드 포인터
 
@@ -90,5 +90,5 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 
 ### 5. 상호 참조
 - 관련 모듈: `src/client/response.ts` (`SeoulApiError`, `INFO-100` 키 관련 힌트)
-- 관련 ADR: 아직 없음
+- 관련 ADR: [ADR-003](../decisions/ADR-003-single-http-path-and-env-keys.md) (단일 HTTP 경로 및 env 키)
 - 관련 런북: 아직 없음 -- `docs/architecture.md`의 운영 절에서 제안하는 "키 회전 / 샘플 모드 진단" 런북 참고

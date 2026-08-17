@@ -33,8 +33,8 @@ The API layer is the MCP tool surface (19 tools, `src/tools/*.ts`) plus the sing
 
 - Route every tool through the same `SeoulApiClient` request path (`fetchUnwrapped`) rather than a per-tool HTTP call, so caching, retry, sample-mode clamping, and envelope normalization exist once (see the "One HTTP code path for every service" decision in `docs/architecture.md`).
 - Standardize on one response envelope (`ok()`/`fail()`) across all 19 tools instead of a per-tool return shape, so an agent can rely on `{data, asOf, source, notes}` regardless of which tool it called.
-- Give 8 high-traffic datasets a dedicated, fully-typed tool and route the remaining 20 through the generic `search_dataset`/`get_dataset_spec`/`call_dataset` trio (see the "Catalog hybrid" decision in `docs/architecture.md`).
-- No ADRs are recorded yet for these decisions — see `docs/decisions/.template.md`.
+- Give 13 high-traffic datasets a dedicated, fully-typed tool (12 also callable via `call_dataset`, plus the tool-only `get_disaster_alerts`) and route the remaining 15 through the generic `search_dataset`/`get_dataset_spec`/`call_dataset` trio (see the "Catalog hybrid" decision in `docs/architecture.md`).
+- The "Catalog hybrid" decision above is recorded as [ADR-002](../decisions/ADR-002-hybrid-tool-exposure.md).
 
 ### 4. Code Pointers
 
@@ -48,7 +48,7 @@ The API layer is the MCP tool surface (19 tools, `src/tools/*.ts`) plus the sing
 
 ### 5. Cross-references
 - Related modules: `src/normalize/*.ts` (domain mappers consumed by every tool)
-- Related ADRs: none recorded yet
+- Related ADRs: [ADR-002](../decisions/ADR-002-hybrid-tool-exposure.md) (hybrid tool exposure)
 - Related runbooks: none recorded yet — see `docs/architecture.md` Operations section
 
 <a id="korean"></a>
@@ -81,8 +81,8 @@ API 계층은 MCP tool 표면(19개, `src/tools/*.ts`)과 그 기반이 되는 �
 
 - tool마다 개별 HTTP 호출을 두지 않고 모든 tool을 동일한 `SeoulApiClient` 요청 경로(`fetchUnwrapped`)로 라우팅합니다. 이를 통해 캐싱, 재시도, 샘플 모드 클램핑, 봉투 정규화가 한 곳에만 존재합니다(`docs/architecture.md`의 "모든 서비스가 거치는 단 하나의 HTTP 경로" 결정 참고).
 - tool마다 다른 반환 형태를 두지 않고 19개 tool 전체에 하나의 응답 봉투(`ok()`/`fail()`)를 표준화합니다. 이를 통해 에이전트는 어떤 tool을 호출했든 `{data, asOf, source, notes}` 형태를 신뢰할 수 있습니다.
-- 트래픽이 많은 8개 데이터셋에는 전용 타입 tool을 제공하고, 나머지 20개는 범용 트리오(`search_dataset`/`get_dataset_spec`/`call_dataset`)로 라우팅합니다(`docs/architecture.md`의 "카탈로그 하이브리드" 결정 참고).
-- 위 결정들에 대한 ADR은 아직 기록되지 않았습니다 -- `docs/decisions/.template.md` 참고.
+- 트래픽이 많은 13개 데이터셋에는 전용 타입 tool을 제공하고(이 중 12개는 `call_dataset`으로도 호출 가능, 나머지 1개인 재난문자 전용 `get_disaster_alerts`는 tool 전용), 나머지 15개는 범용 트리오(`search_dataset`/`get_dataset_spec`/`call_dataset`)로 라우팅합니다(`docs/architecture.md`의 "카탈로그 하이브리드" 결정 참고).
+- 위 "카탈로그 하이브리드" 결정은 [ADR-002](../decisions/ADR-002-hybrid-tool-exposure.md)로 기록되어 있습니다.
 
 ### 4. 코드 포인터
 
@@ -96,5 +96,5 @@ API 계층은 MCP tool 표면(19개, `src/tools/*.ts`)과 그 기반이 되는 �
 
 ### 5. 상호 참조
 - 관련 모듈: `src/normalize/*.ts` (모든 tool이 사용하는 도메인 매퍼)
-- 관련 ADR: 아직 없음
+- 관련 ADR: [ADR-002](../decisions/ADR-002-hybrid-tool-exposure.md) (하이브리드 tool 노출)
 - 관련 런북: 아직 없음 -- `docs/architecture.md`의 운영 절 참고

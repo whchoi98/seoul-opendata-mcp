@@ -428,7 +428,7 @@ Note: filters are applied within the most recent 1,000 fetched rows only.
 
 ## Meta / Catalog Tools
 
-These three tools give agents generic access to the 20 catalog datasets that do not have a dedicated tool (plus the 8 that do, as a lookup aid), without requiring a new MCP tool per dataset.
+These three tools give agents generic access to the 15 catalog datasets that do not have a dedicated tool (plus the 13 that do, as a lookup aid), without requiring a new MCP tool per dataset.
 
 ### `search_dataset`
 

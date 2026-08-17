@@ -69,9 +69,9 @@ If `SEOUL_API_KEY` is unset when the server starts from the CLI, it prints a std
 
 ## Project Overview
 
-- Read [`CLAUDE.md`](../CLAUDE.md) (if present) for project-specific conventions.
+- Read [`CLAUDE.md`](../CLAUDE.md) for project-specific conventions.
 - Read [`docs/architecture.md`](architecture.md) for the full system design: Ingestion / Processing / Query-Presentation / Security layers, both Mermaid diagrams, and the Key Design Decisions.
-- Review `docs/decisions/` for recorded architectural decisions (currently only [`docs/decisions/.template.md`](decisions/.template.md) -- see [`project-init:add-adr`](../CLAUDE.md) to create the first real ADR).
+- Review `docs/decisions/` for recorded architectural decisions ([ADR-001](decisions/ADR-001-fixtures-as-source-of-truth.md), [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md), [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md)) -- write a new ADR by copying [`docs/decisions/.template.md`](decisions/.template.md).
 - Review `docs/reference/` for layer-by-layer implementation detail (`api.md`, `security.md`, `agent-llm.md`; see [`docs/reference/INDEX.md`](reference/INDEX.md)).
 
 In one sentence: a stdio MCP server wraps two Seoul city-data HTTP APIs behind one HTTP client (`src/client`), normalizes eight upstream envelope shapes into stable domain types (`src/normalize`), and presents 19 MCP tools (`src/tools`) plus a 28-dataset catalog fallback to any LLM agent that speaks MCP.
@@ -90,7 +90,7 @@ In one sentence: a stdio MCP server wraps two Seoul city-data HTTP APIs behind o
 - **Sample mode** -- the zero-config fallback described above (`SeoulApiClient.isSample`). Every tool response carries a `sample`-mode note in `notes[]` when active; do not confuse a short/limited result with a bug until you have confirmed a real key is set.
 - **Envelope shapes** -- the Seoul Open Data Plaza does not return one consistent JSON/XML shape across services. `unwrap()` in `src/client/response.ts` handles 8 distinct shapes; if you add a new dataset and see a `PARSE` `SeoulApiError`, the upstream is very likely returning a 9th shape that needs a new branch there.
 - **Relative, not absolute, congestion** -- `get_population` and `get_commercial_activity` intentionally return categorical levels (e.g. `여유`/`보통`/`약간 붐빔`/`붐빔`) rather than a device/footfall count, because the underlying feed is a telecom/card-payment sample, not a census. Do not present these levels to users as exact counts.
-- **Catalog hybrid** -- 8 datasets have a dedicated, typed tool; the other 20 are reachable only via `search_dataset` -> `get_dataset_spec` -> `call_dataset`, which return raw (non-normalized) fields. See `docs/api-reference.md` for the full list.
+- **Catalog hybrid** -- 13 datasets have a dedicated, typed tool (12 of which are also callable via `call_dataset`; 1 -- `get_disaster_alerts` -- is tool-only); the other 15 are reachable only via `search_dataset` -> `get_dataset_spec` -> `call_dataset`, which return raw (non-normalized) fields. See `docs/api-reference.md` for the full list.
 
 ## Troubleshooting
 

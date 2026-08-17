@@ -1,5 +1,7 @@
 # Seoul OpenData MCP
 
+[![version](https://img.shields.io/badge/version-0.2.0-blue)](./CHANGELOG.md) [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE) [![node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](./package.json)
+
 [Read in English](./README.md)
 
 서울시 실시간 도시데이터(서울 열린데이터광장)를 감싸는 [MCP](https://modelcontextprotocol.io) 서버입니다. Claude(또는 다른 MCP 클라이언트)가 다음과 같은 질문에 답할 수 있게 해줍니다.
@@ -41,7 +43,7 @@ claude mcp add seoul-opendata -e SEOUL_API_KEY=YOUR_KEY -- npx -y seoul-opendata
 3. 승인 대기 없이 즉시 발급됩니다.
 4. 발급받은 키를 위 설정의 `SEOUL_API_KEY`에 넣고 MCP 클라이언트를 재시작하세요.
 
-`SEOUL_API_KEY`를 설정하지 않으면 서버는 내장된 `sample` 키로 동작합니다. 이 경우 `citydata` 계열 tool(`get_city_snapshot`, `get_population`, `get_commercial_activity`, `get_road_traffic`, `get_weather`)은 **광화문**·**덕수궁** 두 곳만 조회 가능하고, 나머지 tool은 최대 **5건**까지만 반환됩니다. 샘플 모드 응답에는 이 제약을 알리는 안내가 항상 포함됩니다.
+`SEOUL_API_KEY`를 설정하지 않으면 서버는 내장된 `sample` 키로 동작합니다. 이 경우 `citydata` 계열 tool(`get_city_snapshot`, `get_population`, `get_commercial_activity`, `get_road_traffic`, `get_weather`, `get_disaster_alerts`)은 **광화문·덕수궁** 단일 핫스팟 1곳만 조회 가능하고, 나머지 tool은 최대 **5건**까지만 반환됩니다. 샘플 모드 응답에는 이 제약을 알리는 안내가 항상 포함됩니다.
 
 인증키는 총 2종입니다.
 

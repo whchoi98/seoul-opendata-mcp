@@ -5,7 +5,7 @@
 
 ## Key Files
 - `util.ts` - 공용 헬퍼: `toArray()`, `num()`(숫자 강제 변환, 실패 시 `null`), `KEY_GUIDE`.
-- `citydata.ts` - 가장 큰 파일. `extractSnapshot`, `extractDisasterAlerts` (citydata 통합 봉투 분해).
+- `citydata.ts` - 가장 큰 파일. `extractSnapshot`, `extractDisasterAlerts`, `extractRoadTraffic`, `extractWeather` (citydata 통합 봉투 분해).
 - `population.ts`, `commercial.ts`, `subway.ts`, `bike.ts`, `parking.ts`, `air.ts`, `culture.ts`, `stats.ts`, `health.ts` - 도메인별 정규화 함수.
 
 ## Rules

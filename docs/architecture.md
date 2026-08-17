@@ -35,13 +35,13 @@ It wraps two upstream HTTP APIs — the general Seoul Open Data Plaza (`openapi.
 - **`src/tools/{common,population,traffic,culture,environment,stats,health,meta}.ts`** -- The 19 MCP tools grouped by domain: place/snapshot/alerts, population/commercial, subway/bike/parking/road, cultural events, air/weather, subway-ridership/living-population/real-estate, pharmacies, and the generic dataset-catalog trio.
 - **`src/tools/envelope.ts`** (`ok`/`fail`) -- The single response shape every tool returns, `{data, asOf, source, notes[]}`, with a sample-mode note appended automatically whenever `ctx.client.isSample` is true.
 - **`src/tools/resolve.ts`** (`resolvePlace`) -- Shared place-resolution helper used by every `citydata`-family tool; returns an early "candidates" response instead of an error when a place name is ambiguous or unmatched.
-- **`src/data/catalog.ts`** (`CATALOG`, `searchCatalog`, `validateCall`) -- The 28-dataset hybrid catalog behind `search_dataset`/`get_dataset_spec`/`call_dataset`: 8 datasets that also have a dedicated tool, 15 catalog-only datasets, and 1 non-callable entry (`LIVE_DST_MESSAGE`, surfaced only through `get_disaster_alerts`).
+- **`src/data/catalog.ts`** (`CATALOG`, `searchCatalog`, `validateCall`) -- The 28-dataset hybrid catalog behind `search_dataset`/`get_dataset_spec`/`call_dataset`: 13 datasets with a dedicated tool (12 of which are also callable via `call_dataset`, plus 1 non-callable entry, `LIVE_DST_MESSAGE`, surfaced only through `get_disaster_alerts`), and 15 catalog-only datasets.
 
 ### Security Layer
 
 - **`SEOUL_API_KEY` / `SEOUL_SUBWAY_API_KEY`** -- Two keys read from `process.env` (or a local `.env` via `loadDotEnv`). `SeoulApiClient`'s constructor falls the subway key back to the general key when `SEOUL_SUBWAY_API_KEY` is unset.
 - **Key masking** -- `maskedKey()` / `maskedSubwayKey()` only ever expose the first 4 characters (or the literal `sample`); every error message that embeds the key (HTTP or network failures) uses the masked form, never the raw key.
-- **Sample-mode fallback** -- When no key is set, `SeoulApiClient.isSample` is `true` and the internal key becomes the literal `sample`: `citydata`-family requests are clamped to `광화문·덕수궁` only, general-API requests are capped at 5 rows (`fetchUnwrapped` clamps `end` to `start + 4`), and every affected tool response carries a `SAMPLE_NOTE` (with the key-signup URL) via the shared `ok()` envelope.
+- **Sample-mode fallback** -- When no key is set, `SeoulApiClient.isSample` is `true` and the internal key becomes the literal `sample`: `citydata`-family requests are clamped to the single `광화문·덕수궁` hotspot, and every request made with the active `sample` key -- subway included -- is clamped to at most 5 rows (`fetchUnwrapped` clamps `end` to `start + 4`), and every affected tool response carries a `SAMPLE_NOTE` (with the key-signup URL) via the shared `ok()` envelope.
 - **`manifest.json` `user_config`** -- Declares both keys as `sensitive: true`, optional inputs for the MCPB one-click installer, so neither key is ever embedded in the bundled package.
 
 ## Full Architecture Diagram
@@ -91,11 +91,11 @@ flowchart LR
 
 ## Key Design Decisions
 
-- **Fixtures are truth** -- Capture real upstream responses once (`scripts/capture-fixtures.ts`) into `tests/fixtures/*.json|xml` and treat them as immutable inputs rather than hand-written mocks, so every `normalize/*` mapper is verified against an actual upstream shape instead of an assumption about it.
+- **Fixtures are truth** -- Capture real upstream responses once (`scripts/capture-fixtures.ts`) into `tests/fixtures/*.json|xml` and treat them as immutable inputs rather than hand-written mocks, so every `normalize/*` mapper is verified against an actual upstream shape instead of an assumption about it. Recorded as [ADR-001](decisions/ADR-001-fixtures-as-source-of-truth.md).
 - **Single-key default, dual-key override** -- Require only `SEOUL_API_KEY` for every tool, and treat `SEOUL_SUBWAY_API_KEY` as an optional override that falls back to the general key when unset, so most users request exactly one credential while the subway-specific quota can still be isolated when needed.
 - **Congestion is a relative indicator, not a raw count** -- Expose card-payment-based commercial activity and population as categorical levels (`한산한`→`분주한`, `여유`→`붐빔`) with an explicit "not a full census" note in the tool response, because the underlying feed is a payment/telecom sample, not an exhaustive count, and presenting it as an absolute figure would overstate its precision.
-- **Catalog hybrid over one-tool-per-dataset** -- Give 8 high-traffic datasets a dedicated, fully-typed tool and expose the remaining 20 datasets through a 3-tool generic trio (`search_dataset` / `get_dataset_spec` / `call_dataset`), avoiding the "thousands of tools" anti-pattern where every raw dataset would need its own MCP tool and schema.
-- **One HTTP code path for every service** -- Route every upstream call (JSON, XML, subway) through the same `fetchUnwrapped()` → cache → `unwrap()` pipeline in `SeoulApiClient`, so caching, retry, sample-mode clamping, and envelope normalization are implemented and tested exactly once instead of per-tool.
+- **Catalog hybrid over one-tool-per-dataset** -- Promote 12 high-traffic datasets to a dedicated, fully-typed, normalized tool (plus 1 tool-only, non-`call_dataset`-callable entry for disaster alerts), and expose the remaining 15 datasets through a 3-tool generic trio (`search_dataset` / `get_dataset_spec` / `call_dataset`), avoiding the "thousands of tools" anti-pattern where every raw dataset would need its own MCP tool and schema. Recorded as [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md).
+- **One HTTP code path for every service** -- Route every upstream call (JSON, XML, subway) through the same `fetchUnwrapped()` → cache → `unwrap()` pipeline in `SeoulApiClient`, so caching, retry, sample-mode clamping, and envelope normalization are implemented and tested exactly once instead of per-tool. Recorded as [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md).
 
 ## Operations
 
@@ -106,7 +106,7 @@ Given this architecture, the two most likely first runbooks are:
 - A **key rotation / sample-mode diagnosis** runbook (Security Layer) -- what to check when a tool response unexpectedly carries the sample-mode note or an `INFO-100`/key-related `SeoulApiError`.
 - An **MCPB bundle-and-release** runbook -- the `npm run build` -> `npm run bundle` -> `npm run prepublishOnly` sequence used to produce `seoul-opendata-mcp.mcpb` and the npm package.
 
-Related architectural decisions, once recorded, belong under `docs/decisions/` -- see [`docs/decisions/.template.md`](decisions/.template.md).
+Related architectural decisions are recorded under `docs/decisions/` -- see [ADR-001](decisions/ADR-001-fixtures-as-source-of-truth.md), [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md), and [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md); use [`docs/decisions/.template.md`](decisions/.template.md) to add a new one.
 
 ---
 
@@ -140,13 +140,13 @@ Related architectural decisions, once recorded, belong under `docs/decisions/` -
 - **`src/tools/{common,population,traffic,culture,environment,stats,health,meta}.ts`** -- 도메인별로 그룹화된 19개 MCP tool입니다: 장소/스냅샷/재난문자, 인구/상권, 지하철/따릉이/주차/도로, 문화행사, 대기질/날씨, 지하철승하차/생활인구/부동산실거래가, 약국, 그리고 범용 데이터셋 카탈로그 3종입니다.
 - **`src/tools/envelope.ts`** (`ok`/`fail`) -- 모든 tool이 반환하는 단일 응답 형태 `{data, asOf, source, notes[]}`이며, `ctx.client.isSample`이 `true`일 때 샘플 모드 안내를 자동으로 추가합니다.
 - **`src/tools/resolve.ts`** (`resolvePlace`) -- 모든 `citydata` 계열 tool이 공유하는 장소 확정 헬퍼로, 장소명이 모호하거나 매칭되지 않을 때 에러 대신 "candidates" 응답을 조기 반환합니다.
-- **`src/data/catalog.ts`** (`CATALOG`, `searchCatalog`, `validateCall`) -- `search_dataset`/`get_dataset_spec`/`call_dataset` 뒤에 있는 28개 데이터셋 하이브리드 카탈로그입니다: 정식 tool도 보유한 8종, 카탈로그 전용 15종, 그리고 직접 호출 불가 항목 1종(`LIVE_DST_MESSAGE`, `get_disaster_alerts`를 통해서만 노출)로 구성됩니다.
+- **`src/data/catalog.ts`** (`CATALOG`, `searchCatalog`, `validateCall`) -- `search_dataset`/`get_dataset_spec`/`call_dataset` 뒤에 있는 28개 데이터셋 하이브리드 카탈로그입니다: 정식 tool을 보유한 13종(이 중 12종은 `call_dataset`으로도 호출 가능, 나머지 1종인 `LIVE_DST_MESSAGE`는 `get_disaster_alerts`를 통해서만 노출되는 직접 호출 불가 항목), 그리고 카탈로그 전용 15종으로 구성됩니다.
 
 ### Security Layer (보안 계층)
 
 - **`SEOUL_API_KEY` / `SEOUL_SUBWAY_API_KEY`** -- `process.env`(또는 `loadDotEnv`를 통한 로컬 `.env`)에서 읽는 두 종류의 키입니다. `SeoulApiClient` 생성자는 `SEOUL_SUBWAY_API_KEY`가 미설정이면 지하철 키를 일반 키로 폴백시킵니다.
 - **키 마스킹** -- `maskedKey()` / `maskedSubwayKey()`는 항상 앞 4글자(또는 리터럴 `sample`)만 노출합니다. 키를 포함하는 모든 에러 메시지(HTTP/네트워크 오류)는 원본 키가 아닌 마스킹된 형태만 사용합니다.
-- **샘플 모드 폴백** -- 키가 설정되지 않으면 `SeoulApiClient.isSample`이 `true`가 되고 내부 키는 리터럴 `sample`이 됩니다: `citydata` 계열 요청은 `광화문·덕수궁`으로만 제한되고, 일반 API 요청은 5행으로 제한됩니다(`fetchUnwrapped`가 `end`를 `start + 4`로 클램프). 영향을 받는 모든 tool 응답에는 공용 `ok()` 봉투를 통해 `SAMPLE_NOTE`(키 발급 URL 포함)가 붙습니다.
+- **샘플 모드 폴백** -- 키가 설정되지 않으면 `SeoulApiClient.isSample`이 `true`가 되고 내부 키는 리터럴 `sample`이 됩니다: `citydata` 계열 요청은 `광화문·덕수궁` 단일 핫스팟으로만 제한되고, 샘플 키가 활성인 모든 요청은 지하철을 포함해 5행으로 클램프됩니다(`fetchUnwrapped`가 `end`를 `start + 4`로 클램프). 영향을 받는 모든 tool 응답에는 공용 `ok()` 봉투를 통해 `SAMPLE_NOTE`(키 발급 URL 포함)가 붙습니다.
 - **`manifest.json` `user_config`** -- 두 키를 모두 `sensitive: true`인 선택적(optional) 입력으로 선언하여, MCPB 원클릭 설치 패키지에 키가 내장되지 않도록 합니다.
 
 ## 전체 아키텍처 다이어그램
@@ -196,11 +196,11 @@ flowchart LR
 
 ## 주요 설계 결정
 
-- **픽스처가 진실이다** -- 실제 업스트림 응답을 한 번 캡처(`scripts/capture-fixtures.ts`)하여 `tests/fixtures/*.json|xml`을 불변 입력으로 취급하고, 손으로 작성한 목(mock)을 쓰지 않습니다. 이를 통해 모든 `normalize/*` 매퍼가 업스트림 형태에 대한 가정이 아니라 실제 형태로 검증됩니다.
+- **픽스처가 진실이다** -- 실제 업스트림 응답을 한 번 캡처(`scripts/capture-fixtures.ts`)하여 `tests/fixtures/*.json|xml`을 불변 입력으로 취급하고, 손으로 작성한 목(mock)을 쓰지 않습니다. 이를 통해 모든 `normalize/*` 매퍼가 업스트림 형태에 대한 가정이 아니라 실제 형태로 검증됩니다. [ADR-001](decisions/ADR-001-fixtures-as-source-of-truth.md)로 기록되어 있습니다.
 - **단일 키 기본, 이중 키는 선택적 오버라이드** -- 모든 tool은 기본적으로 `SEOUL_API_KEY` 하나만 요구하고, `SEOUL_SUBWAY_API_KEY`는 미설정 시 일반 키로 폴백되는 선택적 오버라이드로 취급합니다. 대부분의 사용자는 키 하나만 발급받으면 되고, 필요할 때만 지하철 전용 쿼터를 분리할 수 있습니다.
 - **혼잡도는 절대값이 아니라 상대 지표다** -- 카드 결제 기반 상권 현황과 인구를 절대 수치가 아니라 범주형 수준(`한산한`→`분주한`, `여유`→`붐빔`)으로 노출하고, tool 응답에 "전수 데이터가 아니다"라는 안내를 명시적으로 포함합니다. 근본 데이터가 결제/통신 표본이며 전수 집계가 아니므로, 절대값으로 제시하면 실제보다 정밀한 것처럼 오해를 줄 수 있기 때문입니다.
-- **데이터셋마다 tool을 만들지 않는 카탈로그 하이브리드** -- 트래픽이 많은 8개 데이터셋에는 전용 타입 tool을 제공하고, 나머지 20개 데이터셋은 3개의 범용 tool(`search_dataset` / `get_dataset_spec` / `call_dataset`)로 노출합니다. 모든 원본 데이터셋마다 별도의 MCP tool과 스키마가 필요해지는 "수천 개 tool" 안티패턴을 피하기 위한 결정입니다.
-- **모든 서비스가 거치는 단 하나의 HTTP 경로** -- JSON, XML, 지하철 호출 전부를 `SeoulApiClient` 내 동일한 `fetchUnwrapped()` → 캐시 → `unwrap()` 파이프라인으로 라우팅합니다. 이를 통해 캐싱, 재시도, 샘플 모드 클램핑, 봉투 정규화를 tool마다 반복 구현·검증하지 않고 한 곳에서만 구현·검증합니다.
+- **데이터셋마다 tool을 만들지 않는 카탈로그 하이브리드** -- 트래픽이 많은 12개 데이터셋은 전용 타입 정규화 tool로 승격시키고(재난문자는 `call_dataset`으로 호출할 수 없는 tool 전용 1건 추가), 나머지 15개 데이터셋은 3개의 범용 tool(`search_dataset` / `get_dataset_spec` / `call_dataset`)로 노출합니다. 모든 원본 데이터셋마다 별도의 MCP tool과 스키마가 필요해지는 "수천 개 tool" 안티패턴을 피하기 위한 결정입니다. [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md)로 기록되어 있습니다.
+- **모든 서비스가 거치는 단 하나의 HTTP 경로** -- JSON, XML, 지하철 호출 전부를 `SeoulApiClient` 내 동일한 `fetchUnwrapped()` → 캐시 → `unwrap()` 파이프라인으로 라우팅합니다. 이를 통해 캐싱, 재시도, 샘플 모드 클램핑, 봉투 정규화를 tool마다 반복 구현·검증하지 않고 한 곳에서만 구현·검증합니다. [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md)로 기록되어 있습니다.
 
 ## 운영
 
@@ -211,4 +211,4 @@ flowchart LR
 - **키 회전 / 샘플 모드 진단** 런북(보안 계층) -- tool 응답에 예기치 않게 샘플 모드 안내나 `INFO-100` 등 키 관련 `SeoulApiError`가 나타날 때 확인할 사항.
 - **MCPB 번들·릴리스** 런북 -- `seoul-opendata-mcp.mcpb`와 npm 패키지를 만드는 `npm run build` → `npm run bundle` → `npm run prepublishOnly` 절차.
 
-기록될 관련 아키텍처 결정은 `docs/decisions/` 아래에 남깁니다 -- [`docs/decisions/.template.md`](decisions/.template.md)를 참고하세요.
+관련 아키텍처 결정은 `docs/decisions/` 아래에 기록되어 있습니다 -- [ADR-001](decisions/ADR-001-fixtures-as-source-of-truth.md), [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md), [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md)을 참고하세요. 새 결정을 추가할 때는 [`docs/decisions/.template.md`](decisions/.template.md)를 사용합니다.

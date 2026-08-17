@@ -27,7 +27,7 @@ The agent/LLM layer is everything in this codebase written specifically to be re
 - Prefer an "early candidates" return over a thrown error for ambiguous input (`resolvePlace`), so an agent can self-correct within the same tool-call loop instead of surfacing a hard failure to the end user.
 - Prefer a small number of generic, composable tools (`search_dataset` → `get_dataset_spec` → `call_dataset`) over one tool per dataset, keeping the tool list within what a model can reliably reason about while still exposing all 28 datasets (see the "Catalog hybrid" decision in `docs/architecture.md`).
 - Always explain a limited or empty result in `notes[]` (sample mode, unsupported place, no data for date) rather than returning a bare empty array, so the agent has enough context to explain the limitation to the user instead of guessing at a cause.
-- No ADRs are recorded yet for these decisions — see `docs/decisions/.template.md`.
+- The "Catalog hybrid" decision behind the `search_dataset`/`get_dataset_spec`/`call_dataset` trio is recorded as [ADR-002](../decisions/ADR-002-hybrid-tool-exposure.md).
 
 ### 4. Code Pointers
 
@@ -36,13 +36,13 @@ The agent/LLM layer is everything in this codebase written specifically to be re
 - `src/tools/envelope.ts:5-10` — `ok()`, the `notes[]` channel
 - `src/tools/meta.ts:23-121` — the `search_dataset`/`get_dataset_spec`/`call_dataset` trio
 - `src/data/placeMatcher.ts:4-19` — `ALIASES` casual-name table
-- `src/data/placeMatcher.ts:40-56` — `searchPlace()` exact/alias/partial/fuzzy resolution order
+- `src/data/placeMatcher.ts:38-62` — `searchPlace()` exact/alias/partial/fuzzy resolution order
 - `src/normalize/population.ts:27` — `congestionLevel` categorical field
 - `src/normalize/commercial.ts:18` — `level` categorical field
 
 ### 5. Cross-references
 - Related modules: `src/tools/envelope.ts`, `src/data/hotspots.ts`
-- Related ADRs: none recorded yet
+- Related ADRs: [ADR-002](../decisions/ADR-002-hybrid-tool-exposure.md) (hybrid tool exposure)
 - Related runbooks: none recorded yet — see `docs/architecture.md` Operations section
 
 <a id="korean"></a>
@@ -69,7 +69,7 @@ Agent · LLM 계층은 이 코드베이스에서 사람 개발자가 아니라 L
 - 모호한 입력에 대해 예외를 던지는 대신 "조기 candidates" 반환을 우선합니다(`resolvePlace`). 이를 통해 에이전트는 최종 사용자에게 실패를 노출하지 않고 같은 tool 호출 루프 안에서 스스로 교정할 수 있습니다.
 - 데이터셋마다 tool을 만드는 대신 소수의 범용·조합 가능한 tool(`search_dataset` → `get_dataset_spec` → `call_dataset`)을 우선합니다. 이를 통해 모델이 신뢰성 있게 추론할 수 있는 tool 개수를 유지하면서도 28개 데이터셋 전체를 노출합니다(`docs/architecture.md`의 "카탈로그 하이브리드" 결정 참고).
 - 제한적이거나 빈 결과는 항상 `notes[]`에서 설명합니다(샘플 모드, 미지원 장소, 해당 날짜 데이터 없음 등). 빈 배열만 반환하지 않음으로써 에이전트가 원인을 추측하지 않고 사용자에게 제한 사항을 설명할 수 있는 맥락을 갖게 합니다.
-- 위 결정들에 대한 ADR은 아직 기록되지 않았습니다 -- `docs/decisions/.template.md` 참고.
+- `search_dataset`/`get_dataset_spec`/`call_dataset` 트리오의 "카탈로그 하이브리드" 결정은 [ADR-002](../decisions/ADR-002-hybrid-tool-exposure.md)로 기록되어 있습니다.
 
 ### 4. 코드 포인터
 
@@ -78,11 +78,11 @@ Agent · LLM 계층은 이 코드베이스에서 사람 개발자가 아니라 L
 - `src/tools/envelope.ts:5-10` -- `ok()`, `notes[]` 채널
 - `src/tools/meta.ts:23-121` -- `search_dataset`/`get_dataset_spec`/`call_dataset` 트리오
 - `src/data/placeMatcher.ts:4-19` -- 편한 이름을 위한 `ALIASES` 테이블
-- `src/data/placeMatcher.ts:40-56` -- `searchPlace()`의 정확일치/별칭/부분일치/유사도 확정 순서
+- `src/data/placeMatcher.ts:38-62` -- `searchPlace()`의 정확일치/별칭/부분일치/유사도 확정 순서
 - `src/normalize/population.ts:27` -- `congestionLevel` 범주형 필드
 - `src/normalize/commercial.ts:18` -- `level` 범주형 필드
 
 ### 5. 상호 참조
 - 관련 모듈: `src/tools/envelope.ts`, `src/data/hotspots.ts`
-- 관련 ADR: 아직 없음
+- 관련 ADR: [ADR-002](../decisions/ADR-002-hybrid-tool-exposure.md) (하이브리드 tool 노출)
 - 관련 런북: 아직 없음 -- `docs/architecture.md`의 운영 절 참고
