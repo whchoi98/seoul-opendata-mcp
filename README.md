@@ -75,8 +75,39 @@ Restart Claude Desktop and the 19 tools below become available.
 
 ### Claude Code
 
+> The `.mcpb` bundle is for Claude Desktop (the chat app) only. For Claude Code (CLI and desktop app), install as below — register once in the terminal and the same server is available in the Claude Code desktop app as well.
+
+#### Install from source
+
 ```bash
-claude mcp add seoul-opendata -e SEOUL_API_KEY=YOUR_KEY -- npx -y seoul-opendata-mcp
+git clone https://github.com/whchoi98/seoul-opendata-mcp.git && cd seoul-opendata-mcp
+npm install && npm run build
+
+claude mcp add seoul-opendata \
+  -e SEOUL_API_KEY=YOUR_KEY \
+  -e SEOUL_SUBWAY_API_KEY=YOUR_SUBWAY_KEY \
+  --scope user \
+  -- node $(pwd)/dist/index.js
+```
+
+- `SEOUL_API_KEY` — issued free at data.seoul.go.kr. Leave empty for sample mode (single 광화문·덕수궁 hotspot only)
+- `SEOUL_SUBWAY_API_KEY` — dedicated key for realtime subway arrivals (optional). Falls back to `SEOUL_API_KEY` when empty
+- `--scope user` — available in every project. Omit it to register for the current project only (default: local)
+
+#### Verify the installation
+
+```bash
+claude mcp list          # look for ✓ seoul-opendata
+```
+
+Run `/mcp` inside a Claude Code session (desktop app included) to confirm the 19 tools are loaded, then test with "지금 강남역 지하철 도착 알려줘".
+
+#### Import from Claude Desktop (macOS/WSL)
+
+If the server is already installed in Claude Desktop, import the configuration as-is:
+
+```bash
+claude mcp add-from-claude-desktop
 ```
 
 ### Codex CLI
@@ -106,16 +137,6 @@ The server is saved to `~/.kiro/settings/mcp.json` (use `--scope workspace` for 
 ### One-click (MCPB)
 
 Download the `.mcpb` bundle from the [latest release](https://github.com/whchoi98/seoul-opendata-mcp/releases/latest) and double-click it — Claude Desktop installs the server with no terminal required.
-
-### From Source
-
-```bash
-git clone https://github.com/whchoi98/seoul-opendata-mcp.git
-cd seoul-opendata-mcp
-npm install
-npm run build
-claude mcp add seoul-opendata -e SEOUL_API_KEY=YOUR_KEY -- node dist/index.js
-```
 
 ## Getting API Keys (5 minutes)
 
@@ -324,8 +345,39 @@ Claude Desktop을 재시작하면 아래 19개 tool을 바로 사용할 수 있�
 
 ### Claude Code
 
+> `.mcpb` 파일은 Claude Desktop(채팅 앱) 전용입니다. Claude Code(CLI 및 데스크톱 앱)는 아래 방법으로 설치하세요. 터미널에서 한 번 등록하면 Claude Code 데스크톱 앱에서도 동일하게 사용할 수 있습니다.
+
+#### 소스에서 설치
+
 ```bash
-claude mcp add seoul-opendata -e SEOUL_API_KEY=YOUR_KEY -- npx -y seoul-opendata-mcp
+git clone https://github.com/whchoi98/seoul-opendata-mcp.git && cd seoul-opendata-mcp
+npm install && npm run build
+
+claude mcp add seoul-opendata \
+  -e SEOUL_API_KEY=YOUR_KEY \
+  -e SEOUL_SUBWAY_API_KEY=YOUR_SUBWAY_KEY \
+  --scope user \
+  -- node $(pwd)/dist/index.js
+```
+
+- `SEOUL_API_KEY` — data.seoul.go.kr에서 무료 발급. 비우면 샘플 모드(광화문·덕수궁 단일 핫스팟 한정)로 동작
+- `SEOUL_SUBWAY_API_KEY` — 지하철 실시간 도착 전용 키(선택). 비우면 `SEOUL_API_KEY`로 폴백
+- `--scope user` — 모든 프로젝트에서 사용. 현재 프로젝트에서만 쓰려면 생략(기본값 local)
+
+#### 설치 확인
+
+```bash
+claude mcp list          # ✓ seoul-opendata 표시 확인
+```
+
+Claude Code 세션(데스크톱 앱 포함)에서 `/mcp`를 실행하면 19개 tool이 로드된 것을 확인할 수 있습니다. "지금 강남역 지하철 도착 알려줘"로 동작을 테스트하세요.
+
+#### Claude Desktop에서 가져오기 (macOS/WSL)
+
+Claude Desktop에 이미 설치한 경우 구성을 그대로 가져올 수 있습니다.
+
+```bash
+claude mcp add-from-claude-desktop
 ```
 
 ### Codex CLI
@@ -355,16 +407,6 @@ kiro-cli mcp add --name seoul-opendata --command npx --args "-y,seoul-opendata-m
 ### 원클릭 설치 (MCPB)
 
 [최신 릴리스](https://github.com/whchoi98/seoul-opendata-mcp/releases/latest)에서 `.mcpb` 파일을 내려받아 더블클릭하면, 터미널 없이 Claude Desktop에 서버가 설치됩니다.
-
-### 소스에서 설치
-
-```bash
-git clone https://github.com/whchoi98/seoul-opendata-mcp.git
-cd seoul-opendata-mcp
-npm install
-npm run build
-claude mcp add seoul-opendata -e SEOUL_API_KEY=YOUR_KEY -- node dist/index.js
-```
 
 ## API 키 발급 (5분)
 
