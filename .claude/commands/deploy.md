@@ -45,6 +45,17 @@ npm run bundle
 - `dist/` 디렉토리 생성
 - `seoul-opendata-mcp.mcpb` 파일 생성 (MCPB 번들)
 
+**번들 실행 스모크 (필수 — 파일 존재 확인만으로는 부족):** 번들을 임시 디렉토리에 언팩한 뒤 실제로 실행해 tools/list가 19개를 반환하는지 확인한다. v0.2.0에서 `.mcpbignore`의 비앵커 `src/` 패턴이 의존성 내부 `node_modules/*/src/`까지 제거해, 파일 검사는 통과했지만 실행 즉시 죽는 번들이 배포된 사례가 있다(ignore 패턴은 반드시 `/src/`처럼 루트 앵커로 쓸 것).
+
+```bash
+npx @anthropic-ai/mcpb unpack seoul-opendata-mcp.mcpb /tmp/bundle-smoke
+cd /tmp/bundle-smoke && printf '%s\n' \
+ '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' \
+ '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+ '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+ | node dist/index.js | tail -1 | grep -o '"name"' | wc -l   # 19이어야 함
+```
+
 ## Step 4: npm에 발행
 
 ```bash
