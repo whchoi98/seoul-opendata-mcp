@@ -6,12 +6,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/whchoi98/Seoul-OpenData-MCP.git"
+    "url": "git+https://github.com/whchoi98/seoul-opendata-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/whchoi98/Seoul-OpenData-MCP/issues"
+    "url": "https://github.com/whchoi98/seoul-opendata-mcp/issues"
   },
-  "homepage": "https://github.com/whchoi98/Seoul-OpenData-MCP#readme",
+  "homepage": "https://github.com/whchoi98/seoul-opendata-mcp#readme",
   "bin": { "seoul-opendata-mcp": "dist/index.js" },
   "main": "dist/index.js",
   "files": ["dist", "README.md", "README.ko.md", "LICENSE"],

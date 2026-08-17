@@ -46,9 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add an XML error fallback for JSON endpoints
 - Fall back to sample mode when the API key is empty
 
-[Unreleased]: https://github.com/whchoi98/Seoul-OpenData-MCP/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/whchoi98/Seoul-OpenData-MCP/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/whchoi98/Seoul-OpenData-MCP/releases/tag/v0.1.0
+[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/whchoi98/seoul-opendata-mcp/releases/tag/v0.1.0
 
 ---
 
@@ -93,6 +93,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON 엔드포인트에 대한 XML 에러 응답 폴백 처리 추가
 - API 키가 비어 있을 때 sample 모드로 폴백하도록 수정
 
-[Unreleased]: https://github.com/whchoi98/Seoul-OpenData-MCP/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/whchoi98/Seoul-OpenData-MCP/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/whchoi98/Seoul-OpenData-MCP/releases/tag/v0.1.0
+[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/whchoi98/seoul-opendata-mcp/releases/tag/v0.1.0

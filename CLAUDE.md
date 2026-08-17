@@ -1,7 +1,7 @@
 # Project Context
 
 ## Overview
-seoul-opendata-mcp(v0.2.0, MIT)는 서울 열린데이터광장(Seoul Open Data Plaza) 실시간 도시데이터를 19개 MCP tool로 stdio를 통해 제공하는 MCP 서버입니다. GitHub: whchoi98/Seoul-OpenData-MCP (원격 미푸시).
+seoul-opendata-mcp(v0.2.0, MIT)는 서울 열린데이터광장(Seoul Open Data Plaza) 실시간 도시데이터를 19개 MCP tool로 stdio를 통해 제공하는 MCP 서버입니다. GitHub: whchoi98/seoul-opendata-mcp (원격 미푸시).
 
 ## Tech Stack
 - TypeScript(strict, ESM), Node.js >=18
