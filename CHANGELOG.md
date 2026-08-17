@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-17
+
+### Added
+
+- Codex CLI and Kiro CLI setup instructions in the README
+- Architecture Decision Records (ADR-001 fixtures-as-truth, ADR-002 hybrid tool exposure, ADR-003 single HTTP path and dual keys) and a full docs set (architecture, onboarding, API reference)
+
+### Changed
+
+- Restructure the README as a single bilingual document with an expanded Claude Code install guide (dual keys, user scope, Claude Desktop import)
+- Lowercase the GitHub repository URL (`whchoi98/seoul-opendata-mcp`)
+
+### Fixed
+
+- **MCPB bundle was fatally broken at runtime** — unanchored `src/` pattern in `.mcpbignore` stripped `node_modules/*/src` (including `fast-xml-parser`'s entry point) from the bundle; all ignore patterns are now root-anchored and the release pipeline verifies the unpacked bundle by executing it
+
 ## [0.2.0] - 2026-08-16
 
 ### Added
@@ -46,7 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add an XML error fallback for JSON endpoints
 - Fall back to sample mode when the API key is empty
 
-[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/whchoi98/seoul-opendata-mcp/releases/tag/v0.1.0
 
@@ -61,6 +78,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 따릅니다.
 
 ## [Unreleased]
+
+## [0.3.0] - 2026-08-17
+
+### Added
+
+- README에 Codex CLI·Kiro CLI 설치 안내 추가
+- 아키텍처 결정 기록 3건(ADR-001 픽스처 원칙, ADR-002 하이브리드 도구 노출, ADR-003 단일 HTTP 경로·키 2종) 및 문서 세트(아키텍처, 온보딩, API 레퍼런스) 추가
+
+### Changed
+
+- README를 단일 이중 언어 문서로 개편, Claude Code 설치 안내 확장(키 2종·user scope·Claude Desktop 가져오기)
+- GitHub 저장소 URL 소문자 통일(`whchoi98/seoul-opendata-mcp`)
+
+### Fixed
+
+- **MCPB 번들 런타임 치명 결함 수정** — `.mcpbignore`의 비앵커 `src/` 패턴이 번들에서 `node_modules/*/src`(fast-xml-parser 진입점 포함)를 제거하던 문제. 전 패턴 루트 앵커화 및 릴리스 파이프라인에 언팩 번들 실행 검증 추가
 
 ## [0.2.0] - 2026-08-16
 
@@ -93,6 +126,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON 엔드포인트에 대한 XML 에러 응답 폴백 처리 추가
 - API 키가 비어 있을 때 sample 모드로 폴백하도록 수정
 
-[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/whchoi98/seoul-opendata-mcp/releases/tag/v0.1.0

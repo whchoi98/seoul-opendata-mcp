@@ -1,6 +1,6 @@
 {
   "name": "seoul-opendata-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MCP server for Seoul Open Data Plaza real-time city APIs (서울 열린데이터광장 실시간 도시데이터 MCP 서버)",
   "type": "module",
   "license": "MIT",

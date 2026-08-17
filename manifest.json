@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "seoul-opendata-mcp",
   "display_name": "Seoul Open Data",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Real-time Seoul city data across 19 tools: congestion, population forecast, commercial activity, transit, weather, events, statistics, pharmacies, and a raw dataset catalog. 서울 실시간 도시데이터 MCP 서버 (19개 tool).",
   "author": { "name": "whchoi98" },
   "license": "MIT",
