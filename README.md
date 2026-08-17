@@ -79,6 +79,30 @@ Restart Claude Desktop and the 19 tools below become available.
 claude mcp add seoul-opendata -e SEOUL_API_KEY=YOUR_KEY -- npx -y seoul-opendata-mcp
 ```
 
+### Codex CLI
+
+```bash
+codex mcp add seoul-opendata --env SEOUL_API_KEY=YOUR_KEY -- npx -y seoul-opendata-mcp
+```
+
+Or add it directly to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.seoul-opendata]
+command = "npx"
+args = ["-y", "seoul-opendata-mcp"]
+env = { SEOUL_API_KEY = "YOUR_KEY" }
+```
+
+### Kiro CLI
+
+```bash
+kiro-cli mcp add --name seoul-opendata --command npx --args "-y,seoul-opendata-mcp" \
+  --env SEOUL_API_KEY=YOUR_KEY --scope global
+```
+
+The server is saved to `~/.kiro/settings/mcp.json` (use `--scope workspace` for a per-project setup). Verify with `kiro-cli mcp list`.
+
 ### One-click (MCPB)
 
 Download the `.mcpb` bundle from the [latest release](https://github.com/whchoi98/seoul-opendata-mcp/releases/latest) and double-click it — Claude Desktop installs the server with no terminal required.
@@ -303,6 +327,30 @@ Claude Desktop을 재시작하면 아래 19개 tool을 바로 사용할 수 있�
 ```bash
 claude mcp add seoul-opendata -e SEOUL_API_KEY=YOUR_KEY -- npx -y seoul-opendata-mcp
 ```
+
+### Codex CLI
+
+```bash
+codex mcp add seoul-opendata --env SEOUL_API_KEY=YOUR_KEY -- npx -y seoul-opendata-mcp
+```
+
+또는 `~/.codex/config.toml`에 직접 추가할 수 있습니다.
+
+```toml
+[mcp_servers.seoul-opendata]
+command = "npx"
+args = ["-y", "seoul-opendata-mcp"]
+env = { SEOUL_API_KEY = "YOUR_KEY" }
+```
+
+### Kiro CLI
+
+```bash
+kiro-cli mcp add --name seoul-opendata --command npx --args "-y,seoul-opendata-mcp" \
+  --env SEOUL_API_KEY=YOUR_KEY --scope global
+```
+
+서버 설정은 `~/.kiro/settings/mcp.json`에 저장됩니다(프로젝트 단위로 쓰려면 `--scope workspace`). `kiro-cli mcp list`로 등록을 확인할 수 있습니다.
 
 ### 원클릭 설치 (MCPB)
 
