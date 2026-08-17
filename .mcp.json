@@ -1,9 +1,15 @@
 {
-  "mcpServers": {
-    "seoul-opendata-mcp": {
+  "mcpServers": {},
+  "_examples": {
+    "seoul-opendata-mcp (local build)": {
       "command": "node",
       "args": ["dist/index.js"],
-      "env": {}
+      "env": { "SEOUL_API_KEY": "YOUR_KEY", "SEOUL_SUBWAY_API_KEY": "YOUR_SUBWAY_KEY" }
+    },
+    "seoul-opendata-mcp (npx)": {
+      "command": "npx",
+      "args": ["-y", "seoul-opendata-mcp"],
+      "env": { "SEOUL_API_KEY": "YOUR_KEY" }
     }
   }
 }
