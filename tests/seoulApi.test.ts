@@ -118,4 +118,49 @@ describe('SeoulApiClient', () => {
     expect(fetchFn.mock.calls[0][0]).toContain('/SUBKEY/json/')
     expect(fetchFn.mock.calls[0][0]).not.toContain('/GEN/')
   })
+
+  it('SOFT_TTL 정렬: citydata 계열 300s, 배치 통계 24h, 기본 1h', async () => {
+    const { SOFT_TTL, DEFAULT_SOFT_TTL } = await import('../src/client/seoulApi.js')
+    expect(SOFT_TTL['citydata']).toBe(300_000)
+    expect(SOFT_TTL['citydata_ppltn']).toBe(300_000)
+    expect(SOFT_TTL['realtimeStationArrival']).toBe(15_000)
+    expect(SOFT_TTL['CardSubwayStatsNew']).toBe(86_400_000)
+    expect(SOFT_TTL['SPOP_LOCAL_RESD_DONG']).toBe(86_400_000)
+    expect(SOFT_TTL['tbLnOpendataRtmsV']).toBe(21_600_000)
+    expect(SOFT_TTL['culturalEventInfo']).toBe(21_600_000)
+    expect(SOFT_TTL['TbPharmacyOperateInfo']).toBe(86_400_000)
+    expect(SOFT_TTL['AccInfo']).toBe(300_000)
+    expect(SOFT_TTL['TimeAverageAirQuality']).toBe(3_600_000)
+    expect(DEFAULT_SOFT_TTL).toBe(3_600_000)
+  })
+
+  it('stale-while-revalidate: soft 만료 시 stale 즉시 반환 + note + 백그라운드 1회 갱신', async () => {
+    let t = 0
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce(standardPage([{ v: 1 }], 1))
+      .mockResolvedValueOnce(standardPage([{ v: 2 }], 1))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any, now: () => t })
+    await c.getJson('bikeList', 1, 5)                     // 미스 → fetch #1
+    t = 300_001                                            // bikeList soft 300s 초과
+    const stale = await c.getJson('bikeList', 1, 5)        // stale 즉시 반환
+    expect(stale.rows[0].v).toBe(1)
+    expect(stale.note).toContain('캐시된 데이터')
+    await new Promise(r => setTimeout(r, 20))              // 백그라운드 갱신 완료 대기
+    expect(fetchFn).toHaveBeenCalledTimes(2)               // fetch #2 (갱신)
+    const fresh = await c.getJson('bikeList', 1, 5)        // 갱신본이 fresh로 서빙
+    expect(fresh.rows[0].v).toBe(2)
+    expect(fresh.note).toBeUndefined()
+  })
+
+  it('single-flight: 동일 URL 동시 5회 요청은 업스트림 1회', async () => {
+    let resolveFetch!: (r: Response) => void
+    const fetchFn = vi.fn().mockReturnValue(new Promise<Response>(res => { resolveFetch = res }))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any })
+    const calls = Promise.all(Array.from({ length: 5 }, () => c.getJson('bikeList', 1, 5)))
+    await new Promise(r => setTimeout(r, 10))
+    resolveFetch(standardPage([{ a: 1 }], 1))
+    const results = await calls
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(results.every(u => u.rows.length === 1)).toBe(true)
+  })
 })

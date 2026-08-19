@@ -5,11 +5,23 @@ import { unwrap, SeoulApiError, type Unwrapped } from './response.js'
 const OPEN_BASE = 'http://openapi.seoul.go.kr:8088'
 const SUBWAY_BASE = 'http://swopenapi.seoul.go.kr/api/subway'
 
-// 데이터 갱신 주기에 맞춘 캐시 TTL(ms) — Global Constraints 참조
-const TTL: Record<string, number> = {
-  citydata: 60_000, citydata_ppltn: 60_000, citydata_cmrcl: 60_000,
-  bikeList: 300_000, GetParkingInfo: 300_000, RealtimeCityAir: 300_000,
-  culturalEventInfo: 3_600_000, realtimeStationArrival: 15_000,
+export const DEFAULT_SOFT_TTL = 3_600_000
+// 원천 데이터 갱신 주기에 정렬 — 스펙 §5
+export const SOFT_TTL: Record<string, number> = {
+  citydata: 300_000, citydata_ppltn: 300_000, citydata_cmrcl: 300_000,
+  realtimeStationArrival: 15_000,
+  bikeList: 300_000, GetParkingInfo: 300_000, RealtimeCityAir: 300_000, AccInfo: 300_000,
+  culturalEventInfo: 21_600_000,
+  tbLnOpendataRtmsV: 21_600_000, tbLnOpendataRentV: 21_600_000,
+  CardSubwayStatsNew: 86_400_000, CardBusStatisticsServiceNew: 86_400_000,
+  SPOP_LOCAL_RESD_DONG: 86_400_000, SPOP_DAILYSUM_JACHI: 86_400_000,
+  TbPharmacyOperateInfo: 86_400_000, TbHospitalInfo: 86_400_000, ChildCareInfo: 86_400_000,
+  TimeAverageAirQuality: 3_600_000,
+}
+
+/** 기존 note를 보존하며 안내를 병합한 사본 반환 */
+export function withNote(u: Unwrapped, note: string): Unwrapped {
+  return { ...u, note: u.note ? `${u.note} | ${note}` : note }
 }
 
 export interface ClientOptions {
@@ -28,6 +40,8 @@ export class SeoulApiClient {
   private timeoutMs: number
   private cache: CompositeCache
   private xml = new XMLParser({ ignoreDeclaration: true })
+  private inflight = new Map<string, Promise<Unwrapped>>()
+  private nowFn: () => number
 
   constructor(opts: ClientOptions = {}) {
     this.key = (opts.apiKey ?? process.env.SEOUL_API_KEY ?? '').trim() || 'sample'
@@ -36,6 +50,7 @@ export class SeoulApiClient {
     this.fetchFn = opts.fetchFn ?? fetch
     this.timeoutMs = opts.timeoutMs ?? 15_000
     this.cache = new CompositeCache(new InMemoryCache(opts.now), undefined, opts.now ?? Date.now)
+    this.nowFn = opts.now ?? Date.now
   }
 
   maskedKey(): string {
@@ -81,13 +96,34 @@ export class SeoulApiClient {
     // 샘플 키는 요청당 최대 5건 제한(ERROR-335) — 범위를 클램프해 맛보기 모드로 동작시킨다
     if (key === 'sample') end = Math.min(end, start + 4)
     const url = this.buildUrl(base, key, type, service, start, end, path)
+
     const cached = await this.cache.get(url)
     if (cached?.freshness === 'fresh') return cached.entry.value
-    const text = await this.request(url)
-    const payload = type === 'xml' ? this.xml.parse(text) : this.parseJsonWithXmlFallback(service, text)
-    const result = unwrap(service, payload)
-    await this.cache.set(url, result, TTL[service] ?? 60_000)
-    return result
+
+    if (cached) {
+      // stale: 즉시 반환 + 백그라운드 갱신 (실패는 로그만 — 다음 요청이 재시도)
+      void this.fetchFresh(url, type, service).catch(e =>
+        console.error(`[cache] 백그라운드 갱신 실패(${service}): ${(e as Error).message}`))
+      const ageMin = Math.round((this.nowFn() - cached.entry.storedAt) / 60_000)
+      return withNote(cached.entry.value, `캐시된 데이터(약 ${ageMin}분 경과) — 백그라운드 갱신 중`)
+    }
+
+    return this.fetchFresh(url, type, service)
+  }
+
+  /** 실제 업스트림 호출 — 동일 URL 동시 요청은 1회로 병합(single-flight) */
+  private fetchFresh(url: string, type: 'json' | 'xml', service: string): Promise<Unwrapped> {
+    const existing = this.inflight.get(url)
+    if (existing) return existing
+    const p = (async () => {
+      const text = await this.request(url)
+      const payload = type === 'xml' ? this.xml.parse(text) : this.parseJsonWithXmlFallback(service, text)
+      const result = unwrap(service, payload)
+      await this.cache.set(url, result, SOFT_TTL[service] ?? DEFAULT_SOFT_TTL)
+      return result
+    })().finally(() => this.inflight.delete(url))
+    this.inflight.set(url, p)
+    return p
   }
 
   getJson(service: string, start: number, end: number, path: string[] = []) {
