@@ -46,6 +46,18 @@ describe('DynamoDbLedger', () => {
     expect((await l.status('abc'))).toMatchObject({ used: 2, ratio: 0.2 })
     expect([...doc.items.keys()][0]).toMatch(/^quota#abc#\d{8}$/)
   })
+  it('비수치 QUOTA_DAILY_LIMIT은 parseQuotaLimit로 1000 폴백', async () => {
+    const doc = fakeDoc()
+    const oldLimit = process.env.QUOTA_DAILY_LIMIT
+    process.env.QUOTA_DAILY_LIMIT = 'not-a-number'
+    try {
+      const l = new DynamoDbLedger(doc, 'T')
+      expect(l['limit']).toBe(1000)
+    } finally {
+      if (oldLimit === undefined) delete process.env.QUOTA_DAILY_LIMIT
+      else process.env.QUOTA_DAILY_LIMIT = oldLimit
+    }
+  })
 })
 
 describe('maybeAttachL2', () => {
@@ -54,5 +66,26 @@ describe('maybeAttachL2', () => {
     const { maybeAttachL2 } = await import('../src/client/dynamo.js')
     const { SeoulApiClient } = await import('../src/client/seoulApi.js')
     expect(await maybeAttachL2(new SeoulApiClient({ apiKey: 'K', fetchFn: vi.fn() as any }))).toBe(false)
+  })
+  it('L2 연결 실패도 false 반환 + console.error 호출 (에러 경로 커버)', async () => {
+    // DynamoDBClient import를 강제로 실패시킨다
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.env.CACHE_TABLE_NAME = 'test-table'
+    try {
+      // 실제 aws-sdk import 실패가 아닌 구조 검증: catch 블록 커버
+      // maybeAttachL2의 try-catch는 실제 aws-sdk 호출 실패나 attachL2 실패를 처리한다
+      const { maybeAttachL2 } = await import('../src/client/dynamo.js')
+      const { SeoulApiClient } = await import('../src/client/seoulApi.js')
+      // attachL2를 일부러 throw하도록 모킹하면 catch 경로를 탈 수 있다
+      const mockClient = new SeoulApiClient({ apiKey: 'K', fetchFn: vi.fn() as any })
+      mockClient.attachL2 = vi.fn().mockImplementation(() => { throw new Error('mock attach fail') })
+      const result = await maybeAttachL2(mockClient)
+      expect(result).toBe(false)
+      expect(errSpy).toHaveBeenCalled()
+      expect(errSpy.mock.calls.some(c => c[0]?.includes('L2 연결 실패'))).toBe(true)
+    } finally {
+      errSpy.mockRestore()
+      delete process.env.CACHE_TABLE_NAME
+    }
   })
 })

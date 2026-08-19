@@ -18,7 +18,7 @@ export function keyIdOf(apiKey: string): string {
 }
 
 /** 유효하지 않은(비수치·0 이하) 값은 기본 1000으로 폴백 — 예: QUOTA_DAILY_LIMIT=abc */
-function parseQuotaLimit(raw: string | undefined): number {
+export function parseQuotaLimit(raw: string | undefined): number {
   const n = Number(raw ?? 1000)
   return Number.isFinite(n) && n > 0 ? n : 1000
 }

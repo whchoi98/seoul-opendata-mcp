@@ -1,5 +1,5 @@
 import { HARD_TTL_MS, type CacheBackend, type CacheEntry } from './cache.js'
-import { kstDayKey, type QuotaLedger, type QuotaStatus } from './quota.js'
+import { kstDayKey, parseQuotaLimit, type QuotaLedger, type QuotaStatus } from './quota.js'
 import type { SeoulApiClient } from './seoulApi.js'
 
 const MAX_ITEM_BYTES = 380_000 // DynamoDB 400KB 한도 대비 여유
@@ -34,7 +34,7 @@ export class DynamoDbLedger implements QuotaLedger {
   constructor(
     private doc: DocClientLike,
     private table: string,
-    private limit: number = Number(process.env.QUOTA_DAILY_LIMIT ?? 1000),
+    private limit: number = parseQuotaLimit(process.env.QUOTA_DAILY_LIMIT),
     private now: () => number = Date.now,
   ) {}
 
