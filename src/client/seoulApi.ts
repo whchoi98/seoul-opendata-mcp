@@ -1,5 +1,5 @@
 import { XMLParser } from 'fast-xml-parser'
-import { TtlCache } from './cache.js'
+import { CompositeCache, InMemoryCache } from './cache.js'
 import { unwrap, SeoulApiError, type Unwrapped } from './response.js'
 
 const OPEN_BASE = 'http://openapi.seoul.go.kr:8088'
@@ -26,7 +26,7 @@ export class SeoulApiClient {
   private subwayKey: string
   private fetchFn: typeof fetch
   private timeoutMs: number
-  private cache: TtlCache
+  private cache: CompositeCache
   private xml = new XMLParser({ ignoreDeclaration: true })
 
   constructor(opts: ClientOptions = {}) {
@@ -35,7 +35,7 @@ export class SeoulApiClient {
     this.subwayKey = (opts.subwayApiKey ?? process.env.SEOUL_SUBWAY_API_KEY ?? '').trim() || this.key
     this.fetchFn = opts.fetchFn ?? fetch
     this.timeoutMs = opts.timeoutMs ?? 15_000
-    this.cache = new TtlCache(opts.now)
+    this.cache = new CompositeCache(new InMemoryCache(opts.now), undefined, opts.now ?? Date.now)
   }
 
   maskedKey(): string {
@@ -81,12 +81,12 @@ export class SeoulApiClient {
     // 샘플 키는 요청당 최대 5건 제한(ERROR-335) — 범위를 클램프해 맛보기 모드로 동작시킨다
     if (key === 'sample') end = Math.min(end, start + 4)
     const url = this.buildUrl(base, key, type, service, start, end, path)
-    const cached = this.cache.get(url)
-    if (cached) return cached
+    const cached = await this.cache.get(url)
+    if (cached?.freshness === 'fresh') return cached.entry.value
     const text = await this.request(url)
     const payload = type === 'xml' ? this.xml.parse(text) : this.parseJsonWithXmlFallback(service, text)
     const result = unwrap(service, payload)
-    this.cache.set(url, result, TTL[service] ?? 60_000)
+    await this.cache.set(url, result, TTL[service] ?? 60_000)
     return result
   }
 
