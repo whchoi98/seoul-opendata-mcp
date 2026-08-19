@@ -191,4 +191,26 @@ describe('SeoulApiClient', () => {
     expect(miss.note).toContain('쿼터')
     expect(fetchFn).toHaveBeenCalledTimes(1)
   })
+
+  it('지하철 키와 일반 키는 쿼터 카운터가 독립적이다', async () => {
+    const { InMemoryLedger } = await import('../src/client/quota.js')
+    const ledger = new InMemoryLedger(1) // 키당 하루 1회
+    const fetchFn = vi.fn().mockResolvedValue(standardPage([{ a: 1 }], 1))
+    const c = new SeoulApiClient({ apiKey: 'GENKEY', subwayApiKey: 'SUBKEY', fetchFn: fetchFn as any, ledger })
+
+    await c.getJson('bikeList', 1, 5) // 일반 키 1/1 소진
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+
+    const generalExhausted = await c.getJson('GetParkingInfo', 1, 5) // 일반 키 소진, 캐시 없음 → 빈 결과
+    expect(generalExhausted.rows).toHaveLength(0)
+    expect(generalExhausted.note).toContain('쿼터')
+    expect(fetchFn).toHaveBeenCalledTimes(1) // 업스트림 호출 없음 — 일반 키 소진 확인
+
+    const subwayPayload = { errorMessage: { status: 200, code: 'INFO-000', message: 'ok', total: 1 }, realtimeArrivalList: [{ x: 1 }] }
+    fetchFn.mockResolvedValue(new Response(JSON.stringify(subwayPayload), { status: 200, headers: { 'content-type': 'application/json' } }))
+    const subwayFresh = await c.getSubway('realtimeStationArrival', 0, 5, ['강남']) // 지하철 키는 별도 카운터라 소진 영향 없음
+    expect(subwayFresh.rows).toHaveLength(1)
+    expect(subwayFresh.note).toBeUndefined()
+    expect(fetchFn).toHaveBeenCalledTimes(2) // 지하철 키 요청은 업스트림까지 도달
+  })
 })

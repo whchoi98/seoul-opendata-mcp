@@ -17,10 +17,16 @@ export function keyIdOf(apiKey: string): string {
   return createHash('sha256').update(apiKey).digest('hex').slice(0, 8)
 }
 
+/** 유효하지 않은(비수치·0 이하) 값은 기본 1000으로 폴백 — 예: QUOTA_DAILY_LIMIT=abc */
+function parseQuotaLimit(raw: string | undefined): number {
+  const n = Number(raw ?? 1000)
+  return Number.isFinite(n) && n > 0 ? n : 1000
+}
+
 export class InMemoryLedger implements QuotaLedger {
   private counts = new Map<string, number>()
   constructor(
-    private limit: number = Number(process.env.QUOTA_DAILY_LIMIT ?? 1000),
+    private limit: number = parseQuotaLimit(process.env.QUOTA_DAILY_LIMIT),
     private now: () => number = Date.now,
   ) {}
 
