@@ -163,4 +163,32 @@ describe('SeoulApiClient', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1)
     expect(results.every(u => u.rows.length === 1)).toBe(true)
   })
+
+  it('쿼터 80% 이상이면 fresh 응답에도 경고 note', async () => {
+    const { InMemoryLedger } = await import('../src/client/quota.js')
+    const ledger = new InMemoryLedger(5)
+    for (let i = 0; i < 4; i++) await ledger.increment((await import('../src/client/quota.js')).keyIdOf('K'))
+    const fetchFn = vi.fn().mockResolvedValue(standardPage([{ a: 1 }], 1))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any, ledger })
+    const u = await c.getJson('bikeList', 1, 5) // 5번째 호출 = 100%... 아님: 호출 전 4/5=80%
+    expect(u.note).toContain('쿼터')
+  })
+
+  it('쿼터 소진 시: 캐시 있으면 stale 서빙, 없으면 빈 결과 + 안내(에러 아님)', async () => {
+    const { InMemoryLedger, keyIdOf } = await import('../src/client/quota.js')
+    let t = 0
+    const ledger = new InMemoryLedger(1)
+    const fetchFn = vi.fn().mockResolvedValue(standardPage([{ a: 1 }], 1))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any, ledger, now: () => t })
+    await c.getJson('bikeList', 1, 5)            // 1/1 소진
+    t = 300_001                                   // soft 만료 → stale
+    const stale = await c.getJson('bikeList', 1, 5)
+    expect(stale.rows).toHaveLength(1)
+    expect(stale.note).toContain('쿼터')          // 소진 상태에서 stale 서빙 안내
+    expect(fetchFn).toHaveBeenCalledTimes(1)      // 백그라운드 갱신도 억제
+    const miss = await c.getJson('GetParkingInfo', 1, 5) // 캐시 없음 → 빈 결과
+    expect(miss.rows).toHaveLength(0)
+    expect(miss.note).toContain('쿼터')
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
 })

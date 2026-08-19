@@ -1,6 +1,7 @@
 import { XMLParser } from 'fast-xml-parser'
 import { CompositeCache, InMemoryCache } from './cache.js'
 import { unwrap, SeoulApiError, type Unwrapped } from './response.js'
+import { InMemoryLedger, keyIdOf, type QuotaLedger, type QuotaStatus } from './quota.js'
 
 const OPEN_BASE = 'http://openapi.seoul.go.kr:8088'
 const SUBWAY_BASE = 'http://swopenapi.seoul.go.kr/api/subway'
@@ -30,6 +31,7 @@ export interface ClientOptions {
   fetchFn?: typeof fetch
   timeoutMs?: number
   now?: () => number
+  ledger?: QuotaLedger
 }
 
 export class SeoulApiClient {
@@ -42,6 +44,7 @@ export class SeoulApiClient {
   private xml = new XMLParser({ ignoreDeclaration: true })
   private inflight = new Map<string, Promise<Unwrapped>>()
   private nowFn: () => number
+  private ledger: QuotaLedger
 
   constructor(opts: ClientOptions = {}) {
     this.key = (opts.apiKey ?? process.env.SEOUL_API_KEY ?? '').trim() || 'sample'
@@ -51,6 +54,29 @@ export class SeoulApiClient {
     this.timeoutMs = opts.timeoutMs ?? 15_000
     this.cache = new CompositeCache(new InMemoryCache(opts.now), undefined, opts.now ?? Date.now)
     this.nowFn = opts.now ?? Date.now
+    this.ledger = opts.ledger ?? new InMemoryLedger(undefined, opts.now)
+  }
+
+  /** 캐시 원장(전역 L2 등) 교체용 — 실패해도 요청 자체는 계속 동작해야 한다 */
+  setLedger(l: QuotaLedger): void {
+    this.ledger = l
+  }
+
+  private async safeStatus(keyId: string): Promise<QuotaStatus> {
+    try {
+      return await this.ledger.status(keyId)
+    } catch (e) {
+      console.error(`[quota] status 조회 실패 — 무제한으로 폴백: ${(e as Error).message}`)
+      return { used: 0, limit: Infinity, ratio: 0 }
+    }
+  }
+
+  private async safeIncrement(keyId: string): Promise<void> {
+    try {
+      await this.ledger.increment(keyId)
+    } catch (e) {
+      console.error(`[quota] increment 실패 — 무시: ${(e as Error).message}`)
+    }
   }
 
   maskedKey(): string {
@@ -98,25 +124,44 @@ export class SeoulApiClient {
     const url = this.buildUrl(base, key, type, service, start, end, path)
 
     const cached = await this.cache.get(url)
+    const keyId = keyIdOf(key)
+    const budget = await this.safeStatus(keyId) // ledger 예외는 safeStatus 내부에서 무제한으로 폴백
+
+    if (budget.ratio >= 1) {
+      if (cached) {
+        const ageMin = Math.round((this.nowFn() - cached.entry.storedAt) / 60_000)
+        return withNote(cached.entry.value, `일일 API 쿼터 소진 — 캐시된 데이터(약 ${ageMin}분 경과)로 응답합니다`)
+      }
+      return {
+        rows: [], totalCount: 0, raw: null,
+        note: `일일 API 쿼터(${budget.limit}회)가 소진되어 새 데이터를 가져올 수 없습니다. 내일 자정(KST) 이후 재시도하세요.`,
+      }
+    }
+
     if (cached?.freshness === 'fresh') return cached.entry.value
 
     if (cached) {
-      // stale: 즉시 반환 + 백그라운드 갱신 (실패는 로그만 — 다음 요청이 재시도)
-      void this.fetchFresh(url, type, service).catch(e =>
+      // stale: 즉시 반환 + 백그라운드 갱신 (실패는 로그만 — 다음 요청이 재시도). budget.ratio<1이므로 갱신 발화 허용
+      void this.fetchFresh(url, type, service, keyId).catch(e =>
         console.error(`[cache] 백그라운드 갱신 실패(${service}): ${(e as Error).message}`))
       const ageMin = Math.round((this.nowFn() - cached.entry.storedAt) / 60_000)
       return withNote(cached.entry.value, `캐시된 데이터(약 ${ageMin}분 경과) — 백그라운드 갱신 중`)
     }
 
-    return this.fetchFresh(url, type, service)
+    const result = await this.fetchFresh(url, type, service, keyId)
+    if (budget.ratio >= 0.8) {
+      return withNote(result, `일일 API 쿼터 ${Math.round(budget.ratio * 100)}% 사용(${budget.used}/${budget.limit})`)
+    }
+    return result
   }
 
   /** 실제 업스트림 호출 — 동일 URL 동시 요청은 1회로 병합(single-flight) */
-  private fetchFresh(url: string, type: 'json' | 'xml', service: string): Promise<Unwrapped> {
+  private fetchFresh(url: string, type: 'json' | 'xml', service: string, keyId: string): Promise<Unwrapped> {
     const existing = this.inflight.get(url)
     if (existing) return existing
     const p = (async () => {
       const text = await this.request(url)
+      await this.safeIncrement(keyId) // 원장 장애는 요청을 죽이지 않는다
       const payload = type === 'xml' ? this.xml.parse(text) : this.parseJsonWithXmlFallback(service, text)
       const result = unwrap(service, payload)
       await this.cache.set(url, result, SOFT_TTL[service] ?? DEFAULT_SOFT_TTL)
