@@ -44,7 +44,7 @@ flowchart TD
 
 - Every upstream call goes through a single HTTP path in `SeoulApiClient` (recorded as [ADR-003](docs/decisions/ADR-003-single-http-path-and-env-keys.md)), so caching, retry, sample clamping, and error handling are implemented once for every tool.
 - Every tool returns the same `{data, asOf, source, notes}` envelope, regardless of which of the 8 raw upstream shapes it started from.
-- Per-service cache TTLs (60s citydata, 5min bike/parking/air, 1h cultural events, 15s subway arrivals) protect the ~1,000-call/day free quota.
+- Per-service cache TTLs (5 min citydata/bike/parking/air, 6h cultural events, 15s subway arrivals) protect the ~1,000-call/day free quota.
 - API keys are masked before they can ever appear in a log line or an error message.
 
 ## Prerequisites
@@ -265,7 +265,7 @@ cp .env.example .env
 - **121 official hotspots, 5 official categories** — `search_place`, `get_city_snapshot`, `get_population`, `get_road_traffic`, and `get_weather` only cover these named locations: palaces & cultural heritage (고궁·문화유산), tourist zones (관광특구), parks (공원), commercial districts (발달상권), and dense hotspots (인구밀집지역).
 - **Commercial activity: 82 of the 121 hotspots** — `get_commercial_activity` returns `supported: false` with nearby alternatives for the other 39.
 - **Population has ~15 minutes of delay** — it's a telecom-based estimate with correction, not instantaneous.
-- **Free quota is ~1,000 calls/day per key** — the server caches responses in memory (60s for city data, 5 min for air/bike/parking, 1 hour for cultural events) to help stay within this.
+- **Free quota is ~1,000 calls/day per key** — the server caches responses in memory (5 min for city data/air/bike/parking, 6 hours for cultural events) to help stay within this.
 - **Even after the daily quota is exhausted, the server keeps serving from cache for up to 24 hours** and flags this with a note on the response; only past that 24-hour window does it fall back to an empty result with an explanatory note instead of an error.
 - Bike stations, parking lots, air quality, cultural events, subway arrivals, pharmacies, and the batch statistics tools are **not** limited to the 121 hotspots — they cover their respective full Seoul-wide datasets (e.g. all 25 districts for air quality, ~3,000 bike stations).
 - **Catalog tools cover 28 curated datasets** — `search_dataset` / `get_dataset_spec` / `call_dataset` give raw access to datasets that don't (yet) have a dedicated normalized tool.
@@ -356,7 +356,7 @@ flowchart TD
 
 - 모든 업스트림 호출은 `SeoulApiClient` 내 단 하나의 HTTP 경로를 거칩니다([ADR-003](docs/decisions/ADR-003-single-http-path-and-env-keys.md)으로 기록). 캐싱, 재시도, 샘플 클램핑, 에러 처리를 모든 tool에 대해 한 곳에서만 구현합니다.
 - 모든 tool은 업스트림의 8가지 원본 형태 중 무엇에서 시작했든 동일한 `{data, asOf, source, notes}` 봉투로 응답합니다.
-- 서비스별 캐시 TTL(citydata 60초, 따릉이/주차/대기질 5분, 문화행사 1시간, 지하철 도착 15초)이 하루 약 1,000회 무료 쿼터를 보호합니다.
+- 서비스별 캐시 TTL(citydata/따릉이/주차/대기질 5분, 문화행사 6시간, 지하철 도착 15초)이 하루 약 1,000회 무료 쿼터를 보호합니다.
 - API 키는 로그나 에러 메시지에 노출되기 전에 항상 마스킹됩니다.
 
 ## 사전 요구 사항
@@ -577,7 +577,7 @@ cp .env.example .env
 - **핫스팟 121곳, 정식 카테고리 5종** — `search_place`, `get_city_snapshot`, `get_population`, `get_road_traffic`, `get_weather`는 지정된 121개 장소만 지원합니다: 고궁·문화유산, 관광특구, 공원, 발달상권, 인구밀집지역.
 - **상권은 121곳 중 82곳만 지원** — `get_commercial_activity`는 나머지 39곳에 대해 `supported: false`와 인접 대안 장소를 반환합니다.
 - **인구는 약 15분 지연** — 통신사 집계 기반 추정치에 보정을 거치기 때문에 실시간이 아닙니다.
-- **무료 쿼터는 키당 하루 약 1,000회** — 서버는 메모리 캐시(도시데이터 60초, 대기질/따릉이/주차 5분, 문화행사 1시간)로 쿼터 소진을 완화합니다.
+- **무료 쿼터는 키당 하루 약 1,000회** — 서버는 메모리 캐시(도시데이터/대기질/따릉이/주차 5분, 문화행사 6시간)로 쿼터 소진을 완화합니다.
 - **쿼터 소진 시에도 24시간 이내 캐시로 응답하며 note로 고지합니다** — 24시간이 지난 캐시만 에러 대신 안내 문구와 함께 빈 결과를 반환합니다.
 - 따릉이 대여소, 공영주차장, 대기질, 문화행사, 지하철 도착 정보, 약국, 배치 통계 tool은 121개 핫스팟에 한정되지 않고 서울 전역 데이터를 다룹니다(예: 대기질은 25개 자치구 전체, 따릉이는 약 3천 개 대여소).
 - **카탈로그 tool은 28개 큐레이션 데이터셋을 다룹니다** — `search_dataset` / `get_dataset_spec` / `call_dataset`은 아직 정규화된 정식 tool이 없는 데이터셋을 원본 그대로 조회할 수 있게 해줍니다.
