@@ -60,5 +60,7 @@ if (isCli) {
   if (client.isSample) {
     console.error(`[${SERVER_NAME}] SEOUL_API_KEY 미설정 — 샘플 키로 동작합니다 (제한: citydata 계열은 광화문·덕수궁만).`)
   }
+  const { maybeAttachL2 } = await import('./client/dynamo.js')
+  await maybeAttachL2(client)
   await buildServer(client).connect(new StdioServerTransport())
 }

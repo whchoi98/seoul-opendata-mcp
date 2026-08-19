@@ -1,5 +1,5 @@
 import { XMLParser } from 'fast-xml-parser'
-import { CompositeCache, InMemoryCache } from './cache.js'
+import { CompositeCache, InMemoryCache, type CacheBackend } from './cache.js'
 import { unwrap, SeoulApiError, type Unwrapped } from './response.js'
 import { InMemoryLedger, keyIdOf, type QuotaLedger, type QuotaStatus } from './quota.js'
 
@@ -60,6 +60,11 @@ export class SeoulApiClient {
   /** 캐시 원장(전역 L2 등) 교체용 — 실패해도 요청 자체는 계속 동작해야 한다 */
   setLedger(l: QuotaLedger): void {
     this.ledger = l
+  }
+
+  /** L2 캐시(DynamoDB 등) 연결용 — 캐시의 private 필드를 우회하기 위한 위임 */
+  attachL2(l2: CacheBackend): void {
+    this.cache.setL2(l2)
   }
 
   private async safeStatus(keyId: string): Promise<QuotaStatus> {

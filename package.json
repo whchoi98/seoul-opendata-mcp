@@ -26,6 +26,8 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.693.0",
+    "@aws-sdk/lib-dynamodb": "^3.693.0",
     "@modelcontextprotocol/sdk": "^1.17.0",
     "fast-xml-parser": "^5.2.0",
     "zod": "^3.25.0"
