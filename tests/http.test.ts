@@ -61,6 +61,24 @@ describe('AgentCore Runtime HTTP 계약', () => {
     expect((await fetch(`http://127.0.0.1:${PORT}/nope`)).status).toBe(404)
   })
 
+  it('GET /mcp → 405, 즉시 완료 (SSE 스트림을 열지 않고 hang 없이 응답)', async () => {
+    const res = await fetch(`http://127.0.0.1:${PORT}/mcp`, {
+      method: 'GET',
+      headers: { accept: 'text/event-stream' },
+    })
+    expect(res.status).toBe(405)
+    await res.text() // 응답 본문 소비가 즉시 끝남(스트림이 열려 있지 않음)을 확인
+  }, 5_000)
+
+  it('1MB 초과 요청 본문 → 413', async () => {
+    const oversized = await fetch(`http://127.0.0.1:${PORT}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: 'x'.repeat(1_050_000),
+    })
+    expect(oversized.status).toBe(413)
+  }, 15_000)
+
   it('동시 2개 POST 요청도 500 없이 처리된다 (요청별 독립 server/transport)', async () => {
     const [a, b] = await Promise.all([
       rpc({ jsonrpc: '2.0', id: 4, method: 'tools/list' }),
