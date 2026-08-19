@@ -58,7 +58,7 @@ export function registerTrafficTools(server: McpServer, ctx: Ctx) {
           { source: 'OA-15493 (bikeList)', sample: ctx.client.isSample },
         )
       }
-      const rows = await ctx.client.fetchAll('bikeList', { max: 3000, pageSize: 1000 })
+      const { rows, note } = await ctx.client.fetchAll('bikeList', { max: 3000, pageSize: 1000 })
       let stations = normalizeBikeStations(rows)
       if (query) stations = stations.filter(s => s.name.includes(query))
       if (lat != null && lng != null) {
@@ -69,7 +69,14 @@ export function registerTrafficTools(server: McpServer, ctx: Ctx) {
       }
       return ok(
         { count: stations.length, stations: stations.slice(0, limit ?? 10) },
-        { source: 'OA-15493 (bikeList)', notes: stations.length === 0 ? ['조건에 맞는 대여소가 없습니다. 키워드를 줄여보세요.'] : [], sample: ctx.client.isSample },
+        {
+          source: 'OA-15493 (bikeList)',
+          notes: [
+            ...(note ? [note] : []),
+            ...(stations.length === 0 ? ['조건에 맞는 대여소가 없습니다. 키워드를 줄여보세요.'] : []),
+          ],
+          sample: ctx.client.isSample,
+        },
       )
     },
   )
@@ -87,7 +94,7 @@ export function registerTrafficTools(server: McpServer, ctx: Ctx) {
       },
     },
     async ({ query, limit }) => {
-      const rows = await ctx.client.fetchAll('GetParkingInfo', { max: 1000, pageSize: 1000 })
+      const { rows, note } = await ctx.client.fetchAll('GetParkingInfo', { max: 1000, pageSize: 1000 })
       const lots = normalizeParkingLots(rows).filter(p => p.name.includes(query) || p.address.includes(query))
       return ok(
         { count: lots.length, lots: lots.slice(0, limit ?? 10) },
@@ -95,6 +102,7 @@ export function registerTrafficTools(server: McpServer, ctx: Ctx) {
           source: '서울시 공영주차장 실시간 (GetParkingInfo)',
           notes: [
             '실시간 연계 주차장(약 122곳)만 현재 주차대수를 제공합니다.',
+            ...(note ? [note] : []),
             ...(lots.length === 0 ? ['조건에 맞는 주차장이 없습니다. 자치구명으로 넓혀보세요.'] : []),
           ],
           sample: ctx.client.isSample,

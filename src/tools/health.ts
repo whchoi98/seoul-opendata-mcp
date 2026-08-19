@@ -19,7 +19,7 @@ export function registerHealthTools(server: McpServer, ctx: Ctx) {
       },
     },
     async ({ district, name, limit }) => {
-      const rows = await ctx.client.fetchAll('TbPharmacyOperateInfo', { max: 1000, pageSize: 1000 })
+      const { rows, note } = await ctx.client.fetchAll('TbPharmacyOperateInfo', { max: 1000, pageSize: 1000 })
       let list = normalizePharmacies(rows)
       if (district) list = list.filter(p => p.address.includes(district))
       if (name) list = list.filter(p => p.name.includes(name))
@@ -29,6 +29,7 @@ export function registerHealthTools(server: McpServer, ctx: Ctx) {
           source: '약국 운영정보 (TbPharmacyOperateInfo)',
           notes: [
             '최근 1,000건 내 필터 결과입니다 — district로 좁혀 조회하세요.',
+            ...(note ? [note] : []),
             ...(list.length === 0 ? ['조건에 맞는 약국이 없습니다.'] : []),
           ],
           sample: ctx.client.isSample,

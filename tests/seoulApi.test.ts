@@ -46,9 +46,43 @@ describe('SeoulApiClient', () => {
       .mockResolvedValueOnce(standardPage([{ i: 3 }, { i: 4 }], 5))
       .mockResolvedValueOnce(standardPage([{ i: 5 }], 5))
     const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any })
-    const rows = await c.fetchAll('bikeList', { max: 10, pageSize: 2 })
+    const { rows, note } = await c.fetchAll('bikeList', { max: 10, pageSize: 2 })
     expect(rows.map(r => r.i)).toEqual([1, 2, 3, 4, 5])
     expect(fetchFn).toHaveBeenCalledTimes(3)
+    expect(note).toBeUndefined()
+  })
+
+  it('fetchAll은 두 페이지에서 동일한 note가 반복돼도 중복 없이 1회만 남긴다 (dedupe)', async () => {
+    const { InMemoryLedger } = await import('../src/client/quota.js')
+    let t = 0
+    const ledger = new InMemoryLedger(2)
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce(standardPage([{ i: 1 }, { i: 2 }], 4))
+      .mockResolvedValueOnce(standardPage([{ i: 3 }, { i: 4 }], 4))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any, ledger, now: () => t })
+    // 두 페이지를 미리 캐시에 적재 — 이 두 호출로 쿼터 2/2 소진
+    await c.getJson('bikeList', 1, 2)
+    await c.getJson('bikeList', 3, 4)
+    t = 300_001 // soft TTL(300s) 경과, 두 캐시 항목 모두 storedAt=0이라 경과분(ageMin)이 동일해짐
+    const { rows, note } = await c.fetchAll('bikeList', { max: 4, pageSize: 2 })
+    expect(rows.map(r => r.i)).toEqual([1, 2, 3, 4]) // 소진 상태에서도 stale 캐시로 두 페이지 모두 서빙
+    expect(fetchFn).toHaveBeenCalledTimes(2) // fetchAll 단계에서는 업스트림 재호출 없음
+    expect(note).toContain('쿼터 소진')
+    expect(note?.split(' | ')).toHaveLength(1) // 동일 텍스트가 두 페이지에서 반복돼도 중복 이어붙지 않음
+  })
+
+  it('fetchAll은 서로 다른 note가 페이지마다 나오면 | 로 병합한다', async () => {
+    const { InMemoryLedger, keyIdOf } = await import('../src/client/quota.js')
+    const ledger = new InMemoryLedger(5)
+    for (let i = 0; i < 4; i++) await ledger.increment(keyIdOf('K')) // 4/5 = 80%
+    const fetchFn = vi.fn().mockResolvedValueOnce(standardPage([{ i: 1 }, { i: 2 }], 4)) // 2페이지째는 소진되어 업스트림 호출 없음
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any, ledger })
+    const { rows, note } = await c.fetchAll('bikeList', { max: 4, pageSize: 2 })
+    expect(rows.map(r => r.i)).toEqual([1, 2]) // 1페이지만 성공, 2페이지는 소진으로 빈 결과
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(note).toContain('80%') // 1페이지: 경고 note
+    expect(note).toContain('소진') // 2페이지: 소진 note — 서로 다른 note가 | 로 병합됨
+    expect(note?.split(' | ')).toHaveLength(2)
   })
 
   it('HTTP 5xx는 1회 재시도 후 성공하면 정상 반환', async () => {
@@ -93,7 +127,7 @@ describe('SeoulApiClient', () => {
     delete process.env.SEOUL_API_KEY
     const fetchFn = vi.fn().mockResolvedValue(standardPage([{ i: 1 }, { i: 2 }, { i: 3 }, { i: 4 }, { i: 5 }], 122))
     const c = new SeoulApiClient({ fetchFn: fetchFn as any })
-    const rows = await c.fetchAll('bikeList', { max: 3000, pageSize: 1000 })
+    const { rows } = await c.fetchAll('bikeList', { max: 3000, pageSize: 1000 })
     expect(rows).toHaveLength(5)
     expect(fetchFn).toHaveBeenCalledTimes(1)
     expect(fetchFn.mock.calls[0][0]).toContain('/bikeList/1/5')

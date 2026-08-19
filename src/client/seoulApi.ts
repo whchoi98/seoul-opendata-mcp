@@ -186,16 +186,18 @@ export class SeoulApiClient {
     return this.fetchUnwrapped(SUBWAY_BASE, 'json', service, start, end, path)
   }
 
-  /** 표준 봉투 서비스의 페이지를 totalCount 또는 max까지 자동 순회 병합 */
-  async fetchAll(service: string, opts: { max: number; pageSize?: number; path?: string[] }): Promise<any[]> {
+  /** 표준 봉투 서비스의 페이지를 totalCount 또는 max까지 자동 순회 병합 — note도 페이지 전체에서 손실 없이 병합 */
+  async fetchAll(service: string, opts: { max: number; pageSize?: number; path?: string[] }): Promise<{ rows: any[]; note?: string }> {
     const pageSize = opts.pageSize ?? 1000
     const max = this.isSample ? Math.min(opts.max, 5) : opts.max
     const rows: any[] = []
+    let note: string | undefined
     for (let start = 1; rows.length < max; start += pageSize) {
       const u = await this.getJson(service, start, Math.min(start + pageSize - 1, max), opts.path ?? [])
       rows.push(...u.rows)
+      if (u.note) note = note && !note.includes(u.note) ? `${note} | ${u.note}` : (note ?? u.note)
       if (rows.length >= u.totalCount || u.rows.length === 0) break
     }
-    return rows.slice(0, max)
+    return { rows: rows.slice(0, max), note }
   }
 }
