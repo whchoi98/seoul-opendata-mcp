@@ -138,6 +138,47 @@ The server is saved to `~/.kiro/settings/mcp.json` (use `--scope workspace` for 
 
 Download the `.mcpb` bundle from the [latest release](https://github.com/whchoi98/seoul-opendata-mcp/releases/latest) and double-click it — Claude Desktop installs the server with no terminal required.
 
+## Deploy to AgentCore Runtime
+
+Besides the stdio server above, this repo also ships a Streamable HTTP entrypoint (`src/http.ts` → `dist/http.js`) that satisfies the [Amazon Bedrock AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime.html) contract: a container listening on `0.0.0.0:8000`, `POST /mcp` for JSON-RPC, and `GET /ping` for health checks.
+
+> **Warning: this creates real, billable AWS resources** (an ECR repository, AgentCore Runtime session compute, and — if you opt into `CACHE_TABLE_NAME` below — a DynamoDB table). Only run these steps if you intend to provision and pay for them; nothing here runs automatically.
+
+1. **Build the container and push it to ECR** — the `Dockerfile` is a multi-stage, `linux/arm64` build (AgentCore Runtime requires ARM64) that ends in `CMD ["node", "dist/http.js"]`:
+
+   ```bash
+   docker build --platform linux/arm64 -t seoul-opendata-mcp .
+   aws ecr create-repository --repository-name seoul-opendata-mcp
+   docker tag seoul-opendata-mcp:latest <account-id>.dkr.ecr.<region>.amazonaws.com/seoul-opendata-mcp:latest
+   aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account-id>.dkr.ecr.<region>.amazonaws.com
+   docker push <account-id>.dkr.ecr.<region>.amazonaws.com/seoul-opendata-mcp:latest
+   ```
+
+   Then create (or update) the AgentCore Runtime from that image — see [`docs/runbooks/agentcore-deploy.md`](docs/runbooks/agentcore-deploy.md) for the full copy-paste `create-agent-runtime`/rollback/incident sequence.
+
+2. **(Optional) Create the shared DynamoDB cache/quota table** — setting `CACHE_TABLE_NAME` turns on a second cache tier (L2) shared by every concurrent AgentCore Runtime session, plus a durable daily quota ledger; without it, each session only has its own in-memory (L1) cache and its own quota count. Pre-create the table before setting the env var:
+
+   ```bash
+   aws dynamodb create-table --table-name seoul-mcp-cache \
+     --attribute-definitions AttributeName=pk,AttributeType=S \
+     --key-schema AttributeName=pk,KeyType=HASH \
+     --billing-mode PAY_PER_REQUEST
+   aws dynamodb update-time-to-live --table-name seoul-mcp-cache \
+     --time-to-live-specification "Enabled=true,AttributeName=expireAt"
+   ```
+
+3. **Environment variables**
+
+   | Variable | Description | Default |
+   |---|---|---|
+   | `SEOUL_API_KEY` | General API key (same as stdio mode). | `sample` |
+   | `SEOUL_SUBWAY_API_KEY` | Subway-only key (same as stdio mode). | falls back to `SEOUL_API_KEY` |
+   | `CACHE_TABLE_NAME` | Optional — DynamoDB table name for the shared global L2 cache and daily quota ledger. Unset means L1-only, per-session cache and quota. | (unset) |
+   | `QUOTA_DAILY_LIMIT` | Daily per-key call budget before the server switches to stale-only responses. | `1000` |
+   | `PORT` | HTTP listen port. | `8000` |
+
+4. **Extending via AgentCore Gateway** — to expose these 19 tools to other agents/orchestrators without touching any code, register the deployed Runtime endpoint as an `mcpServer`-type target on an [AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html). The Streamable HTTP contract this server already implements is exactly what a Gateway target expects, so this is a registration-only step — no changes to this repository.
+
 ## Getting API Keys (5 minutes)
 
 The server works out of the box in **sample mode** (see limits below), but real keys remove the limits and are free:
@@ -225,6 +266,7 @@ cp .env.example .env
 - **Commercial activity: 82 of the 121 hotspots** — `get_commercial_activity` returns `supported: false` with nearby alternatives for the other 39.
 - **Population has ~15 minutes of delay** — it's a telecom-based estimate with correction, not instantaneous.
 - **Free quota is ~1,000 calls/day per key** — the server caches responses in memory (60s for city data, 5 min for air/bike/parking, 1 hour for cultural events) to help stay within this.
+- **Even after the daily quota is exhausted, the server keeps serving from cache for up to 24 hours** and flags this with a note on the response; only past that 24-hour window does it fall back to an empty result with an explanatory note instead of an error.
 - Bike stations, parking lots, air quality, cultural events, subway arrivals, pharmacies, and the batch statistics tools are **not** limited to the 121 hotspots — they cover their respective full Seoul-wide datasets (e.g. all 25 districts for air quality, ~3,000 bike stations).
 - **Catalog tools cover 28 curated datasets** — `search_dataset` / `get_dataset_spec` / `call_dataset` give raw access to datasets that don't (yet) have a dedicated normalized tool.
 
@@ -237,7 +279,7 @@ seoul-opendata-mcp/
     normalize/       # Envelope unwrap (8 shapes) + per-domain normalizers
     tools/           # 19 MCP tools grouped into 8 categories
     data/            # 121 hotspots + 28-dataset catalog
-  tests/             # 105 unit tests + 4 live tests; fixtures are real captures
+  tests/             # 133 unit tests + 4 live tests; fixtures are real captures
   scripts/           # capture-fixtures, live-sweep, setup
   docs/              # architecture, api-reference, ADRs
 ```
@@ -245,7 +287,7 @@ seoul-opendata-mcp/
 ## Testing
 
 ```bash
-# Unit tests (105 tests, fixtures are real captured API responses)
+# Unit tests (133 tests, fixtures are real captured API responses)
 npm test
 
 # Live tests against the real Seoul Open Data API (4 tests, needs a real key)
@@ -408,6 +450,47 @@ kiro-cli mcp add --name seoul-opendata --command npx --args "-y,seoul-opendata-m
 
 [최신 릴리스](https://github.com/whchoi98/seoul-opendata-mcp/releases/latest)에서 `.mcpb` 파일을 내려받아 더블클릭하면, 터미널 없이 Claude Desktop에 서버가 설치됩니다.
 
+## AgentCore Runtime에 배포
+
+위 stdio 서버 외에, 이 저장소는 [Amazon Bedrock AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime.html) 계약을 만족하는 Streamable HTTP 진입점(`src/http.ts` → `dist/http.js`)도 함께 제공합니다: `0.0.0.0:8000`에서 리스닝하는 컨테이너, JSON-RPC용 `POST /mcp`, 헬스체크용 `GET /ping`입니다.
+
+> **주의: 아래 단계는 실제로 과금되는 AWS 리소스를 생성합니다** (ECR 리포지토리, AgentCore Runtime 세션 컴퓨트, 그리고 아래 `CACHE_TABLE_NAME`을 사용하기로 하면 DynamoDB 테이블까지). 이 섹션의 어떤 단계도 자동으로 실행되지 않으며, 실제로 이 리소스들을 생성하고 비용을 지불할 의도가 있을 때만 진행하세요.
+
+1. **컨테이너 빌드 후 ECR로 push** — `Dockerfile`은 `CMD ["node", "dist/http.js"]`로 끝나는 멀티스테이지 `linux/arm64` 빌드입니다(AgentCore Runtime은 ARM64를 요구합니다).
+
+   ```bash
+   docker build --platform linux/arm64 -t seoul-opendata-mcp .
+   aws ecr create-repository --repository-name seoul-opendata-mcp
+   docker tag seoul-opendata-mcp:latest <account-id>.dkr.ecr.<region>.amazonaws.com/seoul-opendata-mcp:latest
+   aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account-id>.dkr.ecr.<region>.amazonaws.com
+   docker push <account-id>.dkr.ecr.<region>.amazonaws.com/seoul-opendata-mcp:latest
+   ```
+
+   이후 해당 이미지로 AgentCore Runtime을 생성(또는 갱신)합니다 — `create-agent-runtime`/롤백/장애 대응까지 복붙 가능한 전체 절차는 [`docs/runbooks/agentcore-deploy.md`](docs/runbooks/agentcore-deploy.md)를 참고하세요.
+
+2. **(선택) 공유 DynamoDB 캐시·쿼터 테이블 생성** — `CACHE_TABLE_NAME`을 설정하면 동시에 실행 중인 모든 AgentCore Runtime 세션이 공유하는 2단계 캐시(L2)와, 하루 단위로 지속되는 쿼터 원장이 활성화됩니다. 설정하지 않으면 각 세션은 자신만의 인메모리(L1) 캐시와 쿼터 카운트만 가집니다. env 변수를 설정하기 전에 테이블을 먼저 만들어 두세요.
+
+   ```bash
+   aws dynamodb create-table --table-name seoul-mcp-cache \
+     --attribute-definitions AttributeName=pk,AttributeType=S \
+     --key-schema AttributeName=pk,KeyType=HASH \
+     --billing-mode PAY_PER_REQUEST
+   aws dynamodb update-time-to-live --table-name seoul-mcp-cache \
+     --time-to-live-specification "Enabled=true,AttributeName=expireAt"
+   ```
+
+3. **환경 변수**
+
+   | Variable | Description | Default |
+   |---|---|---|
+   | `SEOUL_API_KEY` | 일반 API 키(stdio 모드와 동일). | `sample` |
+   | `SEOUL_SUBWAY_API_KEY` | 지하철 전용 키(stdio 모드와 동일). | `SEOUL_API_KEY`로 폴백 |
+   | `CACHE_TABLE_NAME` | 선택 — 전역 L2 캐시와 일일 쿼터 원장에 쓰이는 DynamoDB 테이블명. 미설정 시 L1 전용, 세션별 캐시·쿼터로 동작. | (미설정) |
+   | `QUOTA_DAILY_LIMIT` | 쿼터 소진 시 stale-only 응답으로 전환되기 전까지의 키별 일일 호출 예산. | `1000` |
+   | `PORT` | HTTP 리슨 포트. | `8000` |
+
+4. **AgentCore Gateway로 확장** — 코드를 전혀 바꾸지 않고 이 19개 tool을 다른 에이전트/오케스트레이터에 노출하려면, 배포된 Runtime 엔드포인트를 [AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html)의 `mcpServer` 타입 타깃으로 등록하세요. 이 서버가 이미 구현하고 있는 Streamable HTTP 계약이 Gateway 타깃이 기대하는 형태와 정확히 일치하므로, 등록만 하면 되는 단계이며 이 저장소에는 어떤 변경도 필요 없습니다.
+
 ## API 키 발급 (5분)
 
 인증키 없이도 **샘플 모드**로 바로 동작합니다(아래 한계 참고). 하지만 실제 키는 무료이고 이런 제한이 사라지니 발급을 권장합니다.
@@ -495,6 +578,7 @@ cp .env.example .env
 - **상권은 121곳 중 82곳만 지원** — `get_commercial_activity`는 나머지 39곳에 대해 `supported: false`와 인접 대안 장소를 반환합니다.
 - **인구는 약 15분 지연** — 통신사 집계 기반 추정치에 보정을 거치기 때문에 실시간이 아닙니다.
 - **무료 쿼터는 키당 하루 약 1,000회** — 서버는 메모리 캐시(도시데이터 60초, 대기질/따릉이/주차 5분, 문화행사 1시간)로 쿼터 소진을 완화합니다.
+- **쿼터 소진 시에도 24시간 이내 캐시로 응답하며 note로 고지합니다** — 24시간이 지난 캐시만 에러 대신 안내 문구와 함께 빈 결과를 반환합니다.
 - 따릉이 대여소, 공영주차장, 대기질, 문화행사, 지하철 도착 정보, 약국, 배치 통계 tool은 121개 핫스팟에 한정되지 않고 서울 전역 데이터를 다룹니다(예: 대기질은 25개 자치구 전체, 따릉이는 약 3천 개 대여소).
 - **카탈로그 tool은 28개 큐레이션 데이터셋을 다룹니다** — `search_dataset` / `get_dataset_spec` / `call_dataset`은 아직 정규화된 정식 tool이 없는 데이터셋을 원본 그대로 조회할 수 있게 해줍니다.
 
@@ -507,7 +591,7 @@ seoul-opendata-mcp/
     normalize/       # 봉투 언랩(8가지 형태) + 도메인별 정규화
     tools/           # 8개 카테고리로 묶인 19개 MCP tool
     data/            # 121개 핫스팟 + 28개 데이터셋 카탈로그
-  tests/             # 유닛 테스트 105개 + 라이브 테스트 4개, fixture는 실제 캡처본
+  tests/             # 유닛 테스트 133개 + 라이브 테스트 4개, fixture는 실제 캡처본
   scripts/           # capture-fixtures, live-sweep, setup
   docs/              # architecture, api-reference, ADR
 ```
@@ -515,7 +599,7 @@ seoul-opendata-mcp/
 ## 테스트
 
 ```bash
-# 유닛 테스트 (105개, fixture는 실제 캡처한 API 응답)
+# 유닛 테스트 (133개, fixture는 실제 캡처한 API 응답)
 npm test
 
 # 실제 서울 열린데이터광장 API를 대상으로 하는 라이브 테스트 (4개, 실제 키 필요)

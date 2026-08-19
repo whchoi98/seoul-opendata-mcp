@@ -20,7 +20,8 @@ It wraps two upstream HTTP APIs — the general Seoul Open Data Plaza (`openapi.
 ### Ingestion Layer
 
 - **`src/client/seoulApi.ts`** (`SeoulApiClient`) -- Single HTTP entry point for both upstream bases (`OPEN_BASE = openapi.seoul.go.kr:8088`, `SUBWAY_BASE = swopenapi.seoul.go.kr/api/subway`). `buildUrl()` composes the positional path segments the Seoul API expects (`key/type/service/start/end/...params`); `request()` performs one retry on an HTTP 5xx or network failure; `fetchAll()` auto-paginates a standard-envelope service up to `totalCount` or a caller-supplied `max`.
-- **`src/client/cache.ts`** (`TtlCache`) -- In-memory `Map`-backed cache keyed by the full request URL, with per-service TTLs (the `TTL` map in `seoulApi.ts`) tuned to each upstream's real refresh cadence: 60s for the `citydata` family, 5 minutes for bike/parking/air, 1 hour for cultural events, 15s for subway arrivals.
+- **`src/client/cache.ts`** (`CacheBackend`, `InMemoryCache`, `CompositeCache`) -- Two-tier cache abstraction: `InMemoryCache` is the always-on L1 (per-process `Map`), and `CompositeCache` layers an optional L2 (`CacheBackend`) underneath it, keyed by the full request URL. Each entry carries a source-aligned soft TTL (the `SOFT_TTL` map in `seoulApi.ts`, e.g. 300s for `citydata`, 15s for subway arrivals) under a single hard TTL ceiling (`HARD_TTL_MS`, 24h) past which an entry is discarded outright. A soft-expired ("stale") entry is still returned immediately with a `캐시된 데이터(약 N분 경과) — 백그라운드 갱신 중` note while exactly one background refresh fires per URL (`SeoulApiClient`'s in-process single-flight `inflight` map collapses concurrent identical requests into one upstream call); an L2 read/write failure is caught and logged, falling back to L1 without failing the request.
+- **`src/client/quota.ts`, `src/client/dynamo.ts`** (`QuotaLedger`, `InMemoryLedger`, `DynamoDbLedger`, `DynamoDbCache`, `maybeAttachL2`) -- A daily-quota ledger tracks per-key (general/subway isolated via `keyIdOf`, a sha256-derived id that never stores the raw key) call counts against a KST calendar day (`kstDayKey`); at ≥80% of `QUOTA_DAILY_LIMIT` (default 1000, guarded by `parseQuotaLimit`) responses carry a usage-warning note, and at 100% the client serves cache-only (stale if available, otherwise an empty result with an explanatory note) instead of erroring. `maybeAttachL2` lazily imports `@aws-sdk/client-dynamodb`/`lib-dynamodb` and wires a `DynamoDbCache` (L2) + `DynamoDbLedger` (shared quota) into the client only when `CACHE_TABLE_NAME` is set, so stdio/local users never pay the import cost or the AWS SDK dependency at runtime.
 - **`src/client/env.ts`** (`loadDotEnv`) -- Minimal `.env` parser that only fills environment variables not already set on `process.env`, so an explicitly injected env (for example from an MCPB `user_config`) always wins over a checked-in `.env`.
 
 ### Processing Layer
@@ -53,10 +54,10 @@ flowchart TB
     LOADENV --> KEYSEL["Key selection + masking (SeoulApiClient ctor)"]
   end
   subgraph ingestion[Ingestion Layer]
-    KEYSEL --> CLIENT[SeoulApiClient]
+    KEYSEL --> CLIENT["SeoulApiClient<br/>2-tier cache · quota ledger"]
     CLIENT -->|"JSON/XML"| OPENAPI(["openapi.seoul.go.kr:8088"])
     CLIENT -->|"JSON"| SUBWAYAPI(["swopenapi.seoul.go.kr"])
-    CLIENT --> CACHE[(TtlCache)]
+    CLIENT --> CACHE[("L1 InMemoryCache + optional L2 DynamoDbCache")]
   end
   subgraph processing[Processing Layer]
     UNWRAP["unwrap() - 8 envelope shapes"]
@@ -81,8 +82,8 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-  Agent(["LLM Agent"]) --> Tool["MCP Tool"] --> Client[SeoulApiClient] --> API(["Seoul Open Data API"])
-  API --> Cache[(TtlCache)]
+  Agent(["LLM Agent"]) --> Tool["MCP Tool"] --> Client["SeoulApiClient<br/>2-tier cache"] --> API(["Seoul Open Data API"])
+  API --> Cache[("L1+L2 cache")]
   Cache --> Unwrap["unwrap()"]
   Unwrap --> Normalize["normalize/*"]
   Normalize --> Envelope["ok() envelope"]
@@ -96,17 +97,18 @@ flowchart LR
 - **Congestion is a relative indicator, not a raw count** -- Expose card-payment-based commercial activity and population as categorical levels (`한산한`→`분주한`, `여유`→`붐빔`) with an explicit "not a full census" note in the tool response, because the underlying feed is a payment/telecom sample, not an exhaustive count, and presenting it as an absolute figure would overstate its precision.
 - **Catalog hybrid over one-tool-per-dataset** -- Promote 12 high-traffic datasets to a dedicated, fully-typed, normalized tool (plus 1 tool-only, non-`call_dataset`-callable entry for disaster alerts), and expose the remaining 15 datasets through a 3-tool generic trio (`search_dataset` / `get_dataset_spec` / `call_dataset`), avoiding the "thousands of tools" anti-pattern where every raw dataset would need its own MCP tool and schema. Recorded as [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md).
 - **One HTTP code path for every service** -- Route every upstream call (JSON, XML, subway) through the same `fetchUnwrapped()` → cache → `unwrap()` pipeline in `SeoulApiClient`, so caching, retry, sample-mode clamping, and envelope normalization are implemented and tested exactly once instead of per-tool. Recorded as [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md).
+- **Decouple session count from upstream quota** -- Under AgentCore Runtime, each concurrent session is its own process with a cold L1 cache, so session count and upstream call volume would otherwise scale together against the same shared daily quota. An optional, env-gated (`CACHE_TABLE_NAME`) L2 (DynamoDB) tier shared across sessions, plus stale-while-revalidate and a daily quota ledger that degrades to stale-only instead of erroring, breaks that coupling while leaving the zero-config stdio path (no `CACHE_TABLE_NAME`) byte-for-byte unchanged. Recorded as [ADR-004](decisions/ADR-004-session-scaling-two-tier-cache.md).
 
 ## Operations
 
-No operational runbooks exist yet under `docs/runbooks/` -- see [`docs/runbooks/.template.md`](runbooks/.template.md) for the format to use when adding one. None of the standard triggers for the recommended runbook set (a Dockerfile/CDK/SAM/Terraform/CI pipeline, database migrations, or monitoring/alerting config) are present in this repository, so a `deploy-production.md` / `incident-response.md` pair is not yet warranted.
+- [`docs/runbooks/agentcore-deploy.md`](runbooks/agentcore-deploy.md) -- deploy (ECR push -> `create-agent-runtime`), verify (`/ping`, `tools/list`), rollback (pin an endpoint to the previous version), and incident response (L2 cache errors falling back to L1, quota-exhaustion stale-only mode) for the AgentCore Runtime container (`src/http.ts` / `Dockerfile`).
 
-Given this architecture, the two most likely first runbooks are:
+The next most likely runbooks, still unwritten -- see [`docs/runbooks/.template.md`](runbooks/.template.md) for the format to use when adding one:
 
 - A **key rotation / sample-mode diagnosis** runbook (Security Layer) -- what to check when a tool response unexpectedly carries the sample-mode note or an `INFO-100`/key-related `SeoulApiError`.
 - An **MCPB bundle-and-release** runbook -- the `npm run build` -> `npm run bundle` -> `npm run prepublishOnly` sequence used to produce `seoul-opendata-mcp.mcpb` and the npm package.
 
-Related architectural decisions are recorded under `docs/decisions/` -- see [ADR-001](decisions/ADR-001-fixtures-as-source-of-truth.md), [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md), and [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md); use [`docs/decisions/.template.md`](decisions/.template.md) to add a new one.
+Related architectural decisions are recorded under `docs/decisions/` -- see [ADR-001](decisions/ADR-001-fixtures-as-source-of-truth.md), [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md), [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md), and [ADR-004](decisions/ADR-004-session-scaling-two-tier-cache.md); use [`docs/decisions/.template.md`](decisions/.template.md) to add a new one.
 
 ---
 
@@ -125,7 +127,8 @@ Related architectural decisions are recorded under `docs/decisions/` -- see [ADR
 ### Ingestion Layer (수집 계층)
 
 - **`src/client/seoulApi.ts`** (`SeoulApiClient`) -- 두 업스트림 베이스(`OPEN_BASE = openapi.seoul.go.kr:8088`, `SUBWAY_BASE = swopenapi.seoul.go.kr/api/subway`)에 대한 단일 HTTP 진입점입니다. `buildUrl()`은 서울 API가 요구하는 위치 기반 경로 세그먼트(`key/type/service/start/end/...params`)를 구성하고, `request()`는 HTTP 5xx 또는 네트워크 오류 시 1회 재시도하며, `fetchAll()`은 표준 봉투 서비스를 `totalCount` 또는 호출자가 지정한 `max`까지 자동으로 페이지 순회합니다.
-- **`src/client/cache.ts`** (`TtlCache`) -- 전체 요청 URL을 키로 하는 인메모리 `Map` 기반 캐시로, 각 업스트림의 실제 갱신 주기에 맞춘 서비스별 TTL(`seoulApi.ts`의 `TTL` 맵)을 사용합니다: `citydata` 계열은 60초, 따릉이/주차/대기질은 5분, 문화행사는 1시간, 지하철 도착정보는 15초입니다.
+- **`src/client/cache.ts`** (`CacheBackend`, `InMemoryCache`, `CompositeCache`) -- 2단 캐시 추상화입니다. `InMemoryCache`는 항상 켜져 있는 L1(프로세스별 `Map`)이고, `CompositeCache`가 선택적 L2(`CacheBackend`)를 그 아래에 겹겹이 쌓으며, 전체 요청 URL을 키로 사용합니다. 각 엔트리는 원천 갱신 주기에 맞춘 soft TTL(`seoulApi.ts`의 `SOFT_TTL` 맵, 예: `citydata` 300초, 지하철 도착 15초)을 하나의 hard TTL 상한(`HARD_TTL_MS`, 24시간) 아래에 가지며, 이 상한을 넘으면 엔트리를 완전히 폐기합니다. soft TTL이 지난("stale") 엔트리는 `캐시된 데이터(약 N분 경과) — 백그라운드 갱신 중` 안내와 함께 즉시 반환되며, URL당 정확히 한 번의 백그라운드 갱신만 발화합니다(`SeoulApiClient`의 프로세스 내 single-flight `inflight` 맵이 동일 요청 동시 호출을 하나의 업스트림 호출로 병합). L2 읽기/쓰기 실패는 잡아서 로그만 남기고 L1으로 폴백하며 요청 자체를 실패시키지 않습니다.
+- **`src/client/quota.ts`, `src/client/dynamo.ts`** (`QuotaLedger`, `InMemoryLedger`, `DynamoDbLedger`, `DynamoDbCache`, `maybeAttachL2`) -- 일일 쿼터 원장이 키별(일반/지하철을 `keyIdOf`로 분리 — 원본 키를 저장하지 않는 sha256 기반 식별자) 호출 수를 KST 기준 하루(`kstDayKey`)에 대해 추적합니다. `QUOTA_DAILY_LIMIT`(기본 1000, `parseQuotaLimit`로 값 검증)의 80% 이상이면 응답에 사용량 경고 note가 붙고, 100%에 도달하면 에러 대신 캐시만으로 응답합니다(가능하면 stale, 없으면 안내 note가 담긴 빈 결과). `maybeAttachL2`는 `CACHE_TABLE_NAME`이 설정된 경우에만 `@aws-sdk/client-dynamodb`/`lib-dynamodb`를 lazy import하여 `DynamoDbCache`(L2)와 `DynamoDbLedger`(공유 쿼터)를 클라이언트에 연결하므로, stdio/로컬 사용자는 이 import 비용이나 AWS SDK 의존을 런타임에 전혀 지불하지 않습니다.
 - **`src/client/env.ts`** (`loadDotEnv`) -- `process.env`에 아직 설정되지 않은 환경변수만 채우는 최소한의 `.env` 파서입니다. 이 때문에 (예: MCPB `user_config`에서) 명시적으로 주입된 환경변수가 항상 커밋된 `.env`보다 우선합니다.
 
 ### Processing Layer (처리 계층)
@@ -158,10 +161,10 @@ flowchart TB
     LOADENV --> KEYSEL["Key selection + masking (SeoulApiClient ctor)"]
   end
   subgraph ingestion[Ingestion Layer]
-    KEYSEL --> CLIENT[SeoulApiClient]
+    KEYSEL --> CLIENT["SeoulApiClient<br/>2-tier cache · quota ledger"]
     CLIENT -->|"JSON/XML"| OPENAPI(["openapi.seoul.go.kr:8088"])
     CLIENT -->|"JSON"| SUBWAYAPI(["swopenapi.seoul.go.kr"])
-    CLIENT --> CACHE[(TtlCache)]
+    CLIENT --> CACHE[("L1 InMemoryCache + optional L2 DynamoDbCache")]
   end
   subgraph processing[Processing Layer]
     UNWRAP["unwrap() - 8 envelope shapes"]
@@ -186,8 +189,8 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-  Agent(["LLM Agent"]) --> Tool["MCP Tool"] --> Client[SeoulApiClient] --> API(["Seoul Open Data API"])
-  API --> Cache[(TtlCache)]
+  Agent(["LLM Agent"]) --> Tool["MCP Tool"] --> Client["SeoulApiClient<br/>2-tier cache"] --> API(["Seoul Open Data API"])
+  API --> Cache[("L1+L2 cache")]
   Cache --> Unwrap["unwrap()"]
   Unwrap --> Normalize["normalize/*"]
   Normalize --> Envelope["ok() envelope"]
@@ -201,14 +204,15 @@ flowchart LR
 - **혼잡도는 절대값이 아니라 상대 지표다** -- 카드 결제 기반 상권 현황과 인구를 절대 수치가 아니라 범주형 수준(`한산한`→`분주한`, `여유`→`붐빔`)으로 노출하고, tool 응답에 "전수 데이터가 아니다"라는 안내를 명시적으로 포함합니다. 근본 데이터가 결제/통신 표본이며 전수 집계가 아니므로, 절대값으로 제시하면 실제보다 정밀한 것처럼 오해를 줄 수 있기 때문입니다.
 - **데이터셋마다 tool을 만들지 않는 카탈로그 하이브리드** -- 트래픽이 많은 12개 데이터셋은 전용 타입 정규화 tool로 승격시키고(재난문자는 `call_dataset`으로 호출할 수 없는 tool 전용 1건 추가), 나머지 15개 데이터셋은 3개의 범용 tool(`search_dataset` / `get_dataset_spec` / `call_dataset`)로 노출합니다. 모든 원본 데이터셋마다 별도의 MCP tool과 스키마가 필요해지는 "수천 개 tool" 안티패턴을 피하기 위한 결정입니다. [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md)로 기록되어 있습니다.
 - **모든 서비스가 거치는 단 하나의 HTTP 경로** -- JSON, XML, 지하철 호출 전부를 `SeoulApiClient` 내 동일한 `fetchUnwrapped()` → 캐시 → `unwrap()` 파이프라인으로 라우팅합니다. 이를 통해 캐싱, 재시도, 샘플 모드 클램핑, 봉투 정규화를 tool마다 반복 구현·검증하지 않고 한 곳에서만 구현·검증합니다. [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md)로 기록되어 있습니다.
+- **세션 수와 업스트림 쿼터의 분리** -- AgentCore Runtime 환경에서는 동시 세션마다 별도 프로세스와 콜드 L1 캐시를 가지므로, 그대로 두면 세션 수와 업스트림 호출량이 동일한 공용 일일 쿼터를 두고 함께 증가합니다. 선택적이며 env로 게이트된(`CACHE_TABLE_NAME`) 세션 간 공유 L2(DynamoDB) 계층에, stale-while-revalidate와 에러 대신 stale-only로 저하되는 일일 쿼터 원장을 더해 이 결합을 끊으면서도, `CACHE_TABLE_NAME`을 설정하지 않는 무설정 stdio 경로는 바이트 단위로 그대로 유지됩니다. [ADR-004](decisions/ADR-004-session-scaling-two-tier-cache.md)로 기록되어 있습니다.
 
 ## 운영
 
-`docs/runbooks/` 아래에는 아직 실제 런북이 없습니다 -- 런북을 추가할 때 사용할 형식은 [`docs/runbooks/.template.md`](runbooks/.template.md)를 참고하세요. 권장 런북 세트를 트리거하는 표준 신호(Dockerfile/CDK/SAM/Terraform/CI 파이프라인, 데이터베이스 마이그레이션, 모니터링·알림 설정)가 이 저장소에는 아직 없으므로, `deploy-production.md` / `incident-response.md` 조합은 아직 필요하지 않습니다.
+- [`docs/runbooks/agentcore-deploy.md`](runbooks/agentcore-deploy.md) -- AgentCore Runtime 컨테이너(`src/http.ts` / `Dockerfile`)의 배포(ECR push → `create-agent-runtime`), 검증(`/ping`, `tools/list`), 롤백(이전 버전으로 엔드포인트 핀), 장애 대응(L2 캐시 오류의 L1 폴백, 쿼터 소진 stale-only 모드)을 다룹니다.
 
-이 아키텍처를 감안하면, 가장 먼저 필요해질 가능성이 높은 런북은 다음 두 가지입니다.
+아직 작성되지 않은, 다음으로 필요해질 가능성이 높은 런북들 -- 추가할 때 사용할 형식은 [`docs/runbooks/.template.md`](runbooks/.template.md)를 참고하세요.
 
 - **키 회전 / 샘플 모드 진단** 런북(보안 계층) -- tool 응답에 예기치 않게 샘플 모드 안내나 `INFO-100` 등 키 관련 `SeoulApiError`가 나타날 때 확인할 사항.
 - **MCPB 번들·릴리스** 런북 -- `seoul-opendata-mcp.mcpb`와 npm 패키지를 만드는 `npm run build` → `npm run bundle` → `npm run prepublishOnly` 절차.
 
-관련 아키텍처 결정은 `docs/decisions/` 아래에 기록되어 있습니다 -- [ADR-001](decisions/ADR-001-fixtures-as-source-of-truth.md), [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md), [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md)을 참고하세요. 새 결정을 추가할 때는 [`docs/decisions/.template.md`](decisions/.template.md)를 사용합니다.
+관련 아키텍처 결정은 `docs/decisions/` 아래에 기록되어 있습니다 -- [ADR-001](decisions/ADR-001-fixtures-as-source-of-truth.md), [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md), [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md), [ADR-004](decisions/ADR-004-session-scaling-two-tier-cache.md)를 참고하세요. 새 결정을 추가할 때는 [`docs/decisions/.template.md`](decisions/.template.md)를 사용합니다.

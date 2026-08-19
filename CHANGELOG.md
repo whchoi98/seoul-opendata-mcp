@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add a Streamable HTTP entrypoint (`src/http.ts` → `dist/http.js`) satisfying the Amazon Bedrock AgentCore Runtime contract (`0.0.0.0:8000`, `POST /mcp` stateless, `GET /ping`)
+- Add a multi-stage, `linux/arm64` `Dockerfile` for AgentCore Runtime container deployment
+- Add an optional DynamoDB-backed L2 cache and daily quota ledger, gated by `CACHE_TABLE_NAME` and lazily imported so stdio/local users are unaffected
+- Add stale-while-revalidate serving and in-process single-flight request de-duplication to the cache layer
+- Add `docs/runbooks/agentcore-deploy.md` and [ADR-004](docs/decisions/ADR-004-session-scaling-two-tier-cache.md) documenting the AgentCore Runtime deploy/rollback/incident procedure and the session-scaling cache design
+
+### Changed
+
+- Align per-service soft cache TTLs with each source's real refresh cadence (e.g. `citydata` 60s → 300s)
+
 ## [0.3.0] - 2026-08-17
 
 ### Added
@@ -78,6 +90,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 따릅니다.
 
 ## [Unreleased]
+
+### Added
+
+- Streamable HTTP 진입점(`src/http.ts` → `dist/http.js`) 추가 — Amazon Bedrock AgentCore Runtime 계약 충족(`0.0.0.0:8000`, `POST /mcp` stateless, `GET /ping`)
+- AgentCore Runtime 컨테이너 배포용 멀티스테이지 `linux/arm64` `Dockerfile` 추가
+- `CACHE_TABLE_NAME`으로 게이트되고 lazy import되어 stdio/로컬 사용자에게 영향이 없는, 선택적 DynamoDB 기반 L2 캐시 및 일일 쿼터 원장 추가
+- 캐시 계층에 stale-while-revalidate 서빙과 프로세스 내 single-flight 요청 중복 제거 추가
+- AgentCore Runtime 배포/롤백/장애 대응 절차와 세션 스케일링 캐시 설계를 다루는 `docs/runbooks/agentcore-deploy.md` 및 [ADR-004](docs/decisions/ADR-004-session-scaling-two-tier-cache.md) 추가
+
+### Changed
+
+- 서비스별 soft 캐시 TTL을 각 원천의 실제 갱신 주기에 맞춰 정렬(예: `citydata` 60초 → 300초)
 
 ## [0.3.0] - 2026-08-17
 
