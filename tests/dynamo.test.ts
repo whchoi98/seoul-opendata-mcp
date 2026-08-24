@@ -22,18 +22,28 @@ describe('DynamoDbCache', () => {
     const doc = fakeDoc()
     const c = new DynamoDbCache(doc, 'T')
     await c.set('u1', { value: { rows: [1] } as any, storedAt: 1_000_000, softTtlMs: 300_000 })
-    const item = doc.items.get('u1')
+    const item = [...doc.items.values()][0]
     expect(item.expireAt).toBe(Math.floor((1_000_000 + HARD_TTL_MS) / 1000))
     const e = await c.get('u1')
     expect(e!.value.rows[0]).toBe(1)
     expect(e!.softTtlMs).toBe(300_000)
+  })
+  it('pk는 원문 키가 아닌 sha256 해시 — 인증키 포함 URL이 평문으로 저장되지 않음', async () => {
+    const doc = fakeDoc()
+    const c = new DynamoDbCache(doc, 'T')
+    const url = 'http://openapi.seoul.go.kr:8088/SECRETKEY/json/bikeList/1/5'
+    await c.set(url, { value: { rows: [] } as any, storedAt: 0, softTtlMs: 1000 })
+    const pk = [...doc.items.keys()][0]
+    expect(pk).toMatch(/^[0-9a-f]{64}$/)
+    expect(pk).not.toContain('SECRETKEY')
+    expect(await c.get(url)).toBeDefined()
   })
   it('380KB 초과 entry는 set을 생략', async () => {
     const doc = fakeDoc()
     const c = new DynamoDbCache(doc, 'T')
     const big = { value: { rows: ['x'.repeat(400_000)] } as any, storedAt: 0, softTtlMs: 1000 }
     await c.set('big', big)
-    expect(doc.items.has('big')).toBe(false)
+    expect(doc.items.size).toBe(0)
   })
 })
 

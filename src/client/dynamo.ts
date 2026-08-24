@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { HARD_TTL_MS, type CacheBackend, type CacheEntry } from './cache.js'
 import { kstDayKey, parseQuotaLimit, type QuotaLedger, type QuotaStatus } from './quota.js'
 import type { SeoulApiClient } from './seoulApi.js'
@@ -13,8 +14,13 @@ export interface DocClientLike {
 export class DynamoDbCache implements CacheBackend {
   constructor(private doc: DocClientLike, private table: string) {}
 
+  // 캐시 키(원문 URL)에는 인증키가 포함되므로 pk에는 sha256 해시만 저장한다 (스펙 §4.2: pk = URL 해시)
+  private pk(key: string): string {
+    return createHash('sha256').update(key).digest('hex')
+  }
+
   async get(key: string): Promise<CacheEntry | undefined> {
-    const { Item } = await this.doc.get({ TableName: this.table, Key: { pk: key } })
+    const { Item } = await this.doc.get({ TableName: this.table, Key: { pk: this.pk(key) } })
     if (!Item?.entry) return undefined
     const e = JSON.parse(Item.entry) as CacheEntry
     return e
@@ -25,7 +31,7 @@ export class DynamoDbCache implements CacheBackend {
     if (Buffer.byteLength(body) > MAX_ITEM_BYTES) return // L1만으로 충분한 대형 응답
     await this.doc.put({
       TableName: this.table,
-      Item: { pk: key, entry: body, expireAt: Math.floor((entry.storedAt + HARD_TTL_MS) / 1000) },
+      Item: { pk: this.pk(key), entry: body, expireAt: Math.floor((entry.storedAt + HARD_TTL_MS) / 1000) },
     })
   }
 }
