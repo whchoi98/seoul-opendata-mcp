@@ -10,7 +10,6 @@ export class SeoulApiError extends Error {
 export interface Unwrapped {
   rows: any[]
   totalCount: number
-  raw: any
   note?: string
 }
 
@@ -35,48 +34,48 @@ export function unwrap(service: string, payload: any): Unwrapped {
   // 형태 A: 최상위 RESULT만 있는 에러 응답
   if (payload?.RESULT && Object.keys(payload).length === 1) {
     const note = assertOk(service, payload.RESULT)
-    return { rows: [], totalCount: 0, raw: payload, note }
+    return { rows: [], totalCount: 0, note }
   }
   // 형태 B: 지하철 swopenapi — { errorMessage, realtimeArrivalList }
   if (payload?.errorMessage) {
     const note = assertOk(service, payload.errorMessage)
     const rows = toArray(payload.realtimeArrivalList)
-    return { rows, totalCount: payload.errorMessage.total ?? rows.length, raw: payload, note }
+    return { rows, totalCount: payload.errorMessage.total ?? rows.length, note }
   }
   // 형태 B': swopenapi 에러 시 errorMessage 래퍼 없이 top-level { status, code, message }로 응답
   if (payload?.code != null && payload?.status != null) {
     const note = assertOk(service, payload)
     const rows = toArray(payload.realtimeArrivalList)
-    return { rows, totalCount: payload.total ?? rows.length, raw: payload, note }
+    return { rows, totalCount: payload.total ?? rows.length, note }
   }
   // 형태 C: citydata_ppltn — { "SeoulRtd.citydata_ppltn": [...], RESULT: {...} }
   if (payload?.['SeoulRtd.citydata_ppltn']) {
     const note = assertOk(service, pickResult(payload))
     const rows = toArray(payload['SeoulRtd.citydata_ppltn'])
-    return { rows, totalCount: rows.length, raw: payload, note }
+    return { rows, totalCount: rows.length, note }
   }
   // 형태 D: citydata_cmrcl — { list_total_count, LIVE_CMRCL_STTS: {...} }
   if (payload?.LIVE_CMRCL_STTS) {
     const note = assertOk(service, pickResult(payload))
-    return { rows: [payload.LIVE_CMRCL_STTS], totalCount: 1, raw: payload, note }
+    return { rows: [payload.LIVE_CMRCL_STTS], totalCount: 1, note }
   }
   // 형태 E: citydata 통합(XML 파싱 결과) — { "SeoulRtd.citydata": { RESULT, CITYDATA } }
   if (payload?.['SeoulRtd.citydata']) {
     const body = payload['SeoulRtd.citydata']
     const note = assertOk(service, body.RESULT)
-    return { rows: toArray(body.CITYDATA), totalCount: 1, raw: payload, note }
+    return { rows: toArray(body.CITYDATA), totalCount: 1, note }
   }
   // 형태 G: bikeList — 봉투 키(rentBikeStatus)가 service명과 다른 표준형
   if (payload?.rentBikeStatus) {
     const body = payload.rentBikeStatus
     const note = assertOk(service, body.RESULT)
-    return { rows: toArray(body.row), totalCount: body.list_total_count ?? 0, raw: payload, note }
+    return { rows: toArray(body.row), totalCount: body.list_total_count ?? 0, note }
   }
   // 형태 F: 표준 — { [service]: { list_total_count, RESULT, row } }
   const body = payload?.[service]
   if (body) {
     const note = assertOk(service, body.RESULT)
-    return { rows: toArray(body.row), totalCount: body.list_total_count ?? 0, raw: payload, note }
+    return { rows: toArray(body.row), totalCount: body.list_total_count ?? 0, note }
   }
   throw new SeoulApiError('PARSE', `알 수 없는 응답 형태 (${service}): ${JSON.stringify(payload).slice(0, 200)}`)
 }

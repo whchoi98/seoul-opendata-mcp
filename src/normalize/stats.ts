@@ -20,18 +20,3 @@ export function normalizeLivingPopulation(rows: any[]): LivingPopulation[] {
     total: num(r.TOT_LVPOP_CO),
   }))
 }
-
-export interface RealEstateDeal { year: string; district: string; dong: string; building: string; amount: number | null; area: number | null; floor: number | null; contractDate: string; use: string }
-export function normalizeRealEstate(rows: any[]): RealEstateDeal[] {
-  return rows.map(r => ({
-    year: String(r.RCPT_YR ?? ''),
-    district: r.CGG_NM ?? '',
-    dong: r.STDG_NM ?? '',
-    building: r.BLDG_NM ?? '',
-    amount: num(r.THING_AMT),          // 물건금액(만원)
-    area: num(r.ARCH_AREA),            // 건물면적
-    floor: num(r.FLR),
-    contractDate: String(r.CTRT_DAY ?? ''),
-    use: r.BLDG_USG ?? '',
-  }))
-}

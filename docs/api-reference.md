@@ -1,10 +1,10 @@
 # API Reference
 
-19 [MCP](https://modelcontextprotocol.io) tools exposed by `seoul-opendata-mcp` v0.3.0, grouped as they are registered in `src/index.ts` / `src/tools/*.ts`. Input schemas below are transcribed from each tool's `zod` `inputSchema` in source; output summaries list the fields of the `data` payload before it is wrapped in the common response envelope.
+20 [MCP](https://modelcontextprotocol.io) tools exposed by `seoul-opendata-mcp` v0.5.0, grouped as they are registered in `src/index.ts` / `src/tools/*.ts`. Input schemas below are transcribed from each tool's `zod` `inputSchema` in source; output summaries list the fields of the `data` payload before it is wrapped in the common response envelope.
 
 ## Protocol
 
-This is not a REST API. The server speaks MCP over **stdio** (`StdioServerTransport`); there is no base URL. Connect via `npx -y seoul-opendata-mcp` (see `README.md`) or `claude mcp add`, then call tools by name with a JSON arguments object, matching each Input Schema table below.
+This is not a REST API. The server speaks MCP over **stdio** (`StdioServerTransport`, `dist/index.js`) for local clients: connect via `npx -y seoul-opendata-mcp` (see `README.md`) or `claude mcp add`. For Amazon Bedrock AgentCore Runtime it also speaks **Streamable HTTP** (`dist/http.js`, stateless): `POST /mcp` on `0.0.0.0:8000` and `GET /ping` for health (see `docs/runbooks/agentcore-deploy.md`). Either way, call tools by name with a JSON arguments object, matching each Input Schema table below.
 
 ## Authentication
 
@@ -52,9 +52,10 @@ Every tool (see `src/tools/envelope.ts`) returns MCP content of the form:
 | `get_weather` | Environment | Weather, fine dust, UV, warnings at a hotspot |
 | `get_subway_ridership` | Statistics | Daily per-station subway boarding/alighting counts |
 | `get_living_population` | Statistics | De-facto population by administrative dong and hour |
-| `get_real_estate_prices` | Statistics | Real-estate sale transaction records |
+| `get_real_estate_prices` | Real estate | Real-estate sale and rent transaction records |
+| `get_land_price` | Real estate | Officially assessed land price per m² for a parcel |
 | `find_pharmacies` | Health | Pharmacy locations with per-day operating hours |
-| `search_dataset` | Meta / catalog | Search the 28-dataset catalog by keyword |
+| `search_dataset` | Meta / catalog | Search the 29-dataset catalog by keyword |
 | `get_dataset_spec` | Meta / catalog | Get call parameters/fields for a catalog dataset |
 | `call_dataset` | Meta / catalog | Call any catalog dataset, get raw (non-normalized) rows |
 
@@ -377,27 +378,69 @@ Path parameters are positional upstream: only a prefix of `date` -> `timeSlot` -
 
 **Example question** — "What's the estimated living population for this dong at 2pm?" / "이 행정동 오후 2시 생활인구는 얼마나 돼?"
 
+---
+
+## Real Estate Tools
+
+Registered in `src/tools/realestate.ts`. The upstream services filter by **position** in the URL path, so the tool fills skipped positions with a single space (`%20`); an empty string would drop every filter after it.
+
 ### `get_real_estate_prices`
 
-Seoul real-estate sale transaction records (price in 만원/10k KRW), filterable by district/dong/year.
+Seoul real-estate transaction records, sales (`tbLnOpendataRtmsV`) or rentals (`tbLnOpendataRentV`), newest contract first. Amounts are in 만원 (10k KRW).
 
 **Input Schema**
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `district` | `string` | No | District name, e.g. `"강남구"` |
-| `dong` | `string` | No | Legal-dong name, e.g. `"역삼동"` |
-| `year` | `string` (`/^\d{4}$/`) | No | Filing year, `YYYY` |
+| `dealType` | `"sale"` \| `"rent"` | No | Transaction type (default `sale`) |
+| `district` | `string` | No | District name, e.g. `"강남구"`; `"강남"` is completed to `"강남구"`. A name that is not one of the 25 Seoul districts returns an empty result without calling upstream |
+| `dong` | `string` | No | Legal-dong name, e.g. `"역삼동"`. With `district` it is resolved to a legal-dong code and filtered upstream; without `district` it is matched by name within the latest 500 rows |
+| `building` | `string` | No | Building name, partial match upstream (e.g. `"래미안"`) |
+| `buildingUse` | `"아파트"` \| `"연립다세대"` \| `"단독다가구"` \| `"오피스텔"` | No | Building type, filtered upstream |
+| `year` | `string` (`/^\d{4}$/`) | No | Filing year `YYYY`; omit for all years |
+| `rentType` | `"전세"` \| `"월세"` | No | Rent only. Matched within the latest 500 rows (upstream has no such filter) |
+| `includeCancelled` | `boolean` | No | Sale only. Include cancelled deals (default `false`) |
 | `limit` | `number` (int, 1-50) | No | Max results (default 10) |
 
 **Output Summary**
 
-- `count` — number of matched deals
-- `deals` — `{year, district, dong, building, amount, area, floor, contractDate, use}[]` (`amount` in 만원)
+- `dealType`, and `district` / `dong` / `year` when given (`dong` is the resolved legal-dong name)
+- `totalCount` — rows matching the upstream filters (year, district, legal dong, building name, building type)
+- `count` — number of deals returned
+- `deals` for `sale` — `{year, district, dong, building, amount, area, landArea, floor, contractDate, use, buildYear, dealMethod, rightType, cancelDate}[]`. `cancelDate` is non-empty only for cancelled deals
+- `deals` for `rent` — `{year, district, dong, building, rentType, deposit, monthlyRent, area, floor, contractDate, contractPeriod, use, buildYear, contractType, renewalRightUsed, prevDeposit, prevMonthlyRent}[]`. `contractType` is `신규` or `갱신`; `prevDeposit` / `prevMonthlyRent` are set on renewals
 
-Note: filters are applied within the most recent 200 filed rows only.
+**Behavior notes**
 
-**Example question** — "What are recent apartment sale prices in Gangnam-gu?" / "강남구 아파트 실거래가?"
+- One upstream call of 100 rows per query (500 when `rentType` or a name-matched `dong` is used), so different `limit` values share a cache entry.
+- A `dong` with `district` costs one extra 1-row lookup against `IndividuallyPostedLandPriceService` to get the legal-dong code (cached 24 hours). An administrative-dong name such as `역삼1동` is retried as `역삼동`. If the dong is not found, the tool returns an empty result and does not call the transaction service.
+- Cancelled sales (91 of the latest 1,000 rows for 2025 Gangnam-gu when measured) are removed unless `includeCancelled` is `true`; the number removed is reported in `notes`.
+
+**Example question** — "What did apartments in Gangnam-gu sell for in 2025?" / "2025년 강남구 아파트 실거래가?", "타워팰리스 전세 보증금은?"
+
+### `get_land_price`
+
+Officially assessed individual land price (개별공시지가, KRW per m²) from `IndividuallyPostedLandPriceService`.
+
+**Input Schema**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `district` | `string` | Yes | District name, e.g. `"강남구"` |
+| `dong` | `string` | No | Legal-dong name, e.g. `"역삼동"` |
+| `lotNumber` | `string` (`/^\d{1,4}(-\d{1,4})?$/`) | No | Lot number `main` or `main-sub`, e.g. `"737"`, `"633-7"`. Requires `dong` |
+| `year` | `string` (`/^\d{4}$/`) | No | Base year. Omit to use the current year, falling back to the previous year when the current one is not published yet |
+| `limit` | `number` (int, 1-50) | No | Max results (default 10) |
+
+**Output Summary**
+
+- `district`, `dong` (when given), `year` (the year actually answered)
+- `totalCount` — parcels matching the filters; `count` — parcels returned
+- `parcels` — `{year, district, dong, lotNumber, landType, pricePerSqm, baseDate, pnu}[]`. `lotNumber` is formatted like `633-7`; `pnu` is the 19-digit parcel number
+
+Note: parcels come back in API order, not sorted by price. A district alone matches tens of thousands of parcels, so narrow with `dong` and `lotNumber`.
+
+**Example question** — "What is the assessed land price of 737 Yeoksam-dong?" / "역삼동 737번지 공시지가?"
 
 ---
 
@@ -432,7 +475,7 @@ These three tools give agents generic access to the 15 catalog datasets that do 
 
 ### `search_dataset`
 
-Search the curated catalog of 28 Seoul Open Data datasets by keyword.
+Search the curated catalog of 29 Seoul Open Data datasets by keyword.
 
 **Input Schema**
 
@@ -482,7 +525,7 @@ Invoke a catalog dataset by id and get raw (non-normalized) rows. Check `get_dat
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `id` | `string` | Yes | Catalog dataset id |
-| `params` | `string[]` | No | Path parameters, in the order given by `get_dataset_spec`'s `pathParams` |
+| `params` | `string[]` | No | Path parameters, in the order given by `get_dataset_spec`'s `pathParams`. They are positional: send a single space `" "` for a position you skip. A call that leaves a required position empty is rejected before reaching upstream |
 | `limit` | `number` (int) | No | Max rows (default 10, clamped to 1-50) |
 
 **Output Summary — success**
@@ -506,22 +549,26 @@ Upstream/client errors surface as `SeoulApiError` (`src/client/response.ts`), wh
 | `INFO-000` | Success (never surfaced as an error) |
 | `INFO-100` | Key-related error (missing/invalid/quota) — triggers the key-signup hint |
 | `INFO-200` | No data available for the given query (not an error; surfaced as a `notes[]` string) |
-| `HTTP-<status>` | Non-2xx HTTP response from the upstream, after one retry on 5xx |
-| `NETWORK` | Network failure, after one retry |
+| `HTTP-<status>` | Non-2xx HTTP response from the upstream, after one retry on 5xx (300 ms backoff) |
+| `TIMEOUT` | Upstream did not answer within `timeoutMs` (15 s); not retried |
+| `NETWORK` | Network failure, after one retry (300 ms backoff) |
 | `PARSE` | Response body did not match any of the 8 known envelope shapes |
 
 Every error message includes the masked key (`maskedKey()`/`maskedSubwayKey()`), never the raw value.
 
 ## Caching / Rate Behavior
 
-`SeoulApiClient` caches responses in-memory keyed by the full request URL, with a per-service TTL (`TTL` map in `src/client/seoulApi.ts`):
+`SeoulApiClient` caches unwrapped responses keyed by the full request URL in a two-tier cache: an in-process L1 (an LRU bounded at `MAX_L1_ENTRIES` = 1000) and, when `CACHE_TABLE_NAME` is set, a shared DynamoDB L2. Each service has a **soft TTL** aligned with how often its source updates (`SOFT_TTL` in `src/client/seoulApi.ts`); every entry has a 24 h **hard TTL** (`HARD_TTL_MS`).
 
-| Services | TTL |
+| Services | Soft TTL |
 |---|---|
-| `citydata`, `citydata_ppltn`, `citydata_cmrcl` | 60 seconds |
-| `bikeList`, `GetParkingInfo`, `RealtimeCityAir` | 5 minutes |
-| `culturalEventInfo` | 1 hour |
 | `realtimeStationArrival` | 15 seconds |
-| Any other catalog dataset (via `call_dataset`) | 60 seconds (default) |
+| `citydata`, `citydata_ppltn`, `citydata_cmrcl`, `bikeList`, `GetParkingInfo`, `RealtimeCityAir`, `AccInfo` | 5 minutes |
+| `TimeAverageAirQuality` | 1 hour |
+| `culturalEventInfo`, `tbLnOpendataRtmsV`, `tbLnOpendataRentV` | 6 hours |
+| `CardSubwayStatsNew`, `CardBusStatisticsServiceNew`, `SPOP_LOCAL_RESD_DONG`, `SPOP_DAILYSUM_JACHI`, `TbPharmacyOperateInfo`, `TbHospitalInfo`, `ChildCareInfo`, `IndividuallyPostedLandPriceService` | 24 hours |
+| Any other catalog dataset (via `call_dataset`) | 1 hour (`DEFAULT_SOFT_TTL`) |
 
-There is no client-side rate limiter beyond this cache; upstream rate limits are enforced by the Seoul Open Data Plaza key itself (sample keys are additionally clamped to at most 5 rows per request by `fetchUnwrapped`).
+Within the soft TTL a cached entry is served as-is. Between soft and hard TTL it is served immediately with a `notes[]` age disclosure while one background refresh runs (stale-while-revalidate); identical concurrent requests share one upstream call (single-flight).
+
+A daily quota ledger (`QUOTA_DAILY_LIMIT`, default 1000 per key per KST day) adds a usage note at 80% and switches to cache-only serving at 100%. It is a soft limit: concurrent requests right at the limit can overshoot it slightly. Sample keys are additionally clamped to at most 5 rows per request by `fetchUnwrapped`.

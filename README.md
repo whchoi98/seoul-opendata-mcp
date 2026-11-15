@@ -1,13 +1,13 @@
 # Seoul OpenData MCP
 
-[![Version](https://img.shields.io/badge/Version-0.3.0-green.svg)]()
+[![Version](https://img.shields.io/badge/Version-0.5.0-green.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/Node-%3E%3D18-brightgreen.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue.svg)]()
 <a href="#english"><img src="https://img.shields.io/badge/lang-English-blue.svg" alt="English"></a>
 <a href="#korean"><img src="https://img.shields.io/badge/lang-한국어-red.svg" alt="Korean"></a>
 
-An MCP server that wraps Seoul's real-time city data (Seoul Open Data Plaza) into 19 tools any MCP client can call, with zero setup beyond an optional API key. | 서울 열린데이터광장의 실시간 도시데이터를 19개 tool로 감싸는 MCP 서버로, 인증키 없이도 바로 사용할 수 있습니다.
+An MCP server that wraps Seoul's real-time city data (Seoul Open Data Plaza) into 20 tools any MCP client can call, with zero setup beyond an optional API key. | 서울 열린데이터광장의 실시간 도시데이터를 20개 tool로 감싸는 MCP 서버로, 인증키 없이도 바로 사용할 수 있습니다.
 
 ---
 
@@ -17,7 +17,7 @@ An MCP server that wraps Seoul's real-time city data (Seoul Open Data Plaza) int
 
 ## Overview
 
-Seoul OpenData MCP is a stdio [MCP](https://modelcontextprotocol.io) server, written in TypeScript, that exposes Seoul's real-time city data (Seoul Open Data Plaza) as 19 tools grouped into 8 categories — population and commercial activity, transit, culture, environment, batch statistics, health, and a dataset catalog. It also ships a searchable catalog covering 28 raw Seoul Open Data datasets, so an MCP client such as Claude can go from a dataset id straight to a live API call. The server needs no setup beyond an optional API key — it runs in a scope-limited sample mode out of the box.
+Seoul OpenData MCP is a stdio [MCP](https://modelcontextprotocol.io) server, written in TypeScript, that exposes Seoul's real-time city data (Seoul Open Data Plaza) as 20 tools grouped into 9 categories — population and commercial activity, transit, culture, environment, batch statistics, real estate, health, and a dataset catalog. It also ships a searchable catalog covering 29 raw Seoul Open Data datasets, so an MCP client such as Claude can go from a dataset id straight to a live API call. The server needs no setup beyond an optional API key — it runs in a scope-limited sample mode out of the box.
 
 ## Features
 
@@ -25,15 +25,16 @@ Seoul OpenData MCP is a stdio [MCP](https://modelcontextprotocol.io) server, wri
 - **12-hour AI population forecast & congestion** — `get_population` reports real-time population, a 4-level congestion label (여유/보통/약간 붐빔/붐빔), demographics, and an optional 12-hour AI-generated forecast.
 - **Card-payment commercial activity** — `get_commercial_activity` surfaces real-time, card-payment-based commercial activity levels and per-industry breakdowns across 82 of the 121 hotspots.
 - **Transit suite** — `get_subway_arrivals`, `get_bike_stations`, `get_parking`, and `get_road_traffic` cover realtime subway arrivals, Ttareungi bike-share availability, public parking space counts, and road speed/incidents.
-- **Batch statistics** — `get_subway_ridership`, `get_living_population`, `get_real_estate_prices`, and `find_pharmacies` cover daily ridership, de-facto living population, real-estate transactions, and pharmacy hours from batch (lagged) datasets.
-- **Dataset catalog** — `search_dataset`, `get_dataset_spec`, and `call_dataset` search, inspect, and directly call any of the 28 curated Seoul Open Data datasets, including the 15 that have no dedicated tool.
+- **Batch statistics** — `get_subway_ridership`, `get_living_population`, and `find_pharmacies` cover daily ridership, de-facto living population, and pharmacy hours from batch (lagged) datasets.
+- **Real estate** — `get_real_estate_prices` returns sale and rent (jeonse / monthly rent) transactions filtered on the server by year, district, legal dong, building name, and building type, and `get_land_price` returns the officially assessed land price per square meter for a parcel.
+- **Dataset catalog** — `search_dataset`, `get_dataset_spec`, and `call_dataset` search, inspect, and directly call any of the 29 curated Seoul Open Data datasets, including the 14 that have no dedicated tool.
 - **Zero-config sample mode, dual API keys, caching** — runs with no keys at all, supports two independent API keys (general + subway) with fallback, and caches every upstream response in memory (TTL tuned per dataset) to protect the ~1,000-call/day free quota.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    MCPClient["MCP Client<br/>(Claude Desktop / Code)"] -->|"stdio JSON-RPC"| Server["seoul-opendata-mcp<br/>19 tools"]
+    MCPClient["MCP Client<br/>(Claude Desktop / Code)"] -->|"stdio JSON-RPC"| Server["seoul-opendata-mcp<br/>20 tools"]
     Server --> ToolsLayer["Tools layer"]
     ToolsLayer --> Normalize["Normalize<br/>(envelope unwrap · 8 shapes + normalizers)"]
     Normalize --> Client["SeoulApiClient<br/>TTL cache · retry · key masking · sample clamp"]
@@ -71,7 +72,7 @@ Add this to your `claude_desktop_config.json` ([config file location](https://mo
 }
 ```
 
-Restart Claude Desktop and the 19 tools below become available.
+Restart Claude Desktop and the 20 tools below become available.
 
 ### Claude Code
 
@@ -100,7 +101,7 @@ claude mcp add seoul-opendata \
 claude mcp list          # look for ✓ seoul-opendata
 ```
 
-Run `/mcp` inside a Claude Code session (desktop app included) to confirm the 19 tools are loaded, then test with "지금 강남역 지하철 도착 알려줘".
+Run `/mcp` inside a Claude Code session (desktop app included) to confirm the 20 tools are loaded, then test with "지금 강남역 지하철 도착 알려줘".
 
 #### Import from Claude Desktop (macOS/WSL)
 
@@ -177,7 +178,7 @@ Besides the stdio server above, this repo also ships a Streamable HTTP entrypoin
    | `QUOTA_DAILY_LIMIT` | Daily per-key call budget before the server switches to stale-only responses. | `1000` |
    | `PORT` | HTTP listen port. | `8000` |
 
-4. **Extending via AgentCore Gateway** — to expose these 19 tools to other agents/orchestrators without touching any code, register the deployed Runtime endpoint as an `mcpServer`-type target on an [AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html). The Streamable HTTP contract this server already implements is exactly what a Gateway target expects, so this is a registration-only step — no changes to this repository.
+4. **Extending via AgentCore Gateway** — to expose these 20 tools to other agents/orchestrators without touching any code, register the deployed Runtime endpoint as an `mcpServer`-type target on an [AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html). The Streamable HTTP contract this server already implements is exactly what a Gateway target expects, so this is a registration-only step — no changes to this repository.
 
 ## Getting API Keys (5 minutes)
 
@@ -228,7 +229,7 @@ cp .env.example .env
 
 ## Tools
 
-19 tools grouped into 8 categories:
+20 tools grouped into 9 categories:
 
 | Tool | Description | Key arguments |
 |---|---|---|
@@ -252,11 +253,13 @@ cp .env.example .env
 | **Statistics (batch)** | | |
 | `get_subway_ridership` | Per-station daily subway boarding/alighting counts for a date (data available up to ~2-4 days ago). | `date` (YYYYMMDD), `station`/`line` (optional filters), `limit` (1-100, default 20) |
 | `get_living_population` | De-facto (living) population estimates by administrative dong and hour (batch, ~5-day lag). | `date` (YYYYMMDD, optional), `timeSlot` (00-23, optional), `dongCode` (optional), `limit` (1-100, default 20) |
-| `get_real_estate_prices` | Seoul real-estate sale transaction records (price in 만원/10k KRW), filterable by district/dong/year. | `district`, `dong`, `year` (YYYY), `limit` (1-50, default 10) — all optional |
+| **Real Estate** | | |
+| `get_real_estate_prices` | Seoul real-estate sale or rent transactions (amounts in 만원/10k KRW), newest contract first, filtered on the server by year, district, legal dong, building name, and building type. Cancelled sales are excluded by default. | `dealType` (`sale` default / `rent`), `district`, `dong`, `building`, `buildingUse`, `year` (YYYY), `rentType` (전세/월세), `includeCancelled`, `limit` (1-50, default 10) — all optional |
+| `get_land_price` | Officially assessed individual land price (KRW per m²) for parcels in a district, narrowed by legal dong and lot number. | `district` (string), `dong`, `lotNumber` (e.g. `633-7`), `year` (YYYY, defaults to the latest published), `limit` (1-50, default 10) |
 | **Health** | | |
 | `find_pharmacies` | Find Seoul pharmacies by district or name keyword, with per-day operating hours. | `district`, `name`, `limit` (1-50, default 10) — all optional |
 | **Catalog** | | |
-| `search_dataset` | Search the curated catalog of 28 Seoul Open Data datasets by keyword (e.g. public WiFi, cooling shelters). | `query` (string) |
+| `search_dataset` | Search the curated catalog of 29 Seoul Open Data datasets by keyword (e.g. public WiFi, cooling shelters). | `query` (string) |
 | `get_dataset_spec` | Get the path parameters, response fields, and a call example for a catalog dataset id. | `id` (string) |
 | `call_dataset` | Call a catalog dataset by id and get raw (non-normalized) rows — for datasets without a dedicated tool. | `id` (string), `params` (string[], optional), `limit` (optional, default 10, max 50) |
 
@@ -268,7 +271,8 @@ cp .env.example .env
 - **Free quota is ~1,000 calls/day per key** — the server caches responses in memory (5 min for city data/air/bike/parking, 6 hours for cultural events) to help stay within this.
 - **Even after the daily quota is exhausted, the server keeps serving from cache for up to 24 hours** and flags this with a note on the response; only past that 24-hour window does it fall back to an empty result with an explanatory note instead of an error.
 - Bike stations, parking lots, air quality, cultural events, subway arrivals, pharmacies, and the batch statistics tools are **not** limited to the 121 hotspots — they cover their respective full Seoul-wide datasets (e.g. all 25 districts for air quality, ~3,000 bike stations).
-- **Catalog tools cover 28 curated datasets** — `search_dataset` / `get_dataset_spec` / `call_dataset` give raw access to datasets that don't (yet) have a dedicated normalized tool.
+- **Real-estate filters** — year, district, legal dong (when given with `district`), building name, and building type are applied by the upstream API. `rentType`, and a `dong` given without `district`, are applied only within the latest 500 rows. `get_land_price` returns parcels in API order, not sorted by price.
+- **Catalog tools cover 29 curated datasets** — `search_dataset` / `get_dataset_spec` / `call_dataset` give raw access to datasets that don't (yet) have a dedicated normalized tool.
 
 ## Project Structure
 
@@ -277,9 +281,9 @@ seoul-opendata-mcp/
   src/
     client/          # HTTP client: SeoulApiClient (cache, retry, env loading)
     normalize/       # Envelope unwrap (8 shapes) + per-domain normalizers
-    tools/           # 19 MCP tools grouped into 8 categories
-    data/            # 121 hotspots + 28-dataset catalog
-  tests/             # 133 unit tests + 4 live tests; fixtures are real captures
+    tools/           # 20 MCP tools grouped into 9 categories
+    data/            # 121 hotspots + 29-dataset catalog
+  tests/             # 170+ unit tests + 7 live tests; fixtures are real captures
   scripts/           # capture-fixtures, live-sweep, setup
   docs/              # architecture, api-reference, ADRs
 ```
@@ -290,10 +294,10 @@ seoul-opendata-mcp/
 # Unit tests (133 tests, fixtures are real captured API responses)
 npm test
 
-# Live tests against the real Seoul Open Data API (4 tests, needs a real key)
+# Live tests against the real Seoul Open Data API (7 tests, needs a real key)
 RUN_LIVE=1 npx vitest run live
 
-# Exercise all 19 tools end-to-end against the real API
+# Exercise all 20 tools end-to-end against the real API
 npx tsx scripts/live-sweep.ts
 ```
 
@@ -329,7 +333,7 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 
 ## 개요
 
-Seoul OpenData MCP는 TypeScript로 작성된 stdio [MCP](https://modelcontextprotocol.io) 서버로, 서울 열린데이터광장의 실시간 도시데이터를 8개 카테고리, 19개 tool로 노출합니다 — 인구·상권, 교통, 문화, 환경, 배치 통계, 보건, 데이터셋 카탈로그. 또한 서울 열린데이터광장 원본 데이터셋 28종을 검색할 수 있는 카탈로그를 함께 제공해, Claude 같은 MCP 클라이언트가 데이터셋 id만으로 바로 실시간 API를 호출할 수 있습니다. 인증키 없이도 범위가 제한된 샘플 모드로 바로 동작하므로 별도 설정이 필요 없습니다.
+Seoul OpenData MCP는 TypeScript로 작성된 stdio [MCP](https://modelcontextprotocol.io) 서버로, 서울 열린데이터광장의 실시간 도시데이터를 9개 카테고리, 20개 tool로 노출합니다 — 인구·상권, 교통, 문화, 환경, 배치 통계, 부동산, 보건, 데이터셋 카탈로그. 또한 서울 열린데이터광장 원본 데이터셋 29종을 검색할 수 있는 카탈로그를 함께 제공해, Claude 같은 MCP 클라이언트가 데이터셋 id만으로 바로 실시간 API를 호출할 수 있습니다. 인증키 없이도 범위가 제한된 샘플 모드로 바로 동작하므로 별도 설정이 필요 없습니다.
 
 ## 주요 기능
 
@@ -337,15 +341,16 @@ Seoul OpenData MCP는 TypeScript로 작성된 stdio [MCP](https://modelcontextpr
 - **12시간 AI 인구 예측 & 혼잡도** — `get_population`이 실시간 인구, 4단계 혼잡도(여유/보통/약간 붐빔/붐빔), 성연령 비율, 선택적 12시간 AI 예측을 제공합니다.
 - **카드 결제 기반 상권 활성도** — `get_commercial_activity`가 121개 핫스팟 중 82곳에 대해 신한카드 실시간 결제 기반 상권 활성도와 업종별 현황을 제공합니다.
 - **교통 tool 모음** — `get_subway_arrivals`, `get_bike_stations`, `get_parking`, `get_road_traffic`이 지하철 실시간 도착, 따릉이 잔여 대수, 공영주차장 여석, 도로 속도·사고/통제 현황을 다룹니다.
-- **배치 통계** — `get_subway_ridership`, `get_living_population`, `get_real_estate_prices`, `find_pharmacies`가 지하철 일별 승하차, 생활인구, 부동산 실거래가, 약국 운영시간을 배치(지연) 데이터로 제공합니다.
-- **데이터셋 카탈로그** — `search_dataset`, `get_dataset_spec`, `call_dataset`이 서울 열린데이터광장 큐레이션 데이터셋 28종(정식 tool이 없는 15종 포함)을 검색·조회·직접 호출합니다.
+- **배치 통계** — `get_subway_ridership`, `get_living_population`, `find_pharmacies`가 지하철 일별 승하차, 생활인구, 약국 운영시간을 배치(지연) 데이터로 제공합니다.
+- **부동산** — `get_real_estate_prices`가 매매와 전월세 실거래를 연도, 자치구, 법정동, 건물명, 건물 용도로 서버에서 걸러 조회하고, `get_land_price`가 필지별 개별공시지가(원/㎡)를 조회합니다.
+- **데이터셋 카탈로그** — `search_dataset`, `get_dataset_spec`, `call_dataset`이 서울 열린데이터광장 큐레이션 데이터셋 29종(정식 tool이 없는 14종 포함)을 검색·조회·직접 호출합니다.
 - **무설정 샘플 모드, 키 2종, 캐싱** — 인증키가 전혀 없어도 동작하고, 독립된 키 2종(일반+지하철)을 폴백과 함께 지원하며, 데이터셋별로 조정된 TTL로 응답을 메모리에 캐시해 하루 약 1,000회 무료 쿼터를 보호합니다.
 
 ## 아키텍처
 
 ```mermaid
 flowchart TD
-    MCPClient["MCP Client<br/>(Claude Desktop / Code)"] -->|"stdio JSON-RPC"| Server["seoul-opendata-mcp<br/>19 tools"]
+    MCPClient["MCP Client<br/>(Claude Desktop / Code)"] -->|"stdio JSON-RPC"| Server["seoul-opendata-mcp<br/>20 tools"]
     Server --> ToolsLayer["Tools layer"]
     ToolsLayer --> Normalize["Normalize<br/>(envelope unwrap · 8 shapes + normalizers)"]
     Normalize --> Client["SeoulApiClient<br/>TTL cache · retry · key masking · sample clamp"]
@@ -383,7 +388,7 @@ flowchart TD
 }
 ```
 
-Claude Desktop을 재시작하면 아래 19개 tool을 바로 사용할 수 있습니다.
+Claude Desktop을 재시작하면 아래 20개 tool을 바로 사용할 수 있습니다.
 
 ### Claude Code
 
@@ -412,7 +417,7 @@ claude mcp add seoul-opendata \
 claude mcp list          # ✓ seoul-opendata 표시 확인
 ```
 
-Claude Code 세션(데스크톱 앱 포함)에서 `/mcp`를 실행하면 19개 tool이 로드된 것을 확인할 수 있습니다. "지금 강남역 지하철 도착 알려줘"로 동작을 테스트하세요.
+Claude Code 세션(데스크톱 앱 포함)에서 `/mcp`를 실행하면 20개 tool이 로드된 것을 확인할 수 있습니다. "지금 강남역 지하철 도착 알려줘"로 동작을 테스트하세요.
 
 #### Claude Desktop에서 가져오기 (macOS/WSL)
 
@@ -489,7 +494,7 @@ kiro-cli mcp add --name seoul-opendata --command npx --args "-y,seoul-opendata-m
    | `QUOTA_DAILY_LIMIT` | 쿼터 소진 시 stale-only 응답으로 전환되기 전까지의 키별 일일 호출 예산. | `1000` |
    | `PORT` | HTTP 리슨 포트. | `8000` |
 
-4. **AgentCore Gateway로 확장** — 코드를 전혀 바꾸지 않고 이 19개 tool을 다른 에이전트/오케스트레이터에 노출하려면, 배포된 Runtime 엔드포인트를 [AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html)의 `mcpServer` 타입 타깃으로 등록하세요. 이 서버가 이미 구현하고 있는 Streamable HTTP 계약이 Gateway 타깃이 기대하는 형태와 정확히 일치하므로, 등록만 하면 되는 단계이며 이 저장소에는 어떤 변경도 필요 없습니다.
+4. **AgentCore Gateway로 확장** — 코드를 전혀 바꾸지 않고 이 20개 tool을 다른 에이전트/오케스트레이터에 노출하려면, 배포된 Runtime 엔드포인트를 [AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html)의 `mcpServer` 타입 타깃으로 등록하세요. 이 서버가 이미 구현하고 있는 Streamable HTTP 계약이 Gateway 타깃이 기대하는 형태와 정확히 일치하므로, 등록만 하면 되는 단계이며 이 저장소에는 어떤 변경도 필요 없습니다.
 
 ## API 키 발급 (5분)
 
@@ -540,7 +545,7 @@ cp .env.example .env
 
 ## Tools
 
-19개 tool을 8개 카테고리로 나누어 제공합니다.
+20개 tool을 9개 카테고리로 나누어 제공합니다.
 
 | Tool | 설명 | 주요 인자 |
 |---|---|---|
@@ -564,11 +569,13 @@ cp .env.example .env
 | **통계(배치)** | | |
 | `get_subway_ridership` | 지하철 역별 일별 승하차 인원을 조회합니다(보통 2~4일 전 데이터까지 제공). | `date` (YYYYMMDD), `station`/`line` (선택 필터), `limit` (1~100, 기본 20) |
 | `get_living_population` | 행정동·시간대별 생활인구 통계를 조회합니다(배치, 약 5일 지연). | `date` (YYYYMMDD, 선택), `timeSlot` (00~23, 선택), `dongCode` (선택), `limit` (1~100, 기본 20) |
-| `get_real_estate_prices` | 서울 부동산 매매 실거래가(단위: 만원)를 자치구/법정동/연도로 필터링해 조회합니다. | `district`, `dong`, `year` (YYYY), `limit` (1~50, 기본 10) — 모두 선택 |
+| **부동산** | | |
+| `get_real_estate_prices` | 서울 부동산 매매 또는 전월세 실거래(단위: 만원)를 계약일 최신순으로 조회합니다. 연도, 자치구, 법정동, 건물명, 건물 용도는 서버에서 거르고, 해제된 매매 거래는 기본으로 뺍니다. | `dealType` (`sale` 기본 / `rent`), `district`, `dong`, `building`, `buildingUse`, `year` (YYYY), `rentType` (전세/월세), `includeCancelled`, `limit` (1~50, 기본 10) — 모두 선택 |
+| `get_land_price` | 자치구 안 필지의 개별공시지가(원/㎡)를 법정동과 지번으로 좁혀 조회합니다. | `district` (문자열), `dong`, `lotNumber` (예: `633-7`), `year` (YYYY, 생략하면 최신 공시 연도), `limit` (1~50, 기본 10) |
 | **보건** | | |
 | `find_pharmacies` | 자치구 또는 약국명 키워드로 서울 약국을 찾고 요일별 운영시간을 조회합니다. | `district`, `name`, `limit` (1~50, 기본 10) — 모두 선택 |
 | **카탈로그** | | |
-| `search_dataset` | 서울 열린데이터광장 카탈로그(28개 데이터셋)를 키워드로 검색합니다(예: 공공와이파이, 무더위쉼터). | `query` (문자열) |
+| `search_dataset` | 서울 열린데이터광장 카탈로그(29개 데이터셋)를 키워드로 검색합니다(예: 공공와이파이, 무더위쉼터). | `query` (문자열) |
 | `get_dataset_spec` | 카탈로그 데이터셋 id의 경로 파라미터, 응답 필드, 호출 예시를 확인합니다. | `id` (문자열) |
 | `call_dataset` | 정식 tool이 없는 카탈로그 데이터셋을 id로 직접 호출해 원본(비정규화) 데이터를 가져옵니다. | `id` (문자열), `params` (문자열 배열, 선택), `limit` (선택, 기본 10, 최대 50) |
 
@@ -580,7 +587,8 @@ cp .env.example .env
 - **무료 쿼터는 키당 하루 약 1,000회** — 서버는 메모리 캐시(도시데이터/대기질/따릉이/주차 5분, 문화행사 6시간)로 쿼터 소진을 완화합니다.
 - **쿼터 소진 시에도 24시간 이내 캐시로 응답하며 note로 고지합니다** — 24시간이 지난 캐시만 에러 대신 안내 문구와 함께 빈 결과를 반환합니다.
 - 따릉이 대여소, 공영주차장, 대기질, 문화행사, 지하철 도착 정보, 약국, 배치 통계 tool은 121개 핫스팟에 한정되지 않고 서울 전역 데이터를 다룹니다(예: 대기질은 25개 자치구 전체, 따릉이는 약 3천 개 대여소).
-- **카탈로그 tool은 28개 큐레이션 데이터셋을 다룹니다** — `search_dataset` / `get_dataset_spec` / `call_dataset`은 아직 정규화된 정식 tool이 없는 데이터셋을 원본 그대로 조회할 수 있게 해줍니다.
+- **부동산 필터** — 연도, 자치구, 법정동(`district`와 함께 지정할 때), 건물명, 건물 용도는 업스트림 API가 거릅니다. `rentType`과 `district` 없이 준 `dong`은 최신 500건 안에서만 거릅니다. `get_land_price`는 가격순이 아니라 API 순서로 필지를 돌려줍니다.
+- **카탈로그 tool은 29개 큐레이션 데이터셋을 다룹니다** — `search_dataset` / `get_dataset_spec` / `call_dataset`은 아직 정규화된 정식 tool이 없는 데이터셋을 원본 그대로 조회할 수 있게 해줍니다.
 
 ## 프로젝트 구조
 
@@ -589,9 +597,9 @@ seoul-opendata-mcp/
   src/
     client/          # HTTP 클라이언트: SeoulApiClient (캐시, 재시도, env 로딩)
     normalize/       # 봉투 언랩(8가지 형태) + 도메인별 정규화
-    tools/           # 8개 카테고리로 묶인 19개 MCP tool
-    data/            # 121개 핫스팟 + 28개 데이터셋 카탈로그
-  tests/             # 유닛 테스트 133개 + 라이브 테스트 4개, fixture는 실제 캡처본
+    tools/           # 9개 카테고리로 묶인 20개 MCP tool
+    data/            # 121개 핫스팟 + 29개 데이터셋 카탈로그
+  tests/             # 유닛 테스트 170개 이상 + 라이브 테스트 7개, fixture는 실제 캡처본
   scripts/           # capture-fixtures, live-sweep, setup
   docs/              # architecture, api-reference, ADR
 ```
@@ -602,10 +610,10 @@ seoul-opendata-mcp/
 # 유닛 테스트 (133개, fixture는 실제 캡처한 API 응답)
 npm test
 
-# 실제 서울 열린데이터광장 API를 대상으로 하는 라이브 테스트 (4개, 실제 키 필요)
+# 실제 서울 열린데이터광장 API를 대상으로 하는 라이브 테스트 (7개, 실제 키 필요)
 RUN_LIVE=1 npx vitest run live
 
-# 19개 tool 전체를 실제 API로 전수 점검
+# 20개 tool 전체를 실제 API로 전수 점검
 npx tsx scripts/live-sweep.ts
 ```
 

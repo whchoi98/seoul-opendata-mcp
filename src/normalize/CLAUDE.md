@@ -7,6 +7,7 @@
 - `util.ts` - 공용 헬퍼: `toArray()`, `num()`(숫자 강제 변환, 실패 시 `null`), `KEY_GUIDE`.
 - `citydata.ts` - 가장 큰 파일. `extractSnapshot`, `extractDisasterAlerts`, `extractRoadTraffic`, `extractWeather` (citydata 통합 봉투 분해).
 - `population.ts`, `commercial.ts`, `subway.ts`, `bike.ts`, `parking.ts`, `air.ts`, `culture.ts`, `stats.ts`, `health.ts` - 도메인별 정규화 함수.
+- `realestate.ts` - `normalizeRealEstate`(매매), `normalizeRentDeal`(전월세), `normalizeLandPrice`(개별공시지가), `normalizeDistrict`(자치구 전체 이름, 25개 목록 `SEOUL_DISTRICTS`), `formatLot`(지번 표기).
 
 ## Rules
 - 모든 `normalize*`/`extract*` 함수는 출력 필드를 원본 행 필드까지 1:1로 추적하는 매핑 동등성 테스트를 가져야 합니다(`tests/subway.test.ts` 참조).

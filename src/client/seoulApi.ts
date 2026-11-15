@@ -14,6 +14,7 @@ export const SOFT_TTL: Record<string, number> = {
   bikeList: 300_000, GetParkingInfo: 300_000, RealtimeCityAir: 300_000, AccInfo: 300_000,
   culturalEventInfo: 21_600_000,
   tbLnOpendataRtmsV: 21_600_000, tbLnOpendataRentV: 21_600_000,
+  IndividuallyPostedLandPriceService: 86_400_000, // 연 1회 공시
   CardSubwayStatsNew: 86_400_000, CardBusStatisticsServiceNew: 86_400_000,
   SPOP_LOCAL_RESD_DONG: 86_400_000, SPOP_DAILYSUM_JACHI: 86_400_000,
   TbPharmacyOperateInfo: 86_400_000, TbHospitalInfo: 86_400_000, ChildCareInfo: 86_400_000,
@@ -30,6 +31,8 @@ export interface ClientOptions {
   subwayApiKey?: string
   fetchFn?: typeof fetch
   timeoutMs?: number
+  /** 5xx·네트워크 오류 재시도 전 대기(ms). 기본 300 */
+  retryDelayMs?: number
   now?: () => number
   ledger?: QuotaLedger
 }
@@ -40,6 +43,7 @@ export class SeoulApiClient {
   private subwayKey: string
   private fetchFn: typeof fetch
   private timeoutMs: number
+  private retryDelayMs: number
   private cache: CompositeCache
   private xml = new XMLParser({ ignoreDeclaration: true })
   private inflight = new Map<string, Promise<Unwrapped>>()
@@ -52,6 +56,7 @@ export class SeoulApiClient {
     this.subwayKey = (opts.subwayApiKey ?? process.env.SEOUL_SUBWAY_API_KEY ?? '').trim() || this.key
     this.fetchFn = opts.fetchFn ?? fetch
     this.timeoutMs = opts.timeoutMs ?? 15_000
+    this.retryDelayMs = opts.retryDelayMs ?? 300
     this.cache = new CompositeCache(new InMemoryCache(opts.now), undefined, opts.now ?? Date.now)
     this.nowFn = opts.now ?? Date.now
     this.ledger = opts.ledger ?? new InMemoryLedger(undefined, opts.now)
@@ -97,16 +102,27 @@ export class SeoulApiClient {
     return `${base}/${segs.join('/')}`
   }
 
+  private async backoff(): Promise<void> {
+    if (this.retryDelayMs > 0) await new Promise(r => setTimeout(r, this.retryDelayMs))
+  }
+
+  /** 5xx·네트워크 오류는 retryDelayMs 후 1회 재시도. 타임아웃은 재시도하지 않는다 — 최악 대기를 timeoutMs 1회로 묶기 위함 */
   private async request(url: string): Promise<string> {
     for (let attempt = 0; ; attempt++) {
       try {
         const res = await this.fetchFn(url, { signal: AbortSignal.timeout(this.timeoutMs) })
-        if (res.status >= 500 && attempt === 0) continue
-        if (!res.ok) throw new SeoulApiError(`HTTP-${res.status}`, `HTTP ${res.status} (key=${this.maskedKey()})`)
+        if (!res.ok) {
+          await res.body?.cancel().catch(() => {}) // 버리는 본문이 커넥션을 붙잡지 않도록 정리
+          if (res.status >= 500 && attempt === 0) { await this.backoff(); continue }
+          throw new SeoulApiError(`HTTP-${res.status}`, `HTTP ${res.status} (key=${this.maskedKey()})`)
+        }
         return await res.text()
       } catch (e) {
         if (e instanceof SeoulApiError) throw e
-        if (attempt === 0) continue // 네트워크 오류 1회 재시도
+        if ((e as Error)?.name === 'TimeoutError') {
+          throw new SeoulApiError('TIMEOUT', `응답 시간 초과(${this.timeoutMs / 1000}초) (key=${this.maskedKey()})`)
+        }
+        if (attempt === 0) { await this.backoff(); continue } // 네트워크 오류 1회 재시도
         throw new SeoulApiError('NETWORK', `네트워크 오류: ${(e as Error).message} (key=${this.maskedKey()})`)
       }
     }
@@ -130,7 +146,9 @@ export class SeoulApiClient {
 
     const cached = await this.cache.get(url)
     const keyId = keyIdOf(key)
-    const budget = await this.safeStatus(keyId) // ledger 예외는 safeStatus 내부에서 무제한으로 폴백
+    // ledger 예외는 safeStatus 내부에서 무제한으로 폴백.
+    // soft 한도: 확인(여기)과 증가(fetchFresh 성공 후)가 분리돼 있어, 한도 직전의 동시 요청은 한도를 조금 넘을 수 있다(의도된 동작)
+    const budget = await this.safeStatus(keyId)
 
     if (budget.ratio >= 1) {
       if (cached) {
@@ -138,7 +156,7 @@ export class SeoulApiClient {
         return withNote(cached.entry.value, `일일 API 쿼터 소진 — 캐시된 데이터(약 ${ageMin}분 경과)로 응답합니다`)
       }
       return {
-        rows: [], totalCount: 0, raw: null,
+        rows: [], totalCount: 0,
         note: `일일 API 쿼터(${budget.limit}회)가 소진되어 새 데이터를 가져올 수 없습니다. 내일 자정(KST) 이후 재시도하세요.`,
       }
     }

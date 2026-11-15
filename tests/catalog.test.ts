@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { CATALOG, searchCatalog, validateCall } from '../src/data/catalog.js'
+import { CATALOG, searchCatalog, validateCall, exampleParams } from '../src/data/catalog.js'
 
 describe('CATALOG 무결성', () => {
-  it('정확히 28개, id 유일', () => {
-    expect(CATALOG).toHaveLength(28)
-    expect(new Set(CATALOG.map(e => e.id)).size).toBe(28)
+  it('정확히 29개, id 유일', () => {
+    expect(CATALOG).toHaveLength(29)
+    expect(new Set(CATALOG.map(e => e.id)).size).toBe(29)
   })
   it('카테고리는 6종만', () => {
     const cats = new Set(CATALOG.map(e => e.category))
@@ -34,6 +34,12 @@ describe('searchCatalog', () => {
     expect(top.id).toBe('CardSubwayStatsNew')
     expect(top.tool).toBe('get_subway_ridership')
   })
+  it('부동산 3종은 정식 tool로 안내: 공시지가, 전월세', () => {
+    const land = searchCatalog('공시지가')[0]
+    expect(land.id).toBe('IndividuallyPostedLandPriceService')
+    expect(land.tool).toBe('get_land_price')
+    expect(CATALOG.find(e => e.id === 'tbLnOpendataRentV')!.tool).toBe('get_real_estate_prices')
+  })
   it('무관 키워드는 빈 배열 또는 낮은 관련 후보', () => {
     expect(searchCatalog('zzzz없는키워드')).toHaveLength(0)
   })
@@ -50,5 +56,31 @@ describe('validateCall', () => {
   })
   it('callable=false는 tool 안내', () => {
     expect(validateCall(disaster, [])).toContain('get_disaster_alerts')
+  })
+  // 공시지가는 필수 인자가 1번째(SIGUNGU_NM)와 6번째(YEAR)로 떨어져 있다 — 개수가 아니라 자리로 검사해야 한다
+  const land = CATALOG.find(e => e.id === 'IndividuallyPostedLandPriceService')!
+  it('필수 인자 자리가 비면 안내문 (개수만 맞는 호출 거부)', () => {
+    expect(validateCall(land, ['강남구', '2025'])).toContain('YEAR')
+    expect(validateCall(land, ['강남구', ' ', ' ', ' ', ' ', ' '])).toContain('YEAR')
+    expect(validateCall(land, [' ', ' ', ' ', ' ', ' ', '2025'])).toContain('SIGUNGU_NM')
+  })
+  it('건너뛰는 자리를 공백으로 채우면 통과하고, 안내문은 그 방법을 알려준다', () => {
+    expect(validateCall(land, ['강남구', ' ', ' ', ' ', ' ', '2025'])).toBeNull()
+    expect(validateCall(land, ['강남구'])).toContain('공백')
+  })
+  it('선택 인자만 있는 데이터셋은 빈 params로 통과', () => {
+    expect(validateCall(CATALOG.find(e => e.id === 'tbLnOpendataRtmsV')!, [])).toBeNull()
+  })
+})
+
+describe('exampleParams — get_dataset_spec 호출 예시', () => {
+  const byId = (id: string) => CATALOG.find(e => e.id === id)!
+  it('마지막 필수 인자 자리까지 채우고, 그 사이 선택 자리는 공백으로 둔다', () => {
+    expect(exampleParams(byId('IndividuallyPostedLandPriceService'))).toEqual(['강남구', ' ', ' ', ' ', ' ', '2025'])
+    expect(exampleParams(byId('CardSubwayStatsNew'))).toEqual(['20260801'])
+    expect(exampleParams(byId('tbLnOpendataRtmsV'))).toEqual([])
+  })
+  it('모든 호출 가능 항목의 예시는 validateCall을 통과한다', () => {
+    for (const e of CATALOG.filter(x => x.callable)) expect(validateCall(e, exampleParams(e))).toBeNull()
   })
 })

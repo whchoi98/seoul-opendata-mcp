@@ -45,23 +45,31 @@ assert_grep_match "TP: Azure Connection String" 'DefaultEndpointsProtocol=https;
     "DefaultEndpointsProtocol=https;AccountName=test;AccountKey=FAKE"
 
 # Seoul API Key format (32-char hex) — fake test-only run of digits/letters, not a real key.
-assert_grep_match "TP: Seoul API Key (32-hex)" '[a-f0-9]{32}' "0123456789abcdef0123456789abcdef"
+# A bare hex run is only a key in context (assignment or API URL path); see FP below for fixture ids.
+SEOUL_FAKE="0123456789abcdef0123456789abcdef"
+SEOUL_ASSIGN='(?i:(seoul_)?(subway_)?api_?key)["\x27]?\s*[:=]\s*["\x27]?[a-f0-9]{32}(?![A-Za-z0-9])'
+SEOUL_URL='seoul\.go\.kr(:\d+)?(/api/subway)?/[a-f0-9]{32}/'
+assert_grep_match "TP: Seoul API Key (env assignment)" "$SEOUL_ASSIGN" "SEOUL_API_KEY=${SEOUL_FAKE}"
+assert_grep_match "TP: Seoul API Key (code assignment)" "$SEOUL_ASSIGN" "apiKey: '${SEOUL_FAKE}'"
+assert_grep_match "TP: Seoul API Key (open API URL)" "$SEOUL_URL" "http://openapi.seoul.go.kr:8088/${SEOUL_FAKE}/json/bikeList/1/5"
+assert_grep_match "TP: Seoul API Key (subway URL)" "$SEOUL_URL" "http://swopenapi.seoul.go.kr/api/subway/${SEOUL_FAKE}/json/x/0/5"
 
 assert_grep_match "TP: password assignment" 'password\s*[:=]\s*["\x27][^"\x27]{8,}' 'password = "changeme123456"'
 assert_grep_match "TP: secret assignment" 'secret\s*[:=]\s*["\x27][^"\x27]{8,}' 'secret = "changeme123456"'
 assert_grep_match "TP: api_key assignment" 'api[_-]?key\s*[:=]\s*["\x27][^"\x27]{8,}' 'api_key = "changeme123456"'
 
-# Known limitation (not a test bug): GNU grep's PCRE backend on this host rejects variable-length
-# lookbehind ("lookbehind assertion is not fixed length"), so secret-scan.sh's context-aware AWS
-# Secret Key pattern — (?<=aws_secret_access_key\s{0,5}[=:]\s{0,5})[A-Za-z0-9/+=]{40} — can never
-# match here regardless of input. This is worth fixing in secret-scan.sh separately; skipping here
-# keeps this suite from reporting a false failure for an environment limitation outside its scope.
-skip "TP: AWS Secret Key (context-aware)" "grep -P here rejects variable-length lookbehind"
-skip "FP: AWS Secret Key context-aware, no context present" "grep -P here rejects variable-length lookbehind"
+# AWS Secret Key: context is matched inline instead of with a variable-length lookbehind,
+# which GNU grep -P rejects ("lookbehind assertion is not fixed length").
+AWS_SECRET_RE='aws_secret_access_key\s*[=:]\s*["\x27]?[A-Za-z0-9/+=]{40}'
+AWS_SECRET_FAKE=$(printf 'w%.0s' $(seq 1 40))
+assert_grep_match "TP: AWS Secret Key (context-aware)" "$AWS_SECRET_RE" "aws_secret_access_key = ${AWS_SECRET_FAKE}"
+assert_grep_no_match "FP: AWS Secret Key context-aware, no context present" "$AWS_SECRET_RE" "${AWS_SECRET_FAKE}"
 
 # --- False positives: these MUST NOT match ---
 assert_grep_no_match "FP: Normal base64 (no AKIA prefix)" 'AKIA[0-9A-Z]{16}' "dGhpcyBpcyBhIHRlc3Q="
 assert_grep_no_match "FP: Empty password" 'password\s*[:=]\s*["\x27][^"\x27]{8,}' 'password = ""'
 assert_grep_no_match "FP: Short api_key value" 'api[_-]?key\s*[:=]\s*["\x27][^"\x27]{8,}' 'api_key: "short"'
-assert_grep_no_match "FP: text with no 32-char hex run" '[a-f0-9]{32}' \
-    "CHANGELOG: fixed bug abcdef, cafebabe, and feedface issues"
+assert_grep_no_match "FP: fixture image id (bare 32-hex, no key context)" "$SEOUL_ASSIGN" \
+    "getImage.do?atchFileId=${SEOUL_FAKE}&thumb=Y"
+assert_grep_no_match "FP: fixture image id vs URL pattern" "$SEOUL_URL" \
+    "https://culture.seoul.go.kr/cmmn/file/getImage.do?atchFileId=${SEOUL_FAKE}&thumb=Y"

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Ctx } from './context.js'
 import { ok } from './envelope.js'
-import { CATALOG, searchCatalog, validateCall, type DatasetEntry } from '../data/catalog.js'
+import { CATALOG, searchCatalog, validateCall, exampleParams, type DatasetEntry } from '../data/catalog.js'
 
 export function routeFor(entry: DatasetEntry): 'getJson' | 'getXml' | 'getSubway' {
   if (entry.endpoint === 'subway') return 'getSubway'
@@ -26,7 +26,7 @@ export function registerMetaTools(server: McpServer, ctx: Ctx) {
     {
       title: 'Search the Seoul dataset catalog',
       description:
-        'Search the curated catalog of 28 Seoul Open Data datasets by keyword; entries with a dedicated tool point you to it. ' +
+        `Search the curated catalog of ${CATALOG.length} Seoul Open Data datasets by keyword; entries with a dedicated tool point you to it. ` +
         '카탈로그에서 데이터셋을 검색합니다. 정식 tool이 없는 데이터는 call_dataset으로 호출하세요.',
       inputSchema: { query: z.string().describe('키워드 (예: "와이파이", "실거래가", "무더위쉼터")') },
     },
@@ -38,7 +38,7 @@ export function registerMetaTools(server: McpServer, ctx: Ctx) {
       }))
       return ok(
         { count: hits.length, datasets: hits, hint: hits.length === 0 ? '결과 없음 — 다른 키워드로 시도하거나 get_dataset_spec으로 id를 직접 확인하세요.' : undefined },
-        { source: 'built-in catalog.ts (28 datasets)', sample: ctx.client.isSample },
+        { source: `built-in catalog.ts (${CATALOG.length} datasets)`, sample: ctx.client.isSample },
       )
     },
   )
@@ -66,7 +66,7 @@ export function registerMetaTools(server: McpServer, ctx: Ctx) {
           pathParams: e.pathParams, sampleFields: e.sampleFields,
           dedicatedTool: e.tool ?? null, callable: e.callable,
           example: e.callable
-            ? `call_dataset(id: '${e.id}', params: [${e.pathParams.filter(p => p.required).map(p => `'${p.example}'`).join(', ')}])`
+            ? `call_dataset(id: '${e.id}', params: [${exampleParams(e).map(v => `'${v}'`).join(', ')}])`
             : `정식 tool '${e.tool}' 사용`,
         },
         { source: 'built-in catalog.ts', sample: ctx.client.isSample },
@@ -83,7 +83,7 @@ export function registerMetaTools(server: McpServer, ctx: Ctx) {
         '카탈로그 데이터셋을 직접 호출합니다. 응답은 정규화되지 않은 원본 필드입니다.',
       inputSchema: {
         id: z.string().describe('카탈로그 데이터셋 id'),
-        params: z.array(z.string()).optional().describe('경로 파라미터 (get_dataset_spec의 pathParams 순서대로)'),
+        params: z.array(z.string()).optional().describe("경로 파라미터 (get_dataset_spec의 pathParams 순서대로, 건너뛰는 자리는 공백 ' ')"),
         limit: z.number().int().optional().describe('최대 행 수 (기본 10, 최대 50)'),
       },
     },

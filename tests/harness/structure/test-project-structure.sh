@@ -1,6 +1,6 @@
 #!/bin/bash
 # Validates this repo's actual state: package.json/manifest.json version sync,
-# TOOL_NAMES has exactly 19 entries, CLAUDE.md exists, and scripts/ are sane.
+# TOOL_NAMES has exactly 20 entries, CLAUDE.md exists, and scripts/ are sane.
 
 # --- Version sync: package.json <-> manifest.json ---
 if [ -f "package.json" ] && [ -f "manifest.json" ]; then
@@ -11,13 +11,13 @@ else
     fail "package.json version == manifest.json version" "package.json or manifest.json not found"
 fi
 
-# --- TOOL_NAMES has exactly 19 entries (src/index.ts) ---
+# --- TOOL_NAMES has exactly 20 entries (src/index.ts) ---
 if [ -f "src/index.ts" ]; then
     TOOL_COUNT=$(awk '/export const TOOL_NAMES = \[/,/\] as const/' src/index.ts 2>/dev/null \
         | grep -o "'[^']*'" | wc -l | tr -d ' ')
-    assert_eq "TOOL_NAMES has 19 entries" "19" "$TOOL_COUNT"
+    assert_eq "TOOL_NAMES has 20 entries" "20" "$TOOL_COUNT"
 else
-    fail "TOOL_NAMES has 19 entries" "src/index.ts not found"
+    fail "TOOL_NAMES has 20 entries" "src/index.ts not found"
 fi
 
 # --- CLAUDE.md existence ---

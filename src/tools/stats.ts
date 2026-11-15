@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Ctx } from './context.js'
 import { ok } from './envelope.js'
-import { normalizeSubwayRidership, normalizeLivingPopulation, normalizeRealEstate } from '../normalize/stats.js'
+import { normalizeSubwayRidership, normalizeLivingPopulation } from '../normalize/stats.js'
 
 export function registerStatsTools(server: McpServer, ctx: Ctx) {
   server.registerTool(
@@ -67,37 +67,6 @@ export function registerStatsTools(server: McpServer, ctx: Ctx) {
         {
           source: '생활인구 행정동 (SPOP_LOCAL_RESD_DONG)',
           notes: ['배치 통계(약 5일 지연). 대용량이므로 date/timeSlot/dongCode로 좁혀 조회하세요.', ...(u.note ? [u.note] : [])],
-          sample: ctx.client.isSample,
-        },
-      )
-    },
-  )
-
-  server.registerTool(
-    'get_real_estate_prices',
-    {
-      title: 'Real estate transaction prices',
-      description:
-        'Get Seoul real-estate sale transaction records (price in 만원), filterable by district/dong/year. ' +
-        '부동산 매매 실거래가. "강남구 아파트 실거래가?" 류 질문에 사용.',
-      inputSchema: {
-        district: z.string().optional().describe('자치구명 (예: "강남구")'),
-        dong: z.string().optional().describe('법정동명 (예: "역삼동")'),
-        year: z.string().regex(/^\d{4}$/).optional().describe('접수연도 YYYY'),
-        limit: z.number().int().min(1).max(50).optional().describe('최대 건수 (기본 10)'),
-      },
-    },
-    async ({ district, dong, year, limit }) => {
-      const u = await ctx.client.getJson('tbLnOpendataRtmsV', 1, 200)
-      let rows = normalizeRealEstate(u.rows)
-      if (district) rows = rows.filter(r => r.district.includes(district.replace(/구$/, '')))
-      if (dong) rows = rows.filter(r => r.dong.includes(dong.replace(/동$/, '')))
-      if (year) rows = rows.filter(r => r.year === year)
-      return ok(
-        { count: rows.length, deals: rows.slice(0, limit ?? 10) },
-        {
-          source: '부동산 실거래가 (tbLnOpendataRtmsV)',
-          notes: ['amount 단위: 만원. 최근 접수분 200건 내 필터 결과입니다 — 더 좁히려면 district/dong/year를 지정하세요.', ...(u.note ? [u.note] : [])],
           sample: ctx.client.isSample,
         },
       )

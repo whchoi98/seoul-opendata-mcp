@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { InMemoryCache, CompositeCache, HARD_TTL_MS, type CacheBackend, type CacheEntry } from '../src/client/cache.js'
 
-const U = (tag: string) => ({ rows: [{ tag }], totalCount: 1, raw: null }) as any
+const U = (tag: string) => ({ rows: [{ tag }], totalCount: 1 }) as any
 
 const fakeBackend = (store = new Map<string, CacheEntry>()): CacheBackend & { store: Map<string, CacheEntry> } => ({
   store,
@@ -16,6 +16,25 @@ describe('InMemoryCache', () => {
     await c.set('k', { value: U('a'), storedAt: t, softTtlMs: 1000 })
     t += HARD_TTL_MS + 1
     expect(await c.get('k')).toBeUndefined()
+  })
+
+  it('maxEntries를 넘으면 가장 오래 쓰이지 않은 항목부터 제거한다 (LRU)', async () => {
+    const c = new InMemoryCache(() => 0, HARD_TTL_MS, 2)
+    await c.set('a', { value: U('a'), storedAt: 0, softTtlMs: 1000 })
+    await c.set('b', { value: U('b'), storedAt: 0, softTtlMs: 1000 })
+    await c.get('a') // a를 최근 사용으로 갱신 → 다음 제거 대상은 b
+    await c.set('c', { value: U('c'), storedAt: 0, softTtlMs: 1000 })
+    expect(await c.get('b')).toBeUndefined()
+    expect(await c.get('a')).toBeTruthy()
+    expect(await c.get('c')).toBeTruthy()
+  })
+
+  it('기본 상한은 MAX_L1_ENTRIES다', async () => {
+    const { MAX_L1_ENTRIES } = await import('../src/client/cache.js')
+    const c = new InMemoryCache(() => 0)
+    for (let i = 0; i <= MAX_L1_ENTRIES; i++) await c.set(`k${i}`, { value: U(String(i)), storedAt: 0, softTtlMs: 1000 })
+    expect(await c.get('k0')).toBeUndefined()
+    expect(await c.get(`k${MAX_L1_ENTRIES}`)).toBeTruthy()
   })
 })
 

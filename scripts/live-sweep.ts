@@ -1,4 +1,4 @@
-// 19개 tool 전수 라이브 스위프 — 호출당 서버 프로세스 1개, 간격 1.3초 (샘플 키 제한 회피)
+// 20개 tool 전수 라이브 스위프 — 호출당 서버 프로세스 1개, 간격 1.3초 (샘플 키 제한 회피)
 import { spawnSync } from 'node:child_process'
 
 const CALLS: Array<[string, Record<string, unknown>]> = [
@@ -16,7 +16,8 @@ const CALLS: Array<[string, Record<string, unknown>]> = [
   ['get_weather', { place: '광화문' }],
   ['get_subway_ridership', { date: '20260801', station: '강남' }],
   ['get_living_population', { limit: 3 }],
-  ['get_real_estate_prices', { limit: 3 }],
+  ['get_real_estate_prices', { year: '2025', district: '강남구', buildingUse: '아파트', limit: 3 }],
+  ['get_land_price', { district: '강남구', dong: '역삼동', lotNumber: '737', year: '2025' }],
   ['find_pharmacies', { district: '중구', limit: 3 }],
   ['search_dataset', { query: '와이파이' }],
   ['get_dataset_spec', { id: 'TbPublicWifiInfo' }],

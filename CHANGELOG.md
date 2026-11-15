@@ -15,6 +15,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-14
+
+### Added
+
+- `get_land_price` tool: officially assessed individual land price (KRW per m²) by district, legal dong, and lot number (`IndividuallyPostedLandPriceService`). The server now exposes 20 tools.
+- `get_real_estate_prices`: `dealType: 'rent'` for jeonse / monthly-rent transactions (`tbLnOpendataRentV`), plus `building`, `buildingUse`, `rentType`, and `includeCancelled` inputs. Sale rows gain `landArea`, `buildYear`, `dealMethod`, `rightType`, `cancelDate`; the response gains `totalCount`.
+- Catalog: `IndividuallyPostedLandPriceService` entry (29 datasets), and path-parameter specs for the sale and rent datasets.
+
+### Changed
+
+- `get_real_estate_prices` moved to `src/tools/realestate.ts` / `src/normalize/realestate.ts`. Cancelled sales are excluded by default.
+- `call_dataset` validation checks that each required path position is filled instead of counting arguments, and `get_dataset_spec` examples fill skipped positions with a space.
+
+### Fixed
+
+- `get_real_estate_prices` filtered only the newest 200 rows in code, so a past `year` always returned nothing and `district` covered about six days of data. Year, district, legal dong, building name, and building type are now sent as upstream path filters.
+
+## [0.4.0] - 2026-11-12
+
 ### Added
 
 - Add a Streamable HTTP entrypoint (`src/http.ts` → `dist/http.js`) satisfying the Amazon Bedrock AgentCore Runtime contract (`0.0.0.0:8000`, `POST /mcp` stateless, `GET /ping`)
@@ -26,6 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Align per-service soft cache TTLs with each source's real refresh cadence (e.g. `citydata` 60s → 300s)
+- Bound the in-process L1 cache to `MAX_L1_ENTRIES` (1000) with LRU eviction so long-running HTTP processes no longer grow without limit
+- Stop carrying the raw upstream payload (`raw`) in `Unwrapped` results and cache entries; nothing read it, and it roughly doubled L1 memory and DynamoDB item size
+- Wait `retryDelayMs` (default 300 ms) before the single 5xx/network retry and cancel the discarded response body; upstream timeouts are no longer retried and fail fast with the new `TIMEOUT` code, capping worst-case latency at one `timeoutMs`
+- Upgrade `zod` to v4 and `vitest` to v5, and refresh transitive dependencies (`npm audit`: 0 vulnerabilities). With zod v4, tool input JSON schemas no longer emit `additionalProperties: false`; unknown arguments are still stripped at runtime as before
+
+### Fixed
+
+- Return HTTP 400 with JSON-RPC `-32700 Parse error` for a non-JSON `POST /mcp` body instead of 500 `-32603`
+- The `secret-scan.sh` PreToolUse hook could never block: `|| true` swallowed its exit code and it exited 1 (Claude Code blocks only on exit 2). It now scans only `git commit` commands, exits 2, reads the staged blob instead of the working tree, checks literal `.env` key values, and flags 32-hex Seoul keys only in key context so fixture image ids are not false positives
+- `scripts/install-hooks.sh` now also installs a git `pre-commit` hook running the same scan, which covers `git add -A && git commit` in a single command
 
 ## [0.3.0] - 2026-08-17
 
@@ -74,7 +103,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add an XML error fallback for JSON endpoints
 - Fall back to sample mode when the API key is empty
 
-[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/whchoi98/seoul-opendata-mcp/releases/tag/v0.1.0
@@ -91,6 +122,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-14
+
+### Added
+
+- `get_land_price` tool: 자치구, 법정동, 지번으로 개별공시지가(원/㎡)를 조회합니다(`IndividuallyPostedLandPriceService`). tool이 20개가 됐습니다.
+- `get_real_estate_prices`: `dealType: 'rent'`로 전월세 실거래(`tbLnOpendataRentV`)를 조회하고, `building`, `buildingUse`, `rentType`, `includeCancelled` 입력을 추가했습니다. 매매 행에 `landArea`, `buildYear`, `dealMethod`, `rightType`, `cancelDate`를, 응답에 `totalCount`를 더했습니다.
+- 카탈로그: `IndividuallyPostedLandPriceService` 항목(총 29종)과 매매, 전월세 데이터셋의 경로 파라미터 명세를 추가했습니다.
+
+### Changed
+
+- `get_real_estate_prices`를 `src/tools/realestate.ts`와 `src/normalize/realestate.ts`로 옮겼습니다. 해제된 매매 거래는 기본으로 뺍니다.
+- `call_dataset` 검증이 인자 개수 대신 필수 경로 자리가 채워졌는지 확인하고, `get_dataset_spec` 예시는 건너뛰는 자리를 공백으로 채웁니다.
+
+### Fixed
+
+- `get_real_estate_prices`가 최신 200건만 받아 코드에서 걸러서, 과거 `year`는 항상 0건이었고 `district`는 약 6일치 안에서만 걸렸습니다. 이제 연도, 자치구, 법정동, 건물명, 건물 용도를 업스트림 경로 필터로 보냅니다.
+
+## [0.4.0] - 2026-11-12
+
 ### Added
 
 - Streamable HTTP 진입점(`src/http.ts` → `dist/http.js`) 추가 — Amazon Bedrock AgentCore Runtime 계약 충족(`0.0.0.0:8000`, `POST /mcp` stateless, `GET /ping`)
@@ -102,6 +152,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - 서비스별 soft 캐시 TTL을 각 원천의 실제 갱신 주기에 맞춰 정렬(예: `citydata` 60초 → 300초)
+- 프로세스 내 L1 캐시에 `MAX_L1_ENTRIES`(1000개) 상한과 LRU 제거를 적용해, 장기 실행 HTTP 프로세스에서 캐시가 끝없이 커지지 않게 함
+- `Unwrapped` 결과와 캐시 항목에서 업스트림 원본(`raw`)을 제거. 읽는 코드가 없었고 L1 메모리와 DynamoDB 항목 크기를 두 배 가까이 키우고 있었음
+- 5xx·네트워크 오류의 1회 재시도 전에 `retryDelayMs`(기본 300ms)만큼 대기하고 버리는 응답 본문을 정리함. 업스트림 타임아웃은 더 이상 재시도하지 않고 새 `TIMEOUT` 코드로 바로 실패해, 최악 지연이 `timeoutMs` 1회로 줄어듦
+- `zod`를 v4로, `vitest`를 v5로 올리고 전이 의존성을 갱신함(`npm audit` 0건). zod v4에서는 tool 입력 JSON 스키마에 `additionalProperties: false`가 더 이상 나오지 않지만, 정의되지 않은 인자를 런타임에 버리는 동작은 이전과 같음
+
+### Fixed
+
+- `POST /mcp` 본문이 JSON이 아니면 500 `-32603` 대신 HTTP 400과 JSON-RPC `-32700 Parse error`로 응답
+- `secret-scan.sh` PreToolUse 훅이 아무것도 막지 못하던 문제 수정. `|| true`가 종료 코드를 버렸고, 스크립트도 exit 1로 끝났음(Claude Code는 exit 2에서만 막음). 이제 `git commit` 명령에서만 검사하고 exit 2로 막으며, 작업 트리가 아닌 stage된 내용을 읽고, `.env`의 실제 키 값을 직접 찾음. 32자리 hex 서울 키는 키 문맥에서만 잡아 픽스처 이미지 ID 오탐을 없앰
+- `scripts/install-hooks.sh`가 같은 검사를 돌리는 git `pre-commit` 훅도 설치함. 한 명령 안의 `git add -A && git commit`까지 막음
 
 ## [0.3.0] - 2026-08-17
 
@@ -150,7 +210,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON 엔드포인트에 대한 XML 에러 응답 폴백 처리 추가
 - API 키가 비어 있을 때 sample 모드로 폴백하도록 수정
 
-[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/whchoi98/seoul-opendata-mcp/releases/tag/v0.1.0

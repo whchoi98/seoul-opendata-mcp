@@ -1,6 +1,9 @@
 import type { Unwrapped } from './response.js'
 
 export const HARD_TTL_MS = 86_400_000 // stale 서빙 한도(전 서비스 공통 24h)
+// L1 항목 수 상한 — 핫스팟 3종(121+121+82)과 페이지 단위 데이터셋을 담고도 남는 크기.
+// 자유 입력 키(call_dataset 파라미터, 역명)가 장기 실행 HTTP 프로세스에 무한히 쌓이는 것을 막는다.
+export const MAX_L1_ENTRIES = 1000
 
 export interface CacheEntry { value: Unwrapped; storedAt: number; softTtlMs: number }
 
@@ -9,19 +12,30 @@ export interface CacheBackend {
   set(key: string, entry: CacheEntry): Promise<void>
 }
 
+/** Map의 삽입 순서를 사용 순서로 쓰는 LRU — 조회·저장 시 항목을 맨 뒤로 옮기고, 넘치면 맨 앞을 버린다 */
 export class InMemoryCache implements CacheBackend {
   private store = new Map<string, CacheEntry>()
-  constructor(private now: () => number = Date.now, private hardTtlMs: number = HARD_TTL_MS) {}
+  constructor(
+    private now: () => number = Date.now,
+    private hardTtlMs: number = HARD_TTL_MS,
+    private maxEntries: number = MAX_L1_ENTRIES,
+  ) {}
 
   async get(key: string): Promise<CacheEntry | undefined> {
     const e = this.store.get(key)
     if (!e) return undefined
-    if (this.now() - e.storedAt > this.hardTtlMs) { this.store.delete(key); return undefined }
+    this.store.delete(key)
+    if (this.now() - e.storedAt > this.hardTtlMs) return undefined
+    this.store.set(key, e)
     return e
   }
 
   async set(key: string, entry: CacheEntry): Promise<void> {
+    this.store.delete(key)
     this.store.set(key, entry)
+    while (this.store.size > this.maxEntries) {
+      this.store.delete(this.store.keys().next().value as string)
+    }
   }
 }
 

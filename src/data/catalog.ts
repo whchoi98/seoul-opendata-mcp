@@ -22,7 +22,8 @@ export const CATALOG: DatasetEntry[] = [
   // ── 승격 tool 대상 신규 4종 + 파생 1종 ──
   E({ id: 'CardSubwayStatsNew', name: '지하철 일별 승하차 인원', category: '교통·이동', description: '지하철 역별 하루 승차 하차 인원 통계, 이용객 수', responseType: 'json', endpoint: 'open', pathParams: [{ name: 'USE_YMD', required: true, example: '20260801', description: '사용일자 YYYYMMDD (보통 2~4일 전까지 제공)' }], sampleFields: ['USE_YMD', 'SBWY_ROUT_LN_NM', 'SBWY_STNS_NM', 'GTON_TNOPE', 'GTOFF_TNOPE'], tool: 'get_subway_ridership', callable: true }),
   E({ id: 'SPOP_LOCAL_RESD_DONG', name: '생활인구(행정동, 내국인)', category: '생활·인구', description: '행정동별 시간대별 생활인구 추계, 상주 유동 인구 통계', responseType: 'json', endpoint: 'open', pathParams: [{ name: 'STDR_DE_ID', required: false, example: '20260810', description: '기준일자 YYYYMMDD' }, { name: 'TMZON_PD_SE', required: false, example: '14', description: '시간대 00~23' }, { name: 'ADSTRD_CODE_SE', required: false, example: '11680640', description: '행정동코드' }], sampleFields: ['STDR_DE_ID', 'TMZON_PD_SE', 'ADSTRD_CODE_SE', 'TOT_LVPOP_CO'], tool: 'get_living_population', callable: true }),
-  E({ id: 'tbLnOpendataRtmsV', name: '부동산 실거래가', category: '부동산·경제', description: '아파트 주택 부동산 매매 실거래가, 거래 금액, 면적', responseType: 'json', endpoint: 'open', pathParams: [], sampleFields: ['RCPT_YR', 'CGG_NM', 'STDG_NM', 'BLDG_NM', 'THING_AMT'], tool: 'get_real_estate_prices', callable: true }),
+  E({ id: 'tbLnOpendataRtmsV', name: '부동산 실거래가', category: '부동산·경제', description: '아파트 주택 부동산 매매 실거래가, 거래 금액, 면적', responseType: 'json', endpoint: 'open', pathParams: [{ name: 'RCPT_YR', required: false, example: '2025', description: '접수연도 YYYY' }, { name: 'CGG_CD', required: false, example: '11680', description: '자치구코드 5자리' }, { name: 'CGG_NM', required: false, example: '강남구', description: '자치구명 전체(강남구)' }, { name: 'STDG_CD', required: false, example: '10100', description: '법정동코드 5자리' }, { name: 'LOTNO_SE', required: false, example: '1', description: '지번구분 코드' }, { name: 'LOTNO_SE_NM', required: false, example: '대지', description: '지번구분명' }, { name: 'MNO', required: false, example: '0737', description: '본번 4자리' }, { name: 'SNO', required: false, example: '0000', description: '부번 4자리' }, { name: 'BLDG_NM', required: false, example: '래미안', description: '건물명(부분일치)' }, { name: 'CTRT_DAY', required: false, example: '20250301', description: '계약일 YYYYMMDD' }, { name: 'BLDG_USG', required: false, example: '아파트', description: '건물용도: 아파트, 연립다세대, 단독다가구, 오피스텔' }], sampleFields: ['RCPT_YR', 'CGG_NM', 'STDG_NM', 'BLDG_NM', 'THING_AMT', 'ARCH_AREA', 'CTRT_DAY', 'RTRCN_DAY'], tool: 'get_real_estate_prices', callable: true }),
+  E({ id: 'IndividuallyPostedLandPriceService', name: '개별공시지가', category: '부동산·경제', description: '토지 필지별 개별공시지가, 땅값, 제곱미터당 가격', responseType: 'json', endpoint: 'open', pathParams: [{ name: 'SIGUNGU_NM', required: true, example: '강남구', description: '자치구명' }, { name: 'BJDONG_NM', required: false, example: '역삼동', description: '법정동명' }, { name: 'BONBEON', required: false, example: '737', description: '본번' }, { name: 'BUBEON', required: false, example: '0', description: '부번' }, { name: 'PILGI_CD', required: false, example: '1', description: '필지구분 코드' }, { name: 'YEAR', required: true, example: '2025', description: '기준연도 YYYY' }], sampleFields: ['SIGUNGU_NM', 'BJDONG_NM', 'BONBEON', 'BUBEON', 'JIGA', 'BASE_MON'], tool: 'get_land_price', callable: true }),
   E({ id: 'TbPharmacyOperateInfo', name: '약국 운영정보', category: '보건·복지', description: '약국 위치, 전화번호, 요일별 운영시간', responseType: 'json', endpoint: 'open', pathParams: [], sampleFields: ['DUTYNAME', 'DUTYADDR', 'DUTYTEL1', 'DUTYTIME1S', 'DUTYTIME1C'], tool: 'find_pharmacies', callable: true }),
   E({ id: 'LIVE_DST_MESSAGE', name: '긴급재난문자', category: '안전·환경', description: '재난 안전 긴급 문자 발송 내역 (핫스팟 기준)', responseType: 'xml', endpoint: 'open', pathParams: [], sampleFields: ['DST_SE_NM', 'DST_MSG_CN'], tool: 'get_disaster_alerts', callable: false }),
   // ── 카탈로그 전용 신규 15종 (call_dataset으로 호출) ──
@@ -31,7 +32,7 @@ export const CATALOG: DatasetEntry[] = [
   E({ id: 'SPOP_DAILYSUM_JACHI', name: '주민등록인구(자치구)', category: '생활·인구', description: '자치구별 일별 생활인구 합계 통계', responseType: 'json', endpoint: 'open', pathParams: [], sampleFields: ['STDR_DE_ID', 'SIGNGU_CODE_SE', 'SIGNGU_NM'], callable: true }),
   E({ id: 'TbPublicWifiInfo', name: '공공와이파이 위치', category: '생활·인구', description: '무료 공공 와이파이 WiFi 설치 위치, 장소', responseType: 'json', endpoint: 'open', pathParams: [], sampleFields: ['X_SWIFI_MGR_NO', 'X_SWIFI_WRDOFC', 'X_SWIFI_MAIN_NM'], callable: true }),
   E({ id: 'TbGtnHwcwP', name: '무더위쉼터', category: '생활·인구', description: '폭염 대비 무더위 쉼터 위치, 냉방 시설', responseType: 'json', endpoint: 'open', pathParams: [], sampleFields: ['YEAR', 'AREA_CD', 'FACILITY_TYPE1'], callable: true }),
-  E({ id: 'tbLnOpendataRentV', name: '부동산 전월세가', category: '부동산·경제', description: '아파트 주택 전세 월세 임대차 실거래, 보증금', responseType: 'json', endpoint: 'open', pathParams: [], sampleFields: ['RCPT_YR', 'CGG_NM', 'STDG_NM'], callable: true }),
+  E({ id: 'tbLnOpendataRentV', name: '부동산 전월세가', category: '부동산·경제', description: '아파트 주택 전세 월세 임대차 실거래, 보증금', responseType: 'json', endpoint: 'open', pathParams: [{ name: 'RCPT_YR', required: false, example: '2025', description: '접수연도 YYYY' }, { name: 'CGG_CD', required: false, example: '11680', description: '자치구코드 5자리' }, { name: 'CGG_NM', required: false, example: '강남구', description: '자치구명 전체(강남구)' }, { name: 'STDG_CD', required: false, example: '10100', description: '법정동코드 5자리' }, { name: 'LOTNO_SE', required: false, example: '1', description: '지번구분 코드' }, { name: 'MNO', required: false, example: '0737', description: '본번 4자리' }, { name: 'SNO', required: false, example: '0000', description: '부번 4자리' }, { name: 'CTRT_DAY', required: false, example: '20250301', description: '계약일 YYYYMMDD' }, { name: 'BLDG_NM', required: false, example: '타워팰리스', description: '건물명(부분일치)' }, { name: 'BLDG_USG', required: false, example: '아파트', description: '건물용도: 아파트, 연립다세대, 단독다가구, 오피스텔' }], sampleFields: ['RCPT_YR', 'CGG_NM', 'STDG_NM', 'BLDG_NM', 'RENT_SE', 'GRFE', 'RTFE', 'CTRT_DAY'], tool: 'get_real_estate_prices', callable: true }),
   E({ id: 'VwsmTrdarSelngQq', name: '골목상권 추정매출', category: '부동산·경제', description: '상권별 업종별 분기 추정 매출액 통계', responseType: 'json', endpoint: 'open', pathParams: [], sampleFields: ['STDR_YYQU_CD', 'TRDAR_SE_CD', 'TRDAR_SE_CD_NM'], callable: true }),
   E({ id: 'ListTraditionalMarket', name: '전통시장 현황', category: '부동산·경제', description: '전통시장 위치, 점포 수, 유형', responseType: 'json', endpoint: 'open', pathParams: [], sampleFields: ['CGG', 'MRKT_NM', 'SHP', 'ADDR', 'TYPE', 'TELNO'], callable: true }),
   E({ id: 'ListNecessariesPricesService', name: '생필품 물가정보', category: '부동산·경제', description: '생활필수품 농수산물 시장별 가격, 물가', responseType: 'json', endpoint: 'open', pathParams: [], sampleFields: ['P_SEQ', 'M_NAME', 'A_NAME', 'A_PRICE'], callable: true }),
@@ -70,15 +71,25 @@ export function searchCatalog(query: string): DatasetEntry[] {
   return scored.sort((a, b) => b.score - a.score).slice(0, 5).map(x => x.e)
 }
 
+/** 호출 예시용 params — 마지막 필수 인자 자리까지만 채우고, 그 사이 선택 자리는 공백(건너뛰기)으로 둔다 */
+export function exampleParams(entry: DatasetEntry): string[] {
+  const last = entry.pathParams.reduce((acc, p, i) => (p.required ? i : acc), -1)
+  return entry.pathParams.slice(0, last + 1).map(p => (p.required ? p.example : ' '))
+}
+
 /** call_dataset 사전 검증 — 문제 없으면 null, 있으면 한국어 안내문 */
 export function validateCall(entry: DatasetEntry, params: string[]): string | null {
   if (!entry.callable) {
     return `'${entry.id}'은(는) 직접 호출 대상이 아닙니다. 정식 tool '${entry.tool}'을(를) 사용하세요.`
   }
-  const required = entry.pathParams.filter(p => p.required)
-  if (params.length < required.length) {
-    const spec = required.map(p => `${p.name}(예: ${p.example}) — ${p.description}`).join('; ')
-    return `필수 경로 파라미터가 필요합니다: ${spec}. params 배열에 순서대로 전달하세요.`
+  // 경로 파라미터는 자리로 구분된다 — 개수가 아니라 필수 인자의 자리가 채워졌는지 본다
+  const missing = entry.pathParams
+    .map((p, i) => ({ p, i }))
+    .filter(({ p, i }) => p.required && !(params[i] ?? '').trim())
+  if (missing.length > 0) {
+    const spec = missing.map(({ p, i }) => `${p.name}(${i + 1}번째, 예: ${p.example}) — ${p.description}`).join('; ')
+    const skip = entry.pathParams.length > 1 ? " 건너뛰는 자리는 공백 문자 ' '로 채우세요." : ''
+    return `필수 경로 파라미터가 필요합니다: ${spec}. params 배열에 순서대로 전달하세요.${skip}`
   }
   return null
 }

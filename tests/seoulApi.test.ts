@@ -94,6 +94,51 @@ describe('SeoulApiClient', () => {
     expect(u.rows).toHaveLength(1)
   })
 
+  it('5xx 응답은 본문을 정리(cancel)한 뒤 retryDelayMs만큼 기다렸다가 재시도한다', async () => {
+    const failed = new Response('oops', { status: 503 })
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce(failed)
+      .mockResolvedValueOnce(standardPage([{ a: 1 }], 1))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any, retryDelayMs: 60 })
+    const t0 = Date.now()
+    await c.getJson('bikeList', 1, 5)
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(50)
+    expect(failed.bodyUsed).toBe(true) // 버린 응답 본문이 커넥션을 붙잡지 않도록 정리됨
+  })
+
+  it('타임아웃은 재시도하지 않고 TIMEOUT 코드로 즉시 실패한다 (최악 대기 = timeoutMs 1회)', async () => {
+    const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError')
+    const fetchFn = vi.fn()
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValueOnce(standardPage([{ a: 1 }], 1))
+    const c = new SeoulApiClient({ apiKey: 'SECRETKEY123', fetchFn: fetchFn as any, retryDelayMs: 0 })
+    const err = await c.getJson('bikeList', 1, 5).catch(e => e)
+    expect(err).toMatchObject({ name: 'SeoulApiError', code: 'TIMEOUT' })
+    expect(err.message).not.toContain('SECRETKEY123')
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('타임아웃이 아닌 네트워크 오류는 1회 재시도한다', async () => {
+    const fetchFn = vi.fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(standardPage([{ a: 1 }], 1))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any, retryDelayMs: 0 })
+    const u = await c.getJson('bikeList', 1, 5)
+    expect(u.rows).toHaveLength(1)
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('결과와 캐시 항목에 원본 payload(raw)를 싣지 않는다 — 메모리·L2 항목 크기 절감', async () => {
+    const stored: any[] = []
+    const fetchFn = vi.fn().mockResolvedValue(standardPage([{ a: 1 }], 1))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any })
+    c.attachL2({ async get() { return undefined }, async set(_k, e) { stored.push(e) } })
+    const u = await c.getJson('bikeList', 1, 5)
+    expect(u).not.toHaveProperty('raw')
+    expect(stored).toHaveLength(1)
+    expect(JSON.stringify(stored[0])).not.toContain('list_total_count') // 봉투 원문이 L2에 실리지 않음
+  })
+
   it('에러 메시지에서 키가 마스킹된다', () => {
     const c = new SeoulApiClient({ apiKey: 'SECRETKEY123', fetchFn: vi.fn() as any })
     expect(c.maskedKey()).toBe('SECR…(masked)')
@@ -161,6 +206,7 @@ describe('SeoulApiClient', () => {
     expect(SOFT_TTL['CardSubwayStatsNew']).toBe(86_400_000)
     expect(SOFT_TTL['SPOP_LOCAL_RESD_DONG']).toBe(86_400_000)
     expect(SOFT_TTL['tbLnOpendataRtmsV']).toBe(21_600_000)
+    expect(SOFT_TTL['IndividuallyPostedLandPriceService']).toBe(86_400_000) // 연 1회 공시
     expect(SOFT_TTL['culturalEventInfo']).toBe(21_600_000)
     expect(SOFT_TTL['TbPharmacyOperateInfo']).toBe(86_400_000)
     expect(SOFT_TTL['AccInfo']).toBe(300_000)

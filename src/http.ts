@@ -14,6 +14,8 @@ const MAX_BODY_BYTES = 1_000_000 // 1MB — 무제한 버퍼링 방지
 
 /** 본문이 MAX_BODY_BYTES를 넘으면 던진다 — readBody는 그 이상 청크를 누적하지 않는다 */
 class PayloadTooLargeError extends Error {}
+/** 본문이 JSON이 아니면 던진다 — JSON-RPC 규약상 -32700(Parse error)으로 응답해야 한다 */
+class InvalidJsonError extends Error {}
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = []
@@ -25,7 +27,12 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
     chunks.push(buf)
   }
   const raw = Buffer.concat(chunks).toString('utf8')
-  return raw ? JSON.parse(raw) : undefined
+  if (!raw) return undefined
+  try {
+    return JSON.parse(raw)
+  } catch (e) {
+    throw new InvalidJsonError((e as Error).message)
+  }
 }
 
 async function handleMcp(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -60,6 +67,11 @@ createServer((req, res) => {
         if (!res.headersSent) res.writeHead(413, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ error: 'payload too large' }))
         req.destroy() // 응답을 먼저 흘려보낸 뒤 소켓을 정리 — 순서를 바꾸면 응답 전송 전에 소켓이 끊길 수 있다
+        return
+      }
+      if (e instanceof InvalidJsonError) {
+        if (!res.headersSent) res.writeHead(400, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }))
         return
       }
       console.error(`[http] 요청 처리 실패: ${(e as Error).message}`)

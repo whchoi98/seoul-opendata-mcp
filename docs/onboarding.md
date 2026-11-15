@@ -55,7 +55,7 @@ npm run dev
 npm run inspect
 ```
 
-Register the server with a real MCP client to confirm the 19 tools are visible end to end:
+Register the server with a real MCP client to confirm the 20 tools are visible end to end:
 
 ```bash
 claude mcp add seoul-opendata -e SEOUL_API_KEY=YOUR_KEY -- npx -y seoul-opendata-mcp
@@ -106,7 +106,7 @@ In one sentence: a stdio MCP server wraps two Seoul city-data HTTP APIs behind o
 ## Resources
 
 - [`docs/architecture.md`](architecture.md) -- layered architecture, both Mermaid diagrams, Key Design Decisions
-- [`docs/api-reference.md`](api-reference.md) -- all 19 tools: input schema, output summary, example question
+- [`docs/api-reference.md`](api-reference.md) -- all 20 tools: input schema, output summary, example question
 - [`docs/reference/INDEX.md`](reference/INDEX.md) -- implementation reference index (api / security / agent-llm layers)
 - [`README.md`](../README.md) / [`README.ko.md`](../README.ko.md) -- user-facing quick start and tool list
 - [Seoul Open Data Plaza](https://data.seoul.go.kr) -- upstream API key issuance and dataset documentation

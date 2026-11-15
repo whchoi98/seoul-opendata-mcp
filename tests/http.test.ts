@@ -44,12 +44,12 @@ describe('AgentCore Runtime HTTP 계약', () => {
     expect(await res.json()).toEqual({ status: 'Healthy' })
   })
 
-  it('POST /mcp: initialize → tools/list 19개 (stateless — 요청 간 세션 불요)', async () => {
+  it('POST /mcp: initialize → tools/list 20개 (stateless — 요청 간 세션 불요)', async () => {
     const init = await rpc(INIT)
     expect(init.status).toBe(200)
     const list = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' })
     const msg = await parseRpc(list)
-    expect(msg.result.tools).toHaveLength(19)
+    expect(msg.result.tools).toHaveLength(20)
   }, 15_000)
 
   it('플랫폼 주입 Mcp-Session-Id 헤더를 거부하지 않는다', async () => {
@@ -77,6 +77,16 @@ describe('AgentCore Runtime HTTP 계약', () => {
       body: 'x'.repeat(1_050_000),
     })
     expect(oversized.status).toBe(413)
+  }, 15_000)
+
+  it('JSON이 아닌 본문 → 400 + JSON-RPC Parse error(-32700)', async () => {
+    const res = await fetch(`http://127.0.0.1:${PORT}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: '{"jsonrpc": "2.0", broken',
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ jsonrpc: '2.0', id: null, error: { code: -32700 } })
   }, 15_000)
 
   it('동시 2개 POST 요청도 500 없이 처리된다 (요청별 독립 server/transport)', async () => {

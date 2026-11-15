@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/secret-scan.sh 2>/dev/null || true"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/secret-scan.sh\""
           }
         ]
       }
