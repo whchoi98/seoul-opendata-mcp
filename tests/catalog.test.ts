@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { CATALOG, searchCatalog, validateCall, exampleParams } from '../src/data/catalog.js'
 
 describe('CATALOG 무결성', () => {
-  it('정확히 29개, id 유일', () => {
-    expect(CATALOG).toHaveLength(29)
-    expect(new Set(CATALOG.map(e => e.id)).size).toBe(29)
+  it('정확히 52개, id 유일', () => {
+    expect(CATALOG).toHaveLength(52)
+    expect(new Set(CATALOG.map(e => e.id)).size).toBe(52)
   })
   it('카테고리는 6종만', () => {
     const cats = new Set(CATALOG.map(e => e.category))
@@ -39,6 +39,28 @@ describe('searchCatalog', () => {
     expect(land.id).toBe('IndividuallyPostedLandPriceService')
     expect(land.tool).toBe('get_land_price')
     expect(CATALOG.find(e => e.id === 'tbLnOpendataRentV')!.tool).toBe('get_real_estate_prices')
+  })
+  it('추가 tool 대상 데이터셋은 정식 tool로 안내: 막차, 시간대별 승하차, 테니스장 예약, 주차 요금', () => {
+    expect(searchCatalog('지하철 막차')[0].tool).toBe('get_subway_schedule')
+    expect(searchCatalog('시간대별 승하차')[0]).toMatchObject({ id: 'CardSubwayTime', tool: 'get_subway_hourly_ridership' })
+    expect(searchCatalog('테니스장 예약')[0]).toMatchObject({ id: 'ListPublicReservationSport', tool: 'search_public_reservations' })
+    expect(searchCatalog('주차장 요금 운영시간')[0]).toMatchObject({ id: 'GetParkInfo', tool: 'get_parking' })
+  })
+  it('카탈로그 전용 신규 항목 검색', () => {
+    const top = (q: string) => searchCatalog(q)[0]?.id
+    expect(top('한파쉼터')).toBe('TbGtnCwP')
+    expect(top('기후동행쉼터')).toBe('tbClicomCnt')
+    expect(top('키즈카페 무료')).toBe('tnFcltySttusInfo1011')
+    expect(top('응급실')).toBe('TvEmgcHospitalInfo')
+    expect(top('소아 야간 진료')).toBe('mgis1708328729039Point')
+    expect(top('강우량')).toBe('AiRainfallService')
+    expect(top('하천 수위')).toBe('ListRiverStageService')
+    expect(top('엘리베이터 운행')).toBe('SeoulMetroFaciInfo')
+    expect(top('착한가격업소')).toBe('goodPrices')
+    expect(top('모범업소')).toBe('ListPriceModelStoreService')
+    expect(top('경로당')).toBe('OdsnBuildingInfo')
+    expect(top('공중화장실')).toBe('mgisToiletPoi')
+    expect(top('동물병원')).toBe('LOCALDATA_020301')
   })
   it('무관 키워드는 빈 배열 또는 낮은 관련 후보', () => {
     expect(searchCatalog('zzzz없는키워드')).toHaveLength(0)

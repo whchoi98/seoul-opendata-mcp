@@ -53,4 +53,16 @@ live('live smoke (RUN_LIVE=1)', () => {
     const u = await client.getJson('TbPublicWifiInfo', 1, 5)
     expect(u.rows.length).toBeGreaterThan(0)
   }, 20_000)
+
+  it('SPOP_LOCAL_RESD_DONG: 앞 두 자리를 공백으로 두고 행정동코드만 거른다', async () => {
+    const u = await client.getJson('SPOP_LOCAL_RESD_DONG', 1, 5, [' ', ' ', '11680640'])
+    expect(u.rows.length).toBeGreaterThan(0)
+    expect(u.rows.every((r: any) => String(r.ADSTRD_CODE_SE) === '11680640')).toBe(true)
+  }, 20_000)
+
+  it('TbPharmacyOperateInfo: 1번 자리 주소, 2번 자리 약국명으로 거른다', async () => {
+    const u = await client.getJson('TbPharmacyOperateInfo', 1, 5, ['강남구', '온누리'])
+    expect(u.rows.length).toBeGreaterThan(0)
+    expect(u.rows.every((r: any) => String(r.DUTYADDR).includes('강남구') && String(r.DUTYNAME).includes('온누리'))).toBe(true)
+  }, 20_000)
 })

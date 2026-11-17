@@ -60,12 +60,12 @@ describe('CLI entry point (realpath-based detection)', () => {
     rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('직접 실행(node dist/index.js) 시 20개 tool을 서빙한다', async () => {
+  it('직접 실행(node dist/index.js) 시 23개 tool을 서빙한다', async () => {
     const names = await listToolsViaEntry(distEntry)
     expect(names).toEqual([...TOOL_NAMES].sort())
   }, 10_000)
 
-  it('npm bin 심볼릭 링크를 통해 실행해도 동일하게 20개 tool을 서빙한다', async () => {
+  it('npm bin 심볼릭 링크를 통해 실행해도 동일하게 23개 tool을 서빙한다', async () => {
     const symlinkPath = join(tmpDir, 'seoul-opendata-mcp')
     symlinkSync(distEntry, symlinkPath)
     const names = await listToolsViaEntry(symlinkPath)

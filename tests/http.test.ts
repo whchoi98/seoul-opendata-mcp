@@ -44,12 +44,12 @@ describe('AgentCore Runtime HTTP 계약', () => {
     expect(await res.json()).toEqual({ status: 'Healthy' })
   })
 
-  it('POST /mcp: initialize → tools/list 20개 (stateless — 요청 간 세션 불요)', async () => {
+  it('POST /mcp: initialize → tools/list 23개 (stateless — 요청 간 세션 불요)', async () => {
     const init = await rpc(INIT)
     expect(init.status).toBe(200)
     const list = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' })
     const msg = await parseRpc(list)
-    expect(msg.result.tools).toHaveLength(20)
+    expect(msg.result.tools).toHaveLength(23)
   }, 15_000)
 
   it('플랫폼 주입 Mcp-Session-Id 헤더를 거부하지 않는다', async () => {

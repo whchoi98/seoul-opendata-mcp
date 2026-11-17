@@ -22,10 +22,15 @@ const codeOf = (r: any): string | null =>
 const msgOf = (r: any): string =>
   r == null ? '' : (r.MESSAGE ?? r['RESULT.MESSAGE'] ?? r.message ?? '')
 
+const NO_DATA = '해당하는 데이터가 없습니다'
+
+/** 조건에 맞는 행이 없다는 정상 응답(INFO-200)인지. 쿼터 소진처럼 다른 이유로 비어 있으면 false */
+export const isNoData = (u: Unwrapped) => u.rows.length === 0 && (!u.note || u.note.startsWith(NO_DATA))
+
 function assertOk(service: string, result: any): string | undefined {
   const code = codeOf(result)
   if (code == null || code === 'INFO-000') return undefined
-  if (code === 'INFO-200') return `해당하는 데이터가 없습니다 (${service})`
+  if (code === 'INFO-200') return `${NO_DATA} (${service})`
   const hint = /키|KEY/i.test(msgOf(result)) || code === 'INFO-100' ? ` — ${KEY_GUIDE}` : ''
   throw new SeoulApiError(code, `서울 열린데이터광장 API 오류 [${code}] ${msgOf(result)}${hint}`)
 }

@@ -1,7 +1,7 @@
 # Tests Module
 
 ## Role
-vitest 스위트입니다. 픽스처 기반 단위 테스트 170개 이상과, 기본적으로 스킵되는 live-smoke 테스트 7개(`RUN_LIVE=1`)로 구성됩니다.
+vitest 스위트입니다. 픽스처 기반 단위 테스트 220개 이상과, 기본적으로 스킵되는 live-smoke 테스트 9개(`RUN_LIVE=1`)로 구성됩니다.
 
 ## Key Files
 - `fixtures/` - 데이터셋별 실API(샘플 키) 캡처 결과. `*.json`/`*.xml`.
@@ -9,6 +9,8 @@ vitest 스위트입니다. 픽스처 기반 단위 테스트 170개 이상과, �
 - `smoke.test.ts`, `cli.test.ts` - 프로세스/CLI 레벨 점검.
 - 그 외 `*.test.ts` - `src/normalize/**`, `src/tools/**` 도메인별 1:1 대응.
 - `realestate.test.ts` - 부동산 정규화 3종의 매핑 동등성과, 가짜 업스트림으로 `get_real_estate_prices`/`get_land_price`가 보내는 경로 자리를 검사합니다.
+- `notes.test.ts` - 단건 호출 tool 5개가 쿼터 경고와 쿼터 소진 안내를 `notes`까지 전달하는지 tool 호출 전체 경로로 검사합니다.
+- `helpers/mcp.ts` - tool 경로 테스트 공용 도구: `callTool()`(in-memory McpServer와 Client), `fixtureUpstream()`(서비스별 픽스처 응답), `rowsUpstream()`(표준 봉투 직접 생성).
 - `version.test.ts` - `package.json`, `manifest.json`, `SERVER_VERSION`, CHANGELOG 두 절의 버전 일치 검사.
 - `harness/` - vitest와 별개인 bash 하네스(`bash tests/harness/run-all.sh`). 훅 등록, secret-scan 패턴과 실제 차단 동작(임시 git 저장소에서 종료 코드 확인), 프로젝트 구조를 검사합니다.
 

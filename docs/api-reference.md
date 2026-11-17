@@ -1,6 +1,6 @@
 # API Reference
 
-20 [MCP](https://modelcontextprotocol.io) tools exposed by `seoul-opendata-mcp` v0.5.0, grouped as they are registered in `src/index.ts` / `src/tools/*.ts`. Input schemas below are transcribed from each tool's `zod` `inputSchema` in source; output summaries list the fields of the `data` payload before it is wrapped in the common response envelope.
+23 [MCP](https://modelcontextprotocol.io) tools exposed by `seoul-opendata-mcp` v0.6.0, grouped as they are registered in `src/index.ts` / `src/tools/*.ts`. Input schemas below are transcribed from each tool's `zod` `inputSchema` in source; output summaries list the fields of the `data` payload before it is wrapped in the common response envelope.
 
 ## Protocol
 
@@ -44,18 +44,21 @@ Every tool (see `src/tools/envelope.ts`) returns MCP content of the form:
 | `get_population` | Population / commercial | Real-time population, congestion, demographics, forecast |
 | `get_commercial_activity` | Population / commercial | Real-time card-payment commercial activity level |
 | `get_subway_arrivals` | Traffic | Real-time subway train arrivals for a station |
+| `get_subway_schedule` | Traffic | First/last train times and station timetable (lines 1-9) |
 | `get_bike_stations` | Traffic | Ttareungi (public bike) station availability |
-| `get_parking` | Traffic | Public parking lot availability |
+| `get_parking` | Traffic | Public parking lot availability, plus fees and hours of non-realtime lots |
 | `get_road_traffic` | Traffic | Road speed/congestion and incidents near a hotspot |
 | `search_cultural_events` | Culture | Search concerts/exhibitions/festivals by filter |
+| `search_public_reservations` | Culture | Search bookable public services on yeyak.seoul.go.kr |
 | `get_air_quality` | Environment | Real-time air quality by district |
 | `get_weather` | Environment | Weather, fine dust, UV, warnings at a hotspot |
 | `get_subway_ridership` | Statistics | Daily per-station subway boarding/alighting counts |
+| `get_subway_hourly_ridership` | Statistics | Monthly per-station boarding/alighting counts by hour |
 | `get_living_population` | Statistics | De-facto population by administrative dong and hour |
 | `get_real_estate_prices` | Real estate | Real-estate sale and rent transaction records |
 | `get_land_price` | Real estate | Officially assessed land price per m² for a parcel |
 | `find_pharmacies` | Health | Pharmacy locations with per-day operating hours |
-| `search_dataset` | Meta / catalog | Search the 29-dataset catalog by keyword |
+| `search_dataset` | Meta / catalog | Search the 52-dataset catalog by keyword |
 | `get_dataset_spec` | Meta / catalog | Get call parameters/fields for a catalog dataset |
 | `call_dataset` | Meta / catalog | Call any catalog dataset, get raw (non-normalized) rows |
 
@@ -198,6 +201,33 @@ Real-time subway train arrivals for a station.
 
 **Example question** — "When's the next train at Gangnam on line 2?" / "2호선 강남역 열차 언제 와?"
 
+### `get_subway_schedule`
+
+First and last train times for a station, both directions, on lines 1-9, with an optional timetable of upcoming departures. Use `get_subway_arrivals` for realtime arrivals.
+
+**Input Schema**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `station` | `string` | Yes | Station name, e.g. `"강남"`, `"서울역"`, `"고덕"`. If no station matches, the tool retries with the `역` suffix added or removed |
+| `line` | `string` | No | Line, e.g. `"2호선"` (`"2"` and `"02호선"` also work). Omit for every line 1-9 at the station |
+| `day` | `"weekday" \| "saturday" \| "holiday"` | No | Day type. Default: today's service day in KST (before 04:00 counts as the previous day; Sunday is `holiday`). Public holidays are not detected |
+| `includeTimetable` | `boolean` | No | Include upcoming departures per direction (default `false`) |
+| `after` | `string` (`HH:MM`) | No | Timetable start. Default: now when `day` is omitted, otherwise from the first train |
+| `limit` | `number` (int, 1-30) | No | Timetable entries per direction (default 5) |
+
+Calls: one station lookup (`SearchInfoBySubwayNameService`, up to two with the name retry), then two `SearchFirstAndLastTrainbyLineServiceNew` calls per line, plus two `SearchSTNTimeTableByIDService` calls per line when `includeTimetable` is set. All three are cached for 24 h.
+
+**Output Summary**
+
+- `station` — matched station name; `day` — `평일` / `토요일` / `휴일`
+- `lines` — `{line, stationCode, directions}[]`; each direction is `{direction, first, last, timetable?}` where `first`/`last` are `{time, nextDay, from, to}` and `timetable` is `{trainNo, departs, nextDay, origin, destination, direction}[]`
+- `nextDay: true` marks a time past midnight (the upstream writes these as `24:xx`)
+
+Lines other than 1-9 at the same station (e.g. 경의선, 공항철도) are skipped and listed in `notes`.
+
+**Example question** — "What time is the last train at Godeok?" / "고덕역 막차 몇 시야?"
+
 ### `get_bike_stations`
 
 Seoul public bike (따릉이) stations by name keyword and/or coordinates, with real-time available-bike counts.
@@ -223,21 +253,23 @@ At least one of `query` or (`lat` + `lng`) is required.
 
 ### `get_parking`
 
-Real-time available spaces in Seoul public parking lots, filtered by a place/district keyword matched against lot name and address.
+Real-time available spaces in Seoul public parking lots, filtered by a place/district keyword matched against lot name and address. By default it also returns fees and operating hours of public lots that have no realtime feed.
 
 **Input Schema**
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `query` | `string` | Yes | Place/district keyword, e.g. `"종로"`, `"세종로"`, `"강남"` |
-| `limit` | `number` (int, 1-50) | No | Max results (default 10) |
+| `limit` | `number` (int, 1-50) | No | Max results per list (default 10) |
+| `includeNonRealtime` | `boolean` | No | Also query `GetParkInfo` for non-realtime lots (default `true`) |
 
 **Output Summary**
 
-- `count` — number of matched lots
+- `count` — number of matched realtime lots
 - `lots` — `{code, name, address, totalSpaces, occupied, available, realtimeYn, baseFee, baseMinutes, updatedAt}[]`
+- `otherCount`, `otherLots` — lots from `GetParkInfo` that are not in the realtime list: `{code, name, address, kind, operation, tel, totalSpaces, paid, nightFreeOpen, weekdayHours, weekendHours, saturdayFee, holidayFee, baseFee, baseMinutes, addFee, addMinutes, dailyMax, monthlyPass, realtimeStatus, lat, lng}[]`. Omitted when `includeNonRealtime` is `false`
 
-Note: only ~122 realtime-linked lots report a current vehicle count.
+Note: only ~122 realtime-linked lots report a current vehicle count. `otherLots` is matched on address only (the `ADDR` path parameter), and `GetParkInfo` repeats one lot over many rows, so the tool keeps the first row per lot code.
 
 **Example question** — "Is there parking available in Jongno?" / "종로 주차 자리 있어?"
 
@@ -288,6 +320,32 @@ Search Seoul cultural events (concerts, exhibitions, festivals) by keyword/categ
 Note: `category`/`keyword` are applied server-side against up to 500 rows; `district`/`from`/`to`/`freeOnly` are applied client-side within that window.
 
 **Example question** — "Any free concerts in Mapo this weekend?" / "이번 주말 마포구 무료 공연 있어?"
+
+### `search_public_reservations`
+
+Search reservable Seoul public services listed on yeyak.seoul.go.kr, with status, fee, and booking URL. Services not registered there do not appear; for example, no 송파구 tennis court was listed as of 2026-11.
+
+**Input Schema**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `category` | `"culture" \| "sports" \| "facility" \| "education" \| "medical"` | Yes | Selects the upstream service: `ListPublicReservationCulture` (교육체험, 산림여가, 서울형키즈카페, 공원탐방, 전시/관람), `ListPublicReservationSport` (테니스장, 풋살장, 축구장, 파크골프장, ...), `ListPublicReservationInstitution` (강의실, 다목적실, 회의실, 캠핑장, 공연장, ...), `ListPublicReservationEducation`, `ListPublicReservationMedical` |
+| `subcategory` | `string` | No | Subcategory keyword, sent as the `MINCLASSNM` path parameter (partial match), e.g. `"테니스장"`, `"서울형키즈카페"`, `"캠핑장"` |
+| `district` | `string` | No | District, e.g. `"송파구"` (`"송파"` also matches) |
+| `keyword` | `string` | No | Matches the service name or the place name |
+| `target` | `string` | No | Matches the eligibility text, e.g. `"어린이"`, `"가족"` |
+| `freeOnly` | `boolean` | No | `payment === "무료"` only |
+| `openOnly` | `boolean` | No | `status === "접수중"` only |
+| `limit` | `number` (int, 1-50) | No | Max results (default 10) |
+
+The five services together hold the same rows as the combined `tvYeyakCOllect` service, which the tool does not use: its rows carry a large HTML detail field (about 5 MB per 1,000 rows). The detail field is dropped from the output.
+
+**Output Summary**
+
+- `category`, `count` — matched services
+- `reservations` — `{id, name, category, subcategory, status, payment, place, district, target, url, serviceStart, serviceEnd, receiptStart, receiptEnd, useHours, tel, lat, lng}[]`
+
+**Example question** — "Any free kids programs I can book this weekend?" / "주말에 아이랑 갈 무료 체험 예약할 수 있는 거 있어?"
 
 ---
 
@@ -356,6 +414,29 @@ Per-station daily subway boarding/alighting counts for a date (data available up
 
 **Example question** — "How many people rode Gangnam Station yesterday?" / "강남역 하루 승객 몇 명?"
 
+### `get_subway_hourly_ridership`
+
+Monthly boarding and alighting counts by hour (04-03h) for a station, with the busiest and quietest hours.
+
+**Input Schema**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `station` | `string` | Yes | Station name, e.g. `"강남"`, `"서울역"`, `"홍대입구"` (exact match upstream; the tool retries with the `역` suffix added or removed) |
+| `line` | `string` | No | Line, e.g. `"2호선"`. Omit for every line at the station |
+| `month` | `string` (`/^\d{6}$/`) | No | Usage month `YYYYMM`. Default: last month, then the month before if last month is not published yet |
+
+`month`, `line`, and `station` are sent as the `USE_MM`, `SBWY_ROUT_LN_NM`, and `STTN` path parameters.
+
+**Output Summary**
+
+- `month`, `station` — the month and station name that returned data
+- `lines` — `{line, station, hours, busiestHours, quietestHours}[]`; `hours` is `{hour, boardings, alightings, total}[]` in service-day order (4 … 23, 0 … 3); `busiestHours` is the top 3 by `total`; `quietestHours` is the bottom 3 between 06 and 23 h
+
+Counts are monthly totals of card taps, not congestion. `hour: 8` means 08:00-09:00.
+
+**Example question** — "When is Hongik Univ. station least crowded?" / "홍대입구역 몇 시에 덜 붐벼?"
+
 ### `get_living_population`
 
 De-facto (living) population estimates by administrative dong and hour. Not realtime — use `get_population` for realtime congestion.
@@ -365,15 +446,16 @@ De-facto (living) population estimates by administrative dong and hour. Not real
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `date` | `string` (`/^\d{8}$/`) | No | Reference date, `YYYYMMDD` (~5 days delayed) |
-| `timeSlot` | `string` (`/^\d{2}$/`) | No | Hour slot `00`-`23`, used together with `date` |
-| `dongCode` | `string` | No | 8-digit administrative-dong code, used together with `date`/`timeSlot` |
+| `timeSlot` | `string` (`/^\d{2}$/`) | No | Hour slot `00`-`23` |
+| `dongCode` | `string` | No | 8-digit administrative-dong code, e.g. `"11680640"` |
 | `limit` | `number` (int, 1-100) | No | Max results (default 20) |
 
-Path parameters are positional upstream: only a prefix of `date` -> `timeSlot` -> `dongCode` actually narrows the request; trailing filters not passed as path params are applied client-side instead.
+All three filters are applied upstream. Path parameters are positional (`date`, `timeSlot`, `dongCode`), so a skipped position is sent as a space; any combination narrows the request.
 
 **Output Summary**
 
-- `count` — number of matched rows
+- `count` — number of rows fetched (at most 100)
+- `totalCount` — rows matching the filters upstream
 - `population` — `{date, timeSlot, dongCode, total}[]`
 
 **Example question** — "What's the estimated living population for this dong at 2pm?" / "이 행정동 오후 2시 생활인구는 얼마나 돼?"
@@ -460,10 +542,11 @@ Seoul pharmacies by district or name keyword, with per-day operating hours.
 
 **Output Summary**
 
-- `count` — number of matched pharmacies
+- `count` — number of matched pharmacies among the fetched rows
+- `totalCount` — pharmacies matching the filters upstream
 - `pharmacies` — `{name, address, tel, hours}[]`, `hours` keyed by `월`/`화`/`수`/`목`/`금`/`토`/`일`/`공휴일` -> `"HHMM-HHMM"` or `""`
 
-Note: filters are applied within the most recent 1,000 fetched rows only.
+Note: `district` and `name` are sent as the `DUTYADDR` and `DUTYNAME` path parameters (partial match), so the search covers all pharmacies. One request returns at most 1,000 rows; when `totalCount` is larger, `notes` says so.
 
 **Example question** — "Which pharmacies in Gangnam-gu are open late?" / "강남구 약국 몇 시까지 해?"
 

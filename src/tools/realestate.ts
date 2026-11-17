@@ -1,8 +1,10 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Ctx } from './context.js'
-import type { Unwrapped } from '../client/response.js'
+import { isNoData } from '../client/response.js'
 import { ok } from './envelope.js'
+import { BLANK } from './path.js'
+import { kstYear } from './kst.js'
 import { normalizeDistrict, normalizeRealEstate, normalizeRentDeal, normalizeLandPrice } from '../normalize/realestate.js'
 
 const SALE = 'tbLnOpendataRtmsV'
@@ -17,7 +19,6 @@ const SLOTS: Record<'sale' | 'rent', Record<Slot, number>> = {
   sale: { year: 0, district: 2, dongCode: 3, building: 8, use: 10 },
   rent: { year: 0, district: 2, dongCode: 3, building: 8, use: 9 },
 }
-const BLANK = ' ' // 건너뛰는 자리. 빈 문자열을 넣으면 필터 전체가 무시된다
 
 /** 지정된 값만 제자리에 두고 사이를 공백으로 채운다. 뒤쪽 빈 자리는 보내지 않는다 */
 function buildPath(slots: Record<Slot, number>, values: Partial<Record<Slot, string>>): string[] {
@@ -34,10 +35,6 @@ function buildPath(slots: Record<Slot, number>, values: Partial<Record<Slot, str
 const DEFAULT_WINDOW = 100 // limit(최대 50)과 해제 거래 제외분을 덮는 한 번 호출 크기
 const FILTER_WINDOW = 500  // 서버가 못 거르는 조건을 코드에서 거를 때 보는 최신 건수
 
-const kstYear = () => new Date(Date.now() + 9 * 3_600_000).getUTCFullYear()
-
-/** 조건에 맞는 행이 없다는 정상 응답인지. 쿼터 소진처럼 다른 이유로 비어 있으면 false */
-const isNoData = (u: Unwrapped) => u.rows.length === 0 && (!u.note || u.note.startsWith('해당하는 데이터가 없습니다'))
 
 type DongLookup =
   | { kind: 'found'; code: string; name: string }

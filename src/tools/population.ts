@@ -37,7 +37,11 @@ export function registerPopulationTools(server: McpServer, ctx: Ctx) {
         return ok({ place: r.name, data: null }, { source: 'OA-21778 (citydata_ppltn)', notes: [u.note ?? '데이터 없음'], sample: ctx.client.isSample })
       }
       const data = normalizePopulation(u.rows[0], includeForecast ?? false)
-      return ok(data, { source: 'OA-21778 (citydata_ppltn)', asOf: data.measuredAt, notes: [DELAY_NOTE], sample: ctx.client.isSample })
+      return ok(data, {
+        source: 'OA-21778 (citydata_ppltn)', asOf: data.measuredAt,
+        notes: [DELAY_NOTE, ...(u.note ? [u.note] : [])],
+        sample: ctx.client.isSample,
+      })
     },
   )
 
@@ -68,7 +72,10 @@ export function registerPopulationTools(server: McpServer, ctx: Ctx) {
       const data = normalizeCommercial(u.rows[0])
       return ok({ place: r.name, ...data }, {
         source: 'OA-22385 (citydata_cmrcl)', asOf: data.measuredAt,
-        notes: ['신한카드 내국인 결제 기준, 약 15분 지연. 전수 데이터가 아니므로 절대액이 아닌 평소 대비 수준으로 해석하세요.'],
+        notes: [
+          '신한카드 내국인 결제 기준, 약 15분 지연. 전수 데이터가 아니므로 절대액이 아닌 평소 대비 수준으로 해석하세요.',
+          ...(u.note ? [u.note] : []),
+        ],
         sample: ctx.client.isSample,
       })
     },

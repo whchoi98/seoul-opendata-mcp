@@ -29,6 +29,7 @@ The agent/LLM layer is everything in this codebase written specifically to be re
 - Always explain a limited or empty result in `notes[]` (sample mode, unsupported place, no data for date) rather than returning a bare empty array, so the agent has enough context to explain the limitation to the user instead of guessing at a cause.
 - The "Catalog hybrid" decision behind the `search_dataset`/`get_dataset_spec`/`call_dataset` trio is recorded as [ADR-002](../decisions/ADR-002-hybrid-tool-exposure.md).
 - Real-estate tools accept the names a user says and convert them to what the API needs: `district` takes `강남` or `강남구`, `dong` is a legal-dong name resolved to a code, `lotNumber` is written `633-7`. `dealType`, `buildingUse`, and `rentType` are enums holding the only values upstream accepts, so the model cannot send a value that silently matches nothing.
+- Every tool forwards the client's own advisory (`Unwrapped.note`: quota warning, quota exhausted, stale cache age) into `notes[]`, including on success. When the upstream returned no rows, a tool does not phrase the empty result as a fact about the world ("no alerts", "unknown district").
 - `get_real_estate_prices` separates `totalCount` (rows matching the upstream filters) from `count` (rows returned), and every step applied in code (cancelled-sale removal, the 500-row window for `rentType`, the name-match fallback for `dong`) is disclosed in `notes[]`, so the agent does not present a windowed result as complete.
 - The `search_dataset` description takes the catalog size from `CATALOG.length`, and `get_dataset_spec` examples come from `exampleParams()`, which fills skipped path positions with a space; neither is hand-written text that can drift from the catalog.
 - Input schemas are generated from `zod` v4 (since v0.4.0). Descriptions, types and numeric/pattern constraints are unchanged from v3, but the generated JSON Schema no longer carries `additionalProperties: false`; unknown arguments are still stripped at runtime, so an extra key from the model is ignored rather than rejected.
@@ -64,17 +65,18 @@ Agent · LLM 계층은 이 코드베이스에서 사람 개발자가 아니라 L
 | `ok()`의 `notes[]` 채널 | `src/tools/envelope.ts:5-10` | 에이전트가 추가 호출 없이 읽고 전달할 수 있는 구조화된 안내 문자열(샘플 모드, 빈 결과, 필터 범위 설명) |
 | `resolvePlace`의 조기 반환 | `src/tools/resolve.ts:6-15` | 장소명이 모호할 때 예외를 던지는 대신 `{requested, match: null, candidates, hint}`를 반환하여, 에이전트가 같은 대화 턴 안에서 재시도할 수 있게 합니다 |
 | `searchPlace` / `ALIASES` | `src/data/placeMatcher.ts` | 별칭 테이블 + 2-gram 유사도 매처로, 에이전트가 정확한 핫스팟명을 몰라도 `"코엑스"`, `"gangnam"` 같은 편한 표현이 확정됩니다 |
-| `search_dataset` / `get_dataset_spec` / `call_dataset` | `src/tools/meta.ts` | 29개 데이터셋 전용 스키마 없이도 에이전트가 접근할 수 있게 하는 탐색-후-호출 3단계 패턴 |
+| `search_dataset` / `get_dataset_spec` / `call_dataset` | `src/tools/meta.ts` | 52개 데이터셋 전용 스키마 없이도 에이전트가 접근할 수 있게 하는 탐색-후-호출 3단계 패턴 |
 | 상대 수준 필드 | `Population.congestionLevel`, `Commercial.level` (`src/normalize/population.ts`, `src/normalize/commercial.ts`) | 범주형 수준과 명시적 해석 안내를 함께 제공하여, 에이전트가 표본 데이터의 카운트를 정확한 숫자처럼 제시하지 않고 "평소보다 붐빈다" 식으로 표현하도록 유도합니다 |
 
 ### 3. 주요 결정
 
-- 모든 tool `description`을 짧은 자연어 문장 + 한글 병기 + 구체적인 "언제 사용" 트리거 문구로 작성하여, 20개 tool 중에서 고르는 LLM이 소스 코드를 읽지 않고도 충분한 근거를 갖게 합니다.
+- 모든 tool `description`을 짧은 자연어 문장 + 한글 병기 + 구체적인 "언제 사용" 트리거 문구로 작성하여, 23개 tool 중에서 고르는 LLM이 소스 코드를 읽지 않고도 충분한 근거를 갖게 합니다.
 - 모호한 입력에 대해 예외를 던지는 대신 "조기 candidates" 반환을 우선합니다(`resolvePlace`). 이를 통해 에이전트는 최종 사용자에게 실패를 노출하지 않고 같은 tool 호출 루프 안에서 스스로 교정할 수 있습니다.
 - 데이터셋마다 tool을 만드는 대신 소수의 범용·조합 가능한 tool(`search_dataset` → `get_dataset_spec` → `call_dataset`)을 우선합니다. 이를 통해 모델이 신뢰성 있게 추론할 수 있는 tool 개수를 유지하면서도 29개 데이터셋 전체를 노출합니다(`docs/architecture.md`의 "카탈로그 하이브리드" 결정 참고).
 - 제한적이거나 빈 결과는 항상 `notes[]`에서 설명합니다(샘플 모드, 미지원 장소, 해당 날짜 데이터 없음 등). 빈 배열만 반환하지 않음으로써 에이전트가 원인을 추측하지 않고 사용자에게 제한 사항을 설명할 수 있는 맥락을 갖게 합니다.
 - `search_dataset`/`get_dataset_spec`/`call_dataset` 트리오의 "카탈로그 하이브리드" 결정은 [ADR-002](../decisions/ADR-002-hybrid-tool-exposure.md)로 기록되어 있습니다.
 - 부동산 tool은 사용자가 말하는 이름을 받아 API가 요구하는 형태로 바꿉니다. `district`는 `강남`과 `강남구`를 모두 받고, `dong`은 법정동 이름을 받아 코드로 바꾸며, `lotNumber`는 `633-7`처럼 씁니다. `dealType`, `buildingUse`, `rentType`은 업스트림이 받는 값만 담은 enum이라서, 모델이 조용히 0건이 되는 값을 보낼 수 없습니다.
+- 모든 tool은 클라이언트가 붙인 안내(`Unwrapped.note`: 쿼터 경고, 쿼터 소진, stale 캐시 경과)를 성공 응답에서도 `notes[]`로 전달합니다. 업스트림이 행을 주지 않았으면 빈 결과를 사실처럼("재난문자 없음", "없는 자치구") 표현하지 않습니다.
 - `get_real_estate_prices`는 `totalCount`(업스트림 필터에 맞는 전체 건수)와 `count`(돌려준 건수)를 구분합니다. 코드에서 적용한 단계(해제 거래 제외, `rentType`의 500건 범위, `dong` 이름 매칭 대체 경로)는 모두 `notes[]`에 적어, 에이전트가 일부 범위의 결과를 전체인 것처럼 전하지 않게 합니다.
 - `search_dataset` 설명의 카탈로그 개수는 `CATALOG.length`에서 가져오고, `get_dataset_spec` 예시는 건너뛰는 경로 자리를 공백으로 채우는 `exampleParams()`가 만듭니다. 둘 다 카탈로그와 어긋날 수 있는 손으로 쓴 문구가 아닙니다.
 - 입력 스키마는 v0.4.0부터 `zod` v4로 생성합니다. 설명, 타입, 수치와 패턴 제약은 v3와 같지만, 생성된 JSON Schema에 `additionalProperties: false`가 더 이상 들어가지 않습니다. 정의되지 않은 인자는 런타임에 여전히 버려지므로, 모델이 여분의 키를 보내도 거부하지 않고 무시합니다.

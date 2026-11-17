@@ -50,7 +50,11 @@ export function registerEnvironmentTools(server: McpServer, ctx: Ctx) {
         {
           source: '서울시 권역별 실시간 대기환경 (RealtimeCityAir)',
           asOf: rows[0]?.measuredAt ?? null,
-          notes: rows.length === 0 ? ['해당 자치구를 찾지 못했습니다. "강남구"처럼 정식 자치구명을 쓰세요.'] : [],
+          notes: [
+            ...(u.note ? [u.note] : []),
+            // 응답 행이 있는데 걸러서 비었을 때만 자치구명 문제로 안내한다
+            ...(rows.length === 0 && u.rows.length > 0 ? ['해당 자치구를 찾지 못했습니다. "강남구"처럼 정식 자치구명을 쓰세요.'] : []),
+          ],
           sample: ctx.client.isSample,
         },
       )

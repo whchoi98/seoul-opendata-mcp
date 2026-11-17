@@ -15,6 +15,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-17
+
+### Added
+
+- `get_subway_schedule` tool: first and last train times for both directions on lines 1-9, with an optional timetable of upcoming departures (`SearchInfoBySubwayNameService`, `SearchFirstAndLastTrainbyLineServiceNew`, `SearchSTNTimeTableByIDService`).
+- `get_subway_hourly_ridership` tool: monthly boarding/alighting counts by hour for a station, with the busiest and quietest hours (`CardSubwayTime`).
+- `search_public_reservations` tool: bookable public services on yeyak.seoul.go.kr by category, subcategory, district, target, free-only, and open-only (`ListPublicReservation*`, five services). The server now exposes 23 tools.
+- `get_parking`: `otherLots` with fees and operating hours of public lots that have no realtime feed (`GetParkInfo`, matched on address, one row per lot code), and an `includeNonRealtime` input (default `true`).
+- Catalog: 23 new entries (52 datasets). Ten back the new and extended tools; 13 are catalog-only: cold-wave shelters (`TbGtnCwP`), climate shelters (`tbClicomCnt`), Seoul kids cafés (`tnFcltySttusInfo1011`), emergency rooms (`TvEmgcHospitalInfo`), pediatric care (`mgis1708328729039Point`), rainfall (`AiRainfallService`), river levels (`ListRiverStageService`), subway elevator status (`SeoulMetroFaciInfo`), good-price shops (`goodPrices`), price-model shops (`ListPriceModelStoreService`), senior centers (`OdsnBuildingInfo`), public toilets (`mgisToiletPoi`), and animal hospitals (`LOCALDATA_020301`).
+- `find_pharmacies` and `get_living_population` responses gain `totalCount` (rows matching the filters upstream).
+- Catalog: path-parameter specs for `TbPharmacyOperateInfo` (`DUTYADDR`, `DUTYNAME`).
+- `isNoData()` is exported from `src/client/response.ts`; `src/tools/path.ts` (`positionalPath()`) and `src/tools/kst.ts` hold shared path and KST helpers.
+
+### Changed
+
+- `get_parking` makes one more upstream call by default (`GetParkInfo`, cached for 24 h). Pass `includeNonRealtime: false` for the previous single-call behavior.
+- `find_pharmacies` replaces the fixed "within the latest 1,000 rows" note with a note that appears only when more pharmacies match than one request returns.
+
+### Fixed
+
+- Quota warnings, quota-exhausted notices, and stale-cache disclosures now reach `notes` on successful responses of `get_population`, `get_commercial_activity`, `get_disaster_alerts`, `get_air_quality`, and `get_subway_arrivals`.
+- `get_disaster_alerts` no longer reports "no alerts" and `get_air_quality` no longer blames the district name when the upstream returned no rows (for example, quota exhausted).
+- `find_pharmacies` filters `district` and `name` upstream instead of within the first 1,000 of about 5,600 pharmacies.
+- `get_living_population` filters any combination of `date`, `timeSlot`, and `dongCode` upstream. Previously only a leading run of them was sent, and `dongCode` alone matched almost nothing.
+
 ## [0.5.0] - 2026-11-14
 
 ### Added
@@ -103,7 +128,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add an XML error fallback for JSON endpoints
 - Fall back to sample mode when the API key is empty
 
-[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.2.0...v0.3.0
@@ -121,6 +147,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 따릅니다.
 
 ## [Unreleased]
+
+## [0.6.0] - 2026-11-17
+
+### Added
+
+- `get_subway_schedule` tool: 1~9호선 역의 양방향 첫차·막차 시간과, 선택하면 다음 열차 시간표를 조회합니다(`SearchInfoBySubwayNameService`, `SearchFirstAndLastTrainbyLineServiceNew`, `SearchSTNTimeTableByIDService`).
+- `get_subway_hourly_ridership` tool: 역의 시간대별 승하차 인원 월 합계와 가장 붐비는, 한산한 시간대를 조회합니다(`CardSubwayTime`).
+- `search_public_reservations` tool: 서울시 공공서비스예약(yeyak.seoul.go.kr)을 분야, 소분류, 자치구, 이용 대상, 무료 여부, 접수중 여부로 검색합니다(`ListPublicReservation*` 분야별 서비스 5개). tool이 23개가 됐습니다.
+- `get_parking`: 실시간 연계가 없는 공영주차장의 요금과 운영시간을 `otherLots`로 함께 돌려줍니다(`GetParkInfo`, 주소로 검색, 주차장 코드당 1행). `includeNonRealtime` 입력(기본 `true`)을 추가했습니다.
+- 카탈로그: 항목 23개를 추가했습니다(총 52종). 10개는 새로 만들거나 확장한 tool이 쓰는 데이터셋이고, 13개는 카탈로그 전용입니다: 한파쉼터(`TbGtnCwP`), 기후동행쉼터(`tbClicomCnt`), 서울형 키즈카페(`tnFcltySttusInfo1011`), 응급실(`TvEmgcHospitalInfo`), 서울형 소아의료체계(`mgis1708328729039Point`), 강우량(`AiRainfallService`), 하천 수위(`ListRiverStageService`), 지하철 승강기 가동현황(`SeoulMetroFaciInfo`), 착한가격업소(`goodPrices`), 가격안정 모범업소(`ListPriceModelStoreService`), 경로당(`OdsnBuildingInfo`), 공중화장실(`mgisToiletPoi`), 동물병원(`LOCALDATA_020301`).
+- `find_pharmacies`와 `get_living_population` 응답에 `totalCount`(업스트림 필터에 맞는 전체 건수)를 더했습니다.
+- 카탈로그: `TbPharmacyOperateInfo`의 경로 파라미터 명세(`DUTYADDR`, `DUTYNAME`)를 추가했습니다.
+- `src/client/response.ts`가 `isNoData()`를 내보냅니다. 경로와 KST 공용 도구는 `src/tools/path.ts`(`positionalPath()`)와 `src/tools/kst.ts`에 있습니다.
+
+### Changed
+
+- `get_parking`이 기본으로 업스트림을 한 번 더 호출합니다(`GetParkInfo`, 24시간 캐시). 예전처럼 한 번만 호출하려면 `includeNonRealtime: false`를 줍니다.
+- `find_pharmacies`의 고정 안내 "최근 1,000건 내 필터 결과"를 없애고, 조건에 맞는 약국이 한 번에 받는 건수보다 많을 때만 범위 안내를 붙입니다.
+
+### Fixed
+
+- `get_population`, `get_commercial_activity`, `get_disaster_alerts`, `get_air_quality`, `get_subway_arrivals`의 정상 응답에서 쿼터 경고, 쿼터 소진 안내, stale 캐시 경과 안내가 `notes`에 남도록 고쳤습니다.
+- 업스트림이 행을 주지 않았을 때(쿼터 소진 등) `get_disaster_alerts`가 "재난문자 없음"으로, `get_air_quality`가 "자치구명 확인"으로 안내하지 않습니다.
+- `find_pharmacies`가 약 5,600곳 중 앞 1,000곳 안에서 거르지 않고 `district`와 `name`을 업스트림에서 거릅니다.
+- `get_living_population`이 `date`, `timeSlot`, `dongCode`를 어떤 조합으로 주든 업스트림에서 거릅니다. 전에는 앞에서부터 이어진 인자만 보내서 `dongCode`만 주면 결과가 거의 비었습니다.
 
 ## [0.5.0] - 2026-11-14
 
@@ -210,7 +261,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON 엔드포인트에 대한 XML 에러 응답 폴백 처리 추가
 - API 키가 비어 있을 때 sample 모드로 폴백하도록 수정
 
-[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.2.0...v0.3.0

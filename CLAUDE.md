@@ -1,7 +1,7 @@
 # Project Context
 
 ## Overview
-seoul-opendata-mcp(v0.5.0, MIT)는 서울 열린데이터광장(Seoul Open Data Plaza) 실시간 도시데이터를 20개 MCP tool로 제공하는 MCP 서버입니다. 로컬 클라이언트는 stdio(`src/index.ts`)로, Amazon Bedrock AgentCore Runtime은 Streamable HTTP(`src/http.ts`, `:8000`)로 연결합니다. GitHub: https://github.com/whchoi98/seoul-opendata-mcp.
+seoul-opendata-mcp(v0.6.0, MIT)는 서울 열린데이터광장(Seoul Open Data Plaza) 실시간 도시데이터를 23개 MCP tool로 제공하는 MCP 서버입니다. 로컬 클라이언트는 stdio(`src/index.ts`)로, Amazon Bedrock AgentCore Runtime은 Streamable HTTP(`src/http.ts`, `:8000`)로 연결합니다. GitHub: https://github.com/whchoi98/seoul-opendata-mcp.
 
 ## Tech Stack
 - TypeScript(strict, ESM), Node.js >=18
@@ -12,9 +12,9 @@ seoul-opendata-mcp(v0.5.0, MIT)는 서울 열린데이터광장(Seoul Open Data 
 ```
 src/client/     HTTP 클라이언트: 키 폴백, TTL 캐시, 페이지네이션, 재시도, XML 폴백, .env 로더
 src/normalize/  봉투(envelope) unwrap + 도메인별 필드 정규화
-src/tools/      MCP tool 20개: 도메인 register 6개 파일 + meta/stats/health
-src/data/       핫스팟 121곳, 29개/6카테고리 데이터셋 카탈로그
-tests/          vitest 스위트(단위 170+, live 7개) + harness/(훅·구조 검사); 픽스처=실API 캡처 불변
+src/tools/      MCP tool 23개: 도메인 register 6개 파일 + meta/stats/health
+src/data/       핫스팟 121곳, 52개/6카테고리 데이터셋 카탈로그
+tests/          vitest 스위트(단위 220+, live 9개) + harness/(훅·구조 검사); 픽스처=실API 캡처 불변
 scripts/        capture-fixtures.ts, live-sweep.ts, setup.sh, install-hooks.sh
 ```
 

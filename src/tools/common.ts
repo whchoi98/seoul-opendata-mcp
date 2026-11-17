@@ -78,7 +78,11 @@ export function registerCommonTools(server: McpServer, ctx: Ctx) {
         { place: r.name, count: alerts.length, alerts },
         {
           source: 'OA-21285 (citydata LIVE_DST_MESSAGE, 행정안전부 연계)',
-          notes: alerts.length === 0 ? ['현재 이 지역에 수신된 긴급재난문자가 없습니다.'] : [],
+          notes: [
+            ...(u.note ? [u.note] : []),
+            // 응답 행이 없으면(쿼터 소진 등) 문자가 없다고 단정하지 않는다
+            ...(alerts.length === 0 && u.rows.length > 0 ? ['현재 이 지역에 수신된 긴급재난문자가 없습니다.'] : []),
+          ],
           sample: ctx.client.isSample,
         },
       )

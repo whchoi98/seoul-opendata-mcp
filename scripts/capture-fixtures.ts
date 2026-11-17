@@ -20,6 +20,13 @@ const targets: Record<string, string> = {
   'landprice.json': `http://openapi.seoul.go.kr:8088/sample/json/IndividuallyPostedLandPriceService/1/5/${encodeURIComponent('강남구')}/${encodeURIComponent('역삼동')}/%20/%20/%20/2025`,
   'pharmacy.json': 'http://openapi.seoul.go.kr:8088/sample/json/TbPharmacyOperateInfo/1/5/',
   'accinfo.xml': 'http://openapi.seoul.go.kr:8088/sample/xml/AccInfo/1/5/',
+  'parkinfo.json': 'http://openapi.seoul.go.kr:8088/sample/json/GetParkInfo/1/5/',
+  'subway_station.json': `http://openapi.seoul.go.kr:8088/sample/json/SearchInfoBySubwayNameService/1/5/${encodeURIComponent('서울역')}`,
+  // 첫차·막차: SBWY_ROUT_LN/UPLN_DNLN/DOW (1호선~9호선, 1=상행·내선, 1=평일)
+  'subway_firstlast.json': `http://openapi.seoul.go.kr:8088/sample/json/SearchFirstAndLastTrainbyLineServiceNew/1/5/${encodeURIComponent('2호선')}/1/1/`,
+  'subway_timetable.json': 'http://openapi.seoul.go.kr:8088/sample/json/SearchSTNTimeTableByIDService/1/5/0222/1/1/',
+  'subway_hourly.json': 'http://openapi.seoul.go.kr:8088/sample/json/CardSubwayTime/1/5/202610/',
+  'reservation.json': 'http://openapi.seoul.go.kr:8088/sample/json/ListPublicReservationSport/1/5/',
 }
 
 mkdirSync('tests/fixtures', { recursive: true })

@@ -17,15 +17,15 @@ import { registerHealthTools } from './tools/health.js'
 import { registerMetaTools } from './tools/meta.js'
 
 export const SERVER_NAME = 'seoul-opendata-mcp'
-export const SERVER_VERSION = '0.5.0'
+export const SERVER_VERSION = '0.6.0'
 
 export const TOOL_NAMES = [
   'search_place', 'get_city_snapshot', 'get_disaster_alerts',
   'get_population', 'get_commercial_activity',
-  'get_subway_arrivals', 'get_bike_stations', 'get_parking', 'get_road_traffic',
-  'search_cultural_events',
+  'get_subway_arrivals', 'get_subway_schedule', 'get_bike_stations', 'get_parking', 'get_road_traffic',
+  'search_cultural_events', 'search_public_reservations',
   'get_air_quality', 'get_weather',
-  'get_subway_ridership', 'get_living_population', 'get_real_estate_prices', 'get_land_price', 'find_pharmacies',
+  'get_subway_ridership', 'get_subway_hourly_ridership', 'get_living_population', 'get_real_estate_prices', 'get_land_price', 'find_pharmacies',
   'search_dataset', 'get_dataset_spec', 'call_dataset',
 ] as const
 

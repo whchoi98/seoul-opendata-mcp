@@ -19,6 +19,13 @@ export const SOFT_TTL: Record<string, number> = {
   SPOP_LOCAL_RESD_DONG: 86_400_000, SPOP_DAILYSUM_JACHI: 86_400_000,
   TbPharmacyOperateInfo: 86_400_000, TbHospitalInfo: 86_400_000, ChildCareInfo: 86_400_000,
   TimeAverageAirQuality: 3_600_000,
+  // 시간표와 역 정보는 자료 변경 시에만 바뀐다. 시간대별 승하차는 월 1회 갱신
+  SearchInfoBySubwayNameService: 86_400_000, SearchFirstAndLastTrainbyLineServiceNew: 86_400_000,
+  SearchSTNTimeTableByIDService: 86_400_000, CardSubwayTime: 86_400_000,
+  GetParkInfo: 86_400_000,
+  // 공공서비스예약은 접수 상태가 하루 중에도 바뀐다
+  ListPublicReservationCulture: 3_600_000, ListPublicReservationSport: 3_600_000, ListPublicReservationInstitution: 3_600_000,
+  ListPublicReservationEducation: 3_600_000, ListPublicReservationMedical: 3_600_000,
 }
 
 /** 기존 note를 보존하며 안내를 병합한 사본 반환 */

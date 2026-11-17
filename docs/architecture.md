@@ -11,7 +11,7 @@
 
 ## System Overview
 
-`seoul-opendata-mcp` is an [MCP](https://modelcontextprotocol.io) server served over stdio (and over Streamable HTTP on `:8000` via `src/http.ts` for Amazon Bedrock AgentCore Runtime) (TypeScript, strict mode, ESM, Node >= 18) that exposes Seoul Open Data Plaza's real-time city APIs as 20 MCP tools for LLM agents.
+`seoul-opendata-mcp` is an [MCP](https://modelcontextprotocol.io) server served over stdio (and over Streamable HTTP on `:8000` via `src/http.ts` for Amazon Bedrock AgentCore Runtime) (TypeScript, strict mode, ESM, Node >= 18) that exposes Seoul Open Data Plaza's real-time city APIs as 23 MCP tools for LLM agents.
 
 It wraps two upstream HTTP APIs — the general Seoul Open Data Plaza (`openapi.seoul.go.kr:8088`) and the dedicated subway realtime endpoint (`swopenapi.seoul.go.kr`) — behind a single HTTP client, `SeoulApiClient`, that adds key fallback, TTL caching, pagination, one retry on transient failure, and an XML-fallback JSON parser (the upstream sometimes returns an XML error body even for a JSON request). Raw upstream payloads arrive in eight distinct envelope shapes; a normalization layer (`src/normalize`) unwraps and maps each into a stable domain shape before 19 MCP tools (`src/tools`) present it to the calling agent inside one uniform `{data, asOf, source, notes}` envelope. Two API keys (`SEOUL_API_KEY`, `SEOUL_SUBWAY_API_KEY`) are loaded from the process environment or a local `.env` file, are masked before they can ever appear in logs or error messages, and fall back to a scope-limited built-in sample key when unset, so the server is usable out of the box with zero configuration.
 
@@ -32,8 +32,8 @@ It wraps two upstream HTTP APIs — the general Seoul Open Data Plaza (`openapi.
 
 ### Query / Presentation Layer
 
-- **`src/index.ts`** (`buildServer`) -- Wires an `McpServer` with the 9 `register*Tools()` functions and exposes all 20 tools listed in `TOOL_NAMES`.
-- **`src/tools/{common,population,traffic,culture,environment,stats,realestate,health,meta}.ts`** -- The 20 MCP tools grouped by domain: place/snapshot/alerts, population/commercial, subway/bike/parking/road, cultural events, air/weather, subway-ridership/living-population, real-estate sale and rent transactions plus assessed land price, pharmacies, and the generic dataset-catalog trio.
+- **`src/index.ts`** (`buildServer`) -- Wires an `McpServer` with the 9 `register*Tools()` functions and exposes all 23 tools listed in `TOOL_NAMES`.
+- **`src/tools/{common,population,traffic,culture,environment,stats,realestate,health,meta}.ts`** -- The 23 MCP tools grouped by domain: place/snapshot/alerts, population/commercial, subway arrivals and timetables/bike/parking/road, cultural events and public service reservations, air/weather, daily and hourly subway ridership/living population, real-estate sale and rent transactions plus assessed land price, pharmacies, and the generic dataset-catalog trio.
 - **`src/tools/envelope.ts`** (`ok`/`fail`) -- The single response shape every tool returns, `{data, asOf, source, notes[]}`, with a sample-mode note appended automatically whenever `ctx.client.isSample` is true.
 - **`src/tools/resolve.ts`** (`resolvePlace`) -- Shared place-resolution helper used by every `citydata`-family tool; returns an early "candidates" response instead of an error when a place name is ambiguous or unmatched.
 - **`src/data/catalog.ts`** (`CATALOG`, `searchCatalog`, `validateCall`) -- The 29-dataset hybrid catalog behind `search_dataset`/`get_dataset_spec`/`call_dataset`: 15 datasets with a dedicated tool (14 of which are also callable via `call_dataset`, plus 1 non-callable entry, `LIVE_DST_MESSAGE`, surfaced only through `get_disaster_alerts`), and 14 catalog-only datasets.
@@ -67,9 +67,9 @@ flowchart TB
     HOTSPOTS --> NORMALIZE
   end
   subgraph query[Query / Presentation Layer]
-    TOOLS["20 MCP tools (src/tools/*)"]
+    TOOLS["23 MCP tools (src/tools/*)"]
     ENVELOPE["ok() / fail() envelope"]
-    CATALOG[("catalog.ts - 29 datasets")]
+    CATALOG[("catalog.ts - 52 datasets")]
     NORMALIZE --> TOOLS
     CATALOG --> TOOLS
     TOOLS --> ENVELOPE
@@ -118,7 +118,7 @@ Related architectural decisions are recorded under `docs/decisions/` -- see [ADR
 
 ## 시스템 개요
 
-`seoul-opendata-mcp`는 서울 열린데이터광장의 실시간 도시데이터 API를 LLM 에이전트를 위한 20개 MCP tool로 노출하는 [MCP](https://modelcontextprotocol.io) 서버입니다. stdio로 동작하고, Amazon Bedrock AgentCore Runtime용으로 `src/http.ts`가 `:8000`에서 Streamable HTTP도 제공합니다 (TypeScript strict 모드, ESM, Node >= 18).
+`seoul-opendata-mcp`는 서울 열린데이터광장의 실시간 도시데이터 API를 LLM 에이전트를 위한 23개 MCP tool로 노출하는 [MCP](https://modelcontextprotocol.io) 서버입니다. stdio로 동작하고, Amazon Bedrock AgentCore Runtime용으로 `src/http.ts`가 `:8000`에서 Streamable HTTP도 제공합니다 (TypeScript strict 모드, ESM, Node >= 18).
 
 이 서버는 서울 열린데이터광장 일반 API(`openapi.seoul.go.kr:8088`)와 지하철 실시간 도착 전용 API(`swopenapi.seoul.go.kr`), 두 개의 업스트림 HTTP API를 `SeoulApiClient`라는 단일 HTTP 클라이언트로 감쌉니다. 이 클라이언트는 키 폴백, TTL 캐시, 페이지네이션, 일시적 오류 시 1회 재시도, 그리고 XML 폴백 JSON 파서(업스트림이 JSON 요청에도 XML 형태의 에러 본문을 돌려주는 경우가 있음)를 제공합니다. 업스트림 원본 응답은 8가지 서로 다른 봉투(envelope) 형태로 도착하는데, 정규화 계층(`src/normalize`)이 이를 언랩하여 안정적인 도메인 형태로 매핑한 뒤, 19개 MCP tool(`src/tools`)이 이를 호출 에이전트에게 `{data, asOf, source, notes}`라는 하나의 통일된 봉투로 전달합니다. 두 종류의 API 키(`SEOUL_API_KEY`, `SEOUL_SUBWAY_API_KEY`)는 프로세스 환경변수 또는 로컬 `.env` 파일에서 로드되며, 로그나 에러 메시지에 노출되기 전에 항상 마스킹되고, 미설정 시에는 범위가 제한된 내장 샘플 키로 폴백되므로 별도 설정 없이도 서버를 바로 사용할 수 있습니다.
 
@@ -139,11 +139,11 @@ Related architectural decisions are recorded under `docs/decisions/` -- see [ADR
 
 ### Query / Presentation Layer (조회·표현 계층)
 
-- **`src/index.ts`** (`buildServer`) -- `McpServer`를 9개의 `register*Tools()` 함수와 연결하고, `TOOL_NAMES`에 나열된 20개 tool 전체를 노출합니다.
-- **`src/tools/{common,population,traffic,culture,environment,stats,realestate,health,meta}.ts`** -- 도메인별로 그룹화된 20개 MCP tool입니다: 장소/스냅샷/재난문자, 인구/상권, 지하철/따릉이/주차/도로, 문화행사, 대기질/날씨, 지하철승하차/생활인구, 부동산 매매와 전월세 실거래가 및 개별공시지가, 약국, 그리고 범용 데이터셋 카탈로그 3종입니다.
+- **`src/index.ts`** (`buildServer`) -- `McpServer`를 9개의 `register*Tools()` 함수와 연결하고, `TOOL_NAMES`에 나열된 23개 tool 전체를 노출합니다.
+- **`src/tools/{common,population,traffic,culture,environment,stats,realestate,health,meta}.ts`** -- 도메인별로 그룹화된 23개 MCP tool입니다: 장소/스냅샷/재난문자, 인구/상권, 지하철 도착과 시간표/따릉이/주차/도로, 문화행사와 공공서비스예약, 대기질/날씨, 지하철 일별·시간대별 승하차/생활인구, 부동산 매매와 전월세 실거래가 및 개별공시지가, 약국, 그리고 범용 데이터셋 카탈로그 3종입니다.
 - **`src/tools/envelope.ts`** (`ok`/`fail`) -- 모든 tool이 반환하는 단일 응답 형태 `{data, asOf, source, notes[]}`이며, `ctx.client.isSample`이 `true`일 때 샘플 모드 안내를 자동으로 추가합니다.
 - **`src/tools/resolve.ts`** (`resolvePlace`) -- 모든 `citydata` 계열 tool이 공유하는 장소 확정 헬퍼로, 장소명이 모호하거나 매칭되지 않을 때 에러 대신 "candidates" 응답을 조기 반환합니다.
-- **`src/data/catalog.ts`** (`CATALOG`, `searchCatalog`, `validateCall`) -- `search_dataset`/`get_dataset_spec`/`call_dataset` 뒤에 있는 29개 데이터셋 하이브리드 카탈로그입니다: 정식 tool을 보유한 15종(이 중 14종은 `call_dataset`으로도 호출 가능, 나머지 1종인 `LIVE_DST_MESSAGE`는 `get_disaster_alerts`를 통해서만 노출되는 직접 호출 불가 항목), 그리고 카탈로그 전용 14종으로 구성됩니다.
+- **`src/data/catalog.ts`** (`CATALOG`, `searchCatalog`, `validateCall`) -- `search_dataset`/`get_dataset_spec`/`call_dataset` 뒤에 있는 52개 데이터셋 하이브리드 카탈로그입니다: 정식 tool을 보유한 15종(이 중 14종은 `call_dataset`으로도 호출 가능, 나머지 1종인 `LIVE_DST_MESSAGE`는 `get_disaster_alerts`를 통해서만 노출되는 직접 호출 불가 항목), 그리고 카탈로그 전용 14종으로 구성됩니다.
 
 ### Security Layer (보안 계층)
 
@@ -174,9 +174,9 @@ flowchart TB
     HOTSPOTS --> NORMALIZE
   end
   subgraph query[Query / Presentation Layer]
-    TOOLS["20 MCP tools (src/tools/*)"]
+    TOOLS["23 MCP tools (src/tools/*)"]
     ENVELOPE["ok() / fail() envelope"]
-    CATALOG[("catalog.ts - 29 datasets")]
+    CATALOG[("catalog.ts - 52 datasets")]
     NORMALIZE --> TOOLS
     CATALOG --> TOOLS
     TOOLS --> ENVELOPE
