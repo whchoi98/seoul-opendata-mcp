@@ -83,6 +83,14 @@ describe('KeyPool', () => {
   it('고를 수 있는 키가 모두 쿨다운 중이면 exhausted', async () => {
     const pool = new KeyPool(['K1'], () => 0)
     pool.cooldown('K1', 1000)
-    expect(await pool.pick(statusOf(new InMemoryLedger(10)))).toMatchObject({ exhausted: true })
+    expect(await pool.pick(statusOf(new InMemoryLedger(10)))).toMatchObject({ exhausted: true, coolingUntil: expect.any(Number) })
+  })
+
+  it('한도에 닿은 키와 쿨다운 중인 키가 섞이면 쿨다운 종료 시각을 알려 준다', async () => {
+    const ledger = new InMemoryLedger(1)
+    await ledger.increment(keyIdOf('K1'))
+    const pool = new KeyPool(['K1', 'K2'], () => 0)
+    pool.cooldown('K2', 1000)
+    expect(await pool.pick(statusOf(ledger))).toMatchObject({ exhausted: true, coolingUntil: 1000 })
   })
 })

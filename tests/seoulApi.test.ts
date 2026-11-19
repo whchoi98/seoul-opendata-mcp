@@ -440,4 +440,17 @@ describe('SeoulApiClient 키 풀', () => {
       err.mockRestore()
     }
   })
+
+  it('모든 키가 ERROR-337로 쿨다운에 들어가면 일일 쿼터가 아니라 호출 제한으로 안내한다', async () => {
+    const fetchFn = vi.fn(async () => xml337())
+    const c = new SeoulApiClient({ apiKey: 'K1,K2', fetchFn: fetchFn as any, now: () => 0 })
+    await expect(c.getJson('bikeList', 1, 5)).rejects.toMatchObject({ code: 'ERROR-337' })
+    const calls = fetchFn.mock.calls.length
+    const u = await c.getJson('GetParkingInfo', 1, 5)
+    expect(u.rows).toHaveLength(0)
+    expect(u.note).toContain('호출 제한')
+    expect(u.note).toContain('약 10분 뒤')
+    expect(u.note).not.toContain('내일')
+    expect(fetchFn).toHaveBeenCalledTimes(calls)
+  })
 })

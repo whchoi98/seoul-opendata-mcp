@@ -184,6 +184,15 @@ export class SeoulApiClient {
     const budget = picked.pool
 
     if (picked.exhausted) {
+      if (picked.coolingUntil !== undefined) {
+        // 한도가 남은 키가 모두 ERROR-337 쿨다운 중 — 쿼터 소진이 아니라 호출 제한이다
+        if (cached) {
+          const ageMin = Math.round((this.nowFn() - cached.entry.storedAt) / 60_000)
+          return withNote(cached.entry.value, `서울 API 호출 제한 — 캐시된 데이터(약 ${ageMin}분 경과)로 응답합니다`)
+        }
+        const min = Math.max(1, Math.ceil((picked.coolingUntil - this.nowFn()) / 60_000))
+        return { rows: [], totalCount: 0, note: `서울 API 호출 제한으로 새 데이터를 가져올 수 없습니다. 약 ${min}분 뒤 다시 시도하세요.` }
+      }
       if (cached) {
         const ageMin = Math.round((this.nowFn() - cached.entry.storedAt) / 60_000)
         return withNote(cached.entry.value, `일일 API 쿼터 소진 — 캐시된 데이터(약 ${ageMin}분 경과)로 응답합니다`)
@@ -230,7 +239,13 @@ export class SeoulApiClient {
       console.error(`[quota] ERROR-337: 키 ${maskKey(picked.key)}를 ${KEY_COOLDOWN_MS / 60_000}분 동안 빼고 다른 키로 다시 호출합니다`)
       const next = await call.pool.pick(id => this.safeStatus(id))
       if (next.exhausted) throw e
-      return await this.fetchWithKey(call, next)
+      try {
+        return await this.fetchWithKey(call, next)
+      } catch (e2) {
+        // 다른 키도 호출 제한이면 그 키도 쉬게 해, 이어지는 요청이 업스트림을 두드리지 않게 한다
+        if (e2 instanceof SeoulApiError && e2.code === 'ERROR-337') call.pool.cooldown(next.key, KEY_COOLDOWN_MS)
+        throw e2
+      }
     }
   }
 

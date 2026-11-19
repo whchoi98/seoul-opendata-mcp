@@ -15,7 +15,8 @@ export function maskKey(key: string): string {
 
 export interface PoolStatus { used: number; limit: number; ratio: number }
 export interface PickedKey { exhausted: false; key: string; keyId: string; pool: PoolStatus }
-export type Pick = PickedKey | { exhausted: true; pool: PoolStatus }
+/** coolingUntil은 한도 미만이지만 쿨다운 중인 키가 있을 때 그중 가장 이른 쿨다운 종료 시각. 모든 키가 한도에 닿았으면 없다 */
+export type Pick = PickedKey | { exhausted: true; pool: PoolStatus; coolingUntil?: number }
 
 /**
  * 같은 API의 키 묶음. 목록 앞쪽 키부터 하루 한도까지 쓰고 다음 키로 넘어간다.
@@ -59,12 +60,14 @@ export class KeyPool {
     const used = statuses.reduce((sum, s) => sum + s.used, 0)
     const limit = statuses.reduce((sum, s) => sum + s.limit, 0)
     const pool: PoolStatus = { used, limit, ratio: limit > 0 ? used / limit : 1 }
+    let coolingUntil: number | undefined
     for (let i = 0; i < this.keys.length; i++) {
       const key = this.keys[i]
-      if (statuses[i].ratio < 1 && !this.isCooling(key)) {
-        return { exhausted: false, key, keyId: keyIdOf(key), pool }
-      }
+      if (statuses[i].ratio >= 1) continue
+      if (!this.isCooling(key)) return { exhausted: false, key, keyId: keyIdOf(key), pool }
+      const until = this.cooling.get(key)!
+      if (coolingUntil === undefined || until < coolingUntil) coolingUntil = until
     }
-    return { exhausted: true, pool }
+    return { exhausted: true, pool, coolingUntil }
   }
 }
