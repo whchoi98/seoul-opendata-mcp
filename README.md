@@ -1,6 +1,6 @@
 # Seoul OpenData MCP
 
-[![Version](https://img.shields.io/badge/Version-0.6.0-green.svg)]()
+[![Version](https://img.shields.io/badge/Version-0.7.0-green.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/Node-%3E%3D18-brightgreen.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue.svg)]()
@@ -180,6 +180,8 @@ Besides the stdio server above, this repo also ships a Streamable HTTP entrypoin
    | `PORT` | HTTP listen port. | `8000` |
 
 4. **Extending via AgentCore Gateway** — to expose these 23 tools to other agents/orchestrators without touching any code, register the deployed Runtime endpoint as an `mcpServer`-type target on an [AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html). The Streamable HTTP contract this server already implements is exactly what a Gateway target expects, so this is a registration-only step — no changes to this repository.
+
+5. **Workshop gateway with a shared code** — `npm run workshop:deploy` deploys a workshop-only runtime behind an AgentCore Gateway that accepts `Authorization: Bearer <workshop code>`. See [docs/workshop.md](docs/workshop.md) (Korean).
 
 ## Getting API Keys (5 minutes)
 
@@ -502,6 +504,8 @@ kiro-cli mcp add --name seoul-opendata --command npx --args "-y,seoul-opendata-m
    | `PORT` | HTTP 리슨 포트. | `8000` |
 
 4. **AgentCore Gateway로 확장** — 코드를 전혀 바꾸지 않고 이 23개 tool을 다른 에이전트/오케스트레이터에 노출하려면, 배포된 Runtime 엔드포인트를 [AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html)의 `mcpServer` 타입 타깃으로 등록하세요. 이 서버가 이미 구현하고 있는 Streamable HTTP 계약이 Gateway 타깃이 기대하는 형태와 정확히 일치하므로, 등록만 하면 되는 단계이며 이 저장소에는 어떤 변경도 필요 없습니다.
+
+5. **공용 코드로 접속하는 워크숍 Gateway** — `npm run workshop:deploy`가 `Authorization: Bearer <워크숍 코드>`를 받는 AgentCore Gateway 뒤에 워크숍 전용 런타임을 배포합니다. [docs/workshop.md](docs/workshop.md)를 참고하세요.
 
 ## API 키 발급 (5분)
 

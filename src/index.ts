@@ -17,7 +17,7 @@ import { registerHealthTools } from './tools/health.js'
 import { registerMetaTools } from './tools/meta.js'
 
 export const SERVER_NAME = 'seoul-opendata-mcp'
-export const SERVER_VERSION = '0.6.0'
+export const SERVER_VERSION = '0.7.0'
 
 export const TOOL_NAMES = [
   'search_place', 'get_city_snapshot', 'get_disaster_alerts',

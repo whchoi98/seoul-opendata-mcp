@@ -1,0 +1,116 @@
+# 서울 열린데이터 MCP 워크숍 안내
+
+워크숍 참가자와 진행자를 위한 안내입니다. 설계는 [워크숍 Gateway 설계 스펙](superpowers/specs/2026-11-19-workshop-gateway-design.md)에 있습니다.
+
+## 참가자
+
+### Claude Code에 등록
+
+진행자가 알려 준 Gateway URL과 워크숍 코드로 다음 명령을 실행합니다.
+
+```bash
+claude mcp add --transport http seoul <Gateway URL> --header "Authorization: Bearer <워크숍 코드>"
+```
+
+Claude Code에서 `/mcp`를 입력해 `seoul`이 연결됐는지 확인합니다. Gateway가 tool 이름 앞에 대상 이름을 붙이므로 tool은 `seoul___get_city_snapshot`처럼 보입니다.
+
+### 앱에서 호출
+
+두 예제 모두 환경 변수 `SEOUL_MCP_URL`(Gateway URL)과 `SEOUL_MCP_CODE`(워크숍 코드)를 읽습니다.
+
+TypeScript(`npm install @modelcontextprotocol/sdk`):
+
+```ts
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+
+const transport = new StreamableHTTPClientTransport(new URL(process.env.SEOUL_MCP_URL!), {
+  requestInit: { headers: { Authorization: `Bearer ${process.env.SEOUL_MCP_CODE}` } },
+})
+const client = new Client({ name: 'my-app', version: '0.1.0' })
+await client.connect(transport)
+const result = await client.callTool({ name: 'seoul___get_city_snapshot', arguments: { place: '강남역' } })
+console.log(result.content)
+await client.close()
+```
+
+Python(`pip install "mcp<2"`). 이 예제의 `streamablehttp_client(url, headers=...)`는 `mcp` 1.x API입니다. 2.x에서는 `streamable_http_client(url, http_client=...)`로 바뀌어 헤더를 `httpx2.AsyncClient`에 넣어야 하므로, 버전을 1.x로 고정합니다.
+
+```python
+import asyncio
+import os
+
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+
+async def main() -> None:
+    headers = {"Authorization": f"Bearer {os.environ['SEOUL_MCP_CODE']}"}
+    async with streamablehttp_client(os.environ["SEOUL_MCP_URL"], headers=headers) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.call_tool("seoul___get_city_snapshot", {"place": "강남역"})
+            print(result.content)
+
+
+asyncio.run(main())
+```
+
+### 주의 사항
+
+- 코드는 서버 쪽 코드에서만 붙입니다. 브라우저 JavaScript에 넣으면 페이지를 연 누구나 코드를 볼 수 있습니다.
+- 워크숍 코드는 워크숍이 끝나면 만료됩니다. 앱을 계속 운영하려면 서울 열린데이터광장에서 인증키를 받아 이 서버를 직접 실행하세요(README의 설치 방법).
+- "요청이 많습니다" 응답은 Gateway 전체의 분당 한도에 걸렸다는 뜻입니다. 1분 뒤 다시 시도하고, 반복문 안에서 tool을 부르지 않게 합니다.
+
+## 진행자
+
+### 처음 한 번
+
+`.env`의 `SEOUL_API_KEY`에 워크숍용 키를 쉼표로 넣고 배포합니다. 스택 생성은 비용이 드는 작업이므로 실행 전에 범위를 확인합니다.
+
+```bash
+npm run workshop:deploy -- --env-file .env
+```
+
+첫 스택 생성이 실패해 `ROLLBACK_COMPLETE` 상태가 되면 `npm run workshop:deploy -- --delete --yes`로 스택을 지운 뒤 다시 배포합니다.
+
+### 워크숍 전날
+
+```bash
+npm run workshop:code -- new --days 1          # 이틀짜리 해커톤이면 --days 2
+SEOUL_WORKSHOP_CODE=<새 코드> npm run workshop:deploy -- --skip-image   # 코드 있는 스모크 테스트
+```
+
+마지막 줄에 출력되는 Gateway URL과 새 코드를 안내 슬라이드에 넣습니다.
+
+### 워크숍 중
+
+| 상황 | 명령 |
+|---|---|
+| 분당 한도에 자주 걸림 | `npm run workshop:deploy -- --skip-image --rate-per-minute 240` |
+| 코드가 유출됨 | `npm run workshop:code -- new` 후 새 코드를 다시 안내 |
+| 만료 시각 확인 | `npm run workshop:code -- show` |
+
+### 워크숍 후
+
+```bash
+npm run workshop:code -- revoke
+```
+
+스택은 그대로 둡니다. 쉬는 동안에는 S3와 로그 보관료만 듭니다.
+
+### 서버 버전을 올릴 때
+
+변경을 커밋한 뒤 `npm run workshop:deploy`를 실행합니다. 이미지를 새로 빌드해 올리고, Gateway 대상을 동기화하고, 스모크 테스트까지 합니다.
+
+## 검증 기록
+
+배포 후 확인한 동작을 날짜와 함께 적습니다.
+
+| 항목 | 결과 | 날짜 |
+|---|---|---|
+| `initialize`가 인터셉터를 거치는지 | 첫 배포 후 기록 | |
+| Claude Code가 거부 안내 문구를 보여 주는지 | 첫 배포 후 기록 | |
+| 분당 한도 초과 시 `isError` 응답 | 첫 배포 후 기록 | |
+| 첫 키 한도 도달 시 다음 키 사용 | 첫 배포 후 기록 | |
+| `revoke` 후 거부 | 첫 배포 후 기록 | |

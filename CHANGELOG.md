@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-19
+
+### Added
+
+- `SEOUL_API_KEY` accepts several keys separated by commas. Each upstream call uses the first key under its daily limit. With two or more keys, a key that returns `ERROR-337` is skipped for 10 minutes and the call is retried once with the next key (`src/client/keyPool.ts`). When every remaining key is cooling down, the server answers with a rate-limit note (retry in about N minutes) instead of the daily-quota note.
+- Workshop gateway: `infra/seoul-workshop.yaml` (a workshop-only AgentCore Runtime V2 behind an AgentCore Gateway), `infra/lambda/code-check.mjs` (REQUEST interceptor that checks a shared code, its expiry and a per-minute `tools/call` limit), `npm run workshop:deploy`, `npm run workshop:code`, and `docs/workshop.md`.
+
+### Changed
+
+- The cache key no longer contains the API key: the key segment of the URL is replaced by `{key}` (`sample` in sample mode). Existing L2 (DynamoDB) entries miss once after the upgrade and expire within 24 h, so the first day after upgrading makes more upstream calls.
+- Error messages carry the masked key that was actually used. `maskedKey()` appends `외 N개` when several keys are set.
+- `src/client/env.ts` exports `parseDotEnv()`, which `loadDotEnv()` now uses.
+
 ## [0.6.0] - 2026-11-17
 
 ### Added
@@ -147,6 +160,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 따릅니다.
 
 ## [Unreleased]
+
+## [0.7.0] - 2026-11-19
+
+### Added
+
+- `SEOUL_API_KEY`에 쉼표로 여러 키를 넣을 수 있습니다. 업스트림 호출마다 하루 한도 미만인 첫 키를 씁니다. 키가 둘 이상일 때 `ERROR-337`을 돌려준 키는 10분 동안 빼고 다음 키로 한 번 다시 호출합니다(`src/client/keyPool.ts`). 남은 키가 모두 쉬는 중이면 일일 한도 안내 대신 호출 제한 안내(약 N분 뒤 다시 시도)를 돌려줍니다.
+- 워크숍 Gateway: `infra/seoul-workshop.yaml`(AgentCore Gateway 뒤의 워크숍 전용 AgentCore Runtime V2), `infra/lambda/code-check.mjs`(공용 코드, 만료, 분당 `tools/call` 한도를 확인하는 REQUEST 인터셉터), `npm run workshop:deploy`, `npm run workshop:code`, `docs/workshop.md`.
+
+### Changed
+
+- 캐시 키에 API 키가 들어가지 않습니다. URL의 키 자리를 `{key}`(샘플 모드는 `sample`)로 바꿉니다. 업그레이드 후 기존 L2(DynamoDB) 항목은 한 번 빗나가고 24시간 안에 만료되므로, 업그레이드 첫날에는 업스트림 호출이 늘어납니다.
+- 오류 메시지에는 실제로 호출에 쓴 키의 마스킹이 들어갑니다. 키가 여러 개면 `maskedKey()`가 `외 N개`를 붙입니다.
+- `src/client/env.ts`가 `parseDotEnv()`를 내보내고, `loadDotEnv()`가 이 함수를 씁니다.
 
 ## [0.6.0] - 2026-11-17
 

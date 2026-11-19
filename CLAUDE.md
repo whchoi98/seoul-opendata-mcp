@@ -1,7 +1,7 @@
 # Project Context
 
 ## Overview
-seoul-opendata-mcp(v0.6.0, MIT)는 서울 열린데이터광장(Seoul Open Data Plaza) 실시간 도시데이터를 23개 MCP tool로 제공하는 MCP 서버입니다. 로컬 클라이언트는 stdio(`src/index.ts`)로, Amazon Bedrock AgentCore Runtime은 Streamable HTTP(`src/http.ts`, `:8000`)로 연결합니다. GitHub: https://github.com/whchoi98/seoul-opendata-mcp.
+seoul-opendata-mcp(v0.7.0, MIT)는 서울 열린데이터광장(Seoul Open Data Plaza) 실시간 도시데이터를 23개 MCP tool로 제공하는 MCP 서버입니다. 로컬 클라이언트는 stdio(`src/index.ts`)로, Amazon Bedrock AgentCore Runtime은 Streamable HTTP(`src/http.ts`, `:8000`)로 연결합니다. GitHub: https://github.com/whchoi98/seoul-opendata-mcp.
 
 ## Tech Stack
 - TypeScript(strict, ESM), Node.js >=18
@@ -16,6 +16,7 @@ src/tools/      MCP tool 23개: 도메인 register 6개 파일 + meta/stats/heal
 src/data/       핫스팟 121곳, 52개/6카테고리 데이터셋 카탈로그
 tests/          vitest 스위트(단위 220+, live 9개) + harness/(훅·구조 검사); 픽스처=실API 캡처 불변
 scripts/        capture-fixtures.ts, live-sweep.ts, setup.sh, install-hooks.sh
+infra/          워크숍 Gateway 스택 템플릿(seoul-workshop.yaml)과 인터셉터 Lambda(lambda/code-check.mjs)
 ```
 
 ## Key Commands
@@ -27,6 +28,8 @@ scripts/        capture-fixtures.ts, live-sweep.ts, setup.sh, install-hooks.sh
 - `npm run prepublishOnly` - build (`npm publish` 전 자동 실행)
 - `bash tests/harness/run-all.sh` - 훅·스크립트·프로젝트 구조 하네스 테스트
 - `bash scripts/install-hooks.sh` - git `pre-commit`(비밀 검사)과 `commit-msg` 훅 설치 (clone 직후 1회)
+- `npm run workshop:deploy` - 워크숍 Gateway 스택 배포(승인 후에만 실행, `docs/workshop.md` 참조)
+- `npm run workshop:code -- new|revoke|show` - 워크숍 코드 발급, 폐기, 조회
 
 ## Conventions
 - `tests/fixtures/`의 픽스처는 실API 캡처 결과로 불변입니다. 직접 수정하지 않고, 재캡처는 `scripts/capture-fixtures.ts`로만 합니다(`tests/CLAUDE.md` 참조).
