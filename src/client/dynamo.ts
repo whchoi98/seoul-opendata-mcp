@@ -14,7 +14,7 @@ export interface DocClientLike {
 export class DynamoDbCache implements CacheBackend {
   constructor(private doc: DocClientLike, private table: string) {}
 
-  // 캐시 키(원문 URL)에는 인증키가 포함되므로 pk에는 sha256 해시만 저장한다 (스펙 §4.2: pk = URL 해시)
+  // pk는 캐시 키의 sha256이다. 길이를 고정하기 위해서이고, 예전 캐시 키 형식에는 인증키가 들어 있었다 (스펙 §4.2: pk = URL 해시)
   private pk(key: string): string {
     return createHash('sha256').update(key).digest('hex')
   }

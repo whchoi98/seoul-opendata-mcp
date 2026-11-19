@@ -93,7 +93,7 @@ claude mcp add seoul-opendata \
 ```
 
 - `SEOUL_API_KEY` — issued free at data.seoul.go.kr. Leave empty for sample mode (single 광화문·덕수궁 hotspot only). Several keys may be given separated by commas; the server moves to the next key when one reaches its daily limit
-- `SEOUL_SUBWAY_API_KEY` — dedicated key for realtime subway arrivals (optional). Falls back to `SEOUL_API_KEY` when empty
+- `SEOUL_SUBWAY_API_KEY` — dedicated key for realtime subway arrivals (optional). Falls back to the first key of `SEOUL_API_KEY` when empty
 - `--scope user` — available in every project. Omit it to register for the current project only (default: local)
 
 #### Verify the installation
@@ -174,7 +174,7 @@ Besides the stdio server above, this repo also ships a Streamable HTTP entrypoin
    | Variable | Description | Default |
    |---|---|---|
    | `SEOUL_API_KEY` | General API key (same as stdio mode). Comma-separated keys rotate when one reaches its daily limit. | `sample` |
-   | `SEOUL_SUBWAY_API_KEY` | Subway-only key (same as stdio mode). | falls back to `SEOUL_API_KEY` |
+   | `SEOUL_SUBWAY_API_KEY` | Subway-only key (same as stdio mode). | falls back to the first key of `SEOUL_API_KEY` |
    | `CACHE_TABLE_NAME` | Optional — DynamoDB table name for the shared global L2 cache and daily quota ledger. Unset means L1-only, per-session cache and quota. | (unset) |
    | `QUOTA_DAILY_LIMIT` | Daily per-key call budget before the server switches to stale-only responses. | `1000` |
    | `PORT` | HTTP listen port. | `8000` |
@@ -197,7 +197,7 @@ Without `SEOUL_API_KEY`, the server falls back to a built-in `sample` key: the `
 There are two keys in total:
 
 - **`SEOUL_API_KEY`** — the general key, used by every tool except realtime subway arrivals.
-- **`SEOUL_SUBWAY_API_KEY`** — a separate key for `get_subway_arrivals` (realtime subway arrivals), requested independently on data.seoul.go.kr. Optional — if unset, the server falls back to `SEOUL_API_KEY`.
+- **`SEOUL_SUBWAY_API_KEY`** — a separate key for `get_subway_arrivals` (realtime subway arrivals), requested independently on data.seoul.go.kr. Optional — if unset, the server falls back to the first key of `SEOUL_API_KEY`.
 
 ### Local development with `.env`
 
@@ -226,7 +226,7 @@ cp .env.example .env
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SEOUL_API_KEY` | General API key, used by every tool except realtime subway arrivals. Falls back to a built-in, scope-limited sample key when unset. | `sample` |
-| `SEOUL_SUBWAY_API_KEY` | Optional, dedicated key for `get_subway_arrivals` (realtime subway arrivals). Falls back to `SEOUL_API_KEY` when unset. | (falls back to `SEOUL_API_KEY`) |
+| `SEOUL_SUBWAY_API_KEY` | Optional, dedicated key for `get_subway_arrivals` (realtime subway arrivals). Falls back to the first key of `SEOUL_API_KEY` when unset. | (falls back to the first key of `SEOUL_API_KEY`) |
 
 `.env` is read by a dependency-free loader that only fills variables not already set on `process.env`. Precedence is: explicit environment variables > `.env` file > built-in sample key.
 
@@ -417,7 +417,7 @@ claude mcp add seoul-opendata \
 ```
 
 - `SEOUL_API_KEY` — data.seoul.go.kr에서 무료 발급. 비우면 샘플 모드(광화문·덕수궁 단일 핫스팟 한정)로 동작. 쉼표로 여러 키를 넣으면 한 키가 하루 한도에 닿을 때 다음 키로 넘어갑니다
-- `SEOUL_SUBWAY_API_KEY` — 지하철 실시간 도착 전용 키(선택). 비우면 `SEOUL_API_KEY`로 폴백
+- `SEOUL_SUBWAY_API_KEY` — 지하철 실시간 도착 전용 키(선택). 비우면 `SEOUL_API_KEY`의 첫 키로 폴백
 - `--scope user` — 모든 프로젝트에서 사용. 현재 프로젝트에서만 쓰려면 생략(기본값 local)
 
 #### 설치 확인
@@ -498,7 +498,7 @@ kiro-cli mcp add --name seoul-opendata --command npx --args "-y,seoul-opendata-m
    | Variable | Description | Default |
    |---|---|---|
    | `SEOUL_API_KEY` | 일반 API 키(stdio 모드와 동일). 쉼표로 여러 키를 넣으면 하루 한도에 닿은 키 다음 키를 씁니다. | `sample` |
-   | `SEOUL_SUBWAY_API_KEY` | 지하철 전용 키(stdio 모드와 동일). | `SEOUL_API_KEY`로 폴백 |
+   | `SEOUL_SUBWAY_API_KEY` | 지하철 전용 키(stdio 모드와 동일). | `SEOUL_API_KEY`의 첫 키로 폴백 |
    | `CACHE_TABLE_NAME` | 선택 — 전역 L2 캐시와 일일 쿼터 원장에 쓰이는 DynamoDB 테이블명. 미설정 시 L1 전용, 세션별 캐시·쿼터로 동작. | (미설정) |
    | `QUOTA_DAILY_LIMIT` | 쿼터 소진 시 stale-only 응답으로 전환되기 전까지의 키별 일일 호출 예산. | `1000` |
    | `PORT` | HTTP 리슨 포트. | `8000` |
@@ -521,7 +521,7 @@ kiro-cli mcp add --name seoul-opendata --command npx --args "-y,seoul-opendata-m
 인증키는 총 2종입니다.
 
 - **`SEOUL_API_KEY`** — 일반 인증키. 지하철 실시간 도착을 제외한 모든 tool이 사용합니다.
-- **`SEOUL_SUBWAY_API_KEY`** — 지하철 실시간 도착(`get_subway_arrivals`) 전용 인증키. data.seoul.go.kr에서 별도로 신청합니다. 선택 항목이며, 설정하지 않으면 `SEOUL_API_KEY`를 대신 사용합니다.
+- **`SEOUL_SUBWAY_API_KEY`** — 지하철 실시간 도착(`get_subway_arrivals`) 전용 인증키. data.seoul.go.kr에서 별도로 신청합니다. 선택 항목이며, 설정하지 않으면 `SEOUL_API_KEY`의 첫 키를 대신 사용합니다.
 
 ### `.env`로 로컬 개발하기
 

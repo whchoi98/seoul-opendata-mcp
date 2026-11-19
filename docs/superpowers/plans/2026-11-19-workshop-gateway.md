@@ -2656,12 +2656,12 @@ Expected: 출력 없음(깨끗한 작업 트리), 테스트 전체 PASS
 
 키 개수만 확인한다(키 값은 출력하지 않는다):
 
-Run: `npx tsx -e "Promise.all([import('./src/client/env.ts'), import('node:fs')]).then(([{ parseDotEnv }, fs]) => { const v = parseDotEnv(fs.readFileSync('.env', 'utf8')).SEOUL_API_KEY ?? ''; console.log('키 개수', v.split(',').filter(s => s.trim()).length) })"`
+Run: `npx tsx -e "Promise.all([import('./src/client/env.ts'), import('node:fs')]).then(([{ parseDotEnv }, fs]) => { const v = parseDotEnv(fs.readFileSync('.env.workshop', 'utf8')).SEOUL_API_KEY ?? ''; console.log('키 개수', v.split(',').filter(s => s.trim()).length) })"`
 Expected: `키 개수 N`. N이 1이면 Step 9(키 순환)는 건너뛰고 기록에 "키 1개라 확인하지 않음"이라고 적는다.
 
 - [ ] **Step 3: 첫 배포**
 
-Run: `npm run workshop:deploy -- --env-file .env`
+Run: `npm run workshop:deploy -- --env-file .env.workshop`
 Expected 출력 순서:
 1. `스택 seoul-workshop을 이미지와 코드 없이 만듭니다`
 2. `이미지 0.7.0-workshop-xxxxxxx를 빌드해 올립니다`와 docker 출력

@@ -34,7 +34,7 @@ console.log(result.content)
 await client.close()
 ```
 
-Python(`pip install "mcp<2"`). 이 예제의 `streamablehttp_client(url, headers=...)`는 `mcp` 1.x API입니다. 2.x에서는 `streamable_http_client(url, http_client=...)`로 바뀌어 헤더를 `httpx2.AsyncClient`에 넣어야 하므로, 버전을 1.x로 고정합니다.
+Python(`pip install "mcp<2"`). 이 예제는 `mcp` 1.x API를 씁니다. 2.x에서 클라이언트 API가 바뀌었으므로 버전을 1.x로 고정합니다.
 
 ```python
 import asyncio
@@ -66,18 +66,20 @@ asyncio.run(main())
 
 ### 처음 한 번
 
-`.env`의 `SEOUL_API_KEY`에 워크숍용 키를 쉼표로 넣고 배포합니다. 스택 생성은 비용이 드는 작업이므로 실행 전에 범위를 확인합니다.
+워크숍용 키는 `.env`가 아니라 별도 파일 `.env.workshop`의 `SEOUL_API_KEY`에 쉼표로 넣습니다. 이 저장소의 `.mcp.json`은 `.env`를 읽으므로, 같은 파일에 두면 로컬 세션이 DynamoDB 장부 없이 워크숍 키의 쿼터를 씁니다. 그다음 배포합니다. 스택 생성은 비용이 드는 작업이므로 실행 전에 범위를 확인합니다.
 
 ```bash
-npm run workshop:deploy -- --env-file .env
+npm run workshop:deploy -- --env-file .env.workshop
 ```
 
 첫 스택 생성이 실패해 `ROLLBACK_COMPLETE` 상태가 되면 `npm run workshop:deploy -- --delete --yes`로 스택을 지운 뒤 다시 배포합니다.
 
 ### 워크숍 전날
 
+`--days N`은 코드를 발급한 시각부터 N×24시간 뒤에 만료됩니다. 전날 오후에 발급하면 `--days 1`은 워크숍 당일 같은 시각에 끝나므로, 하루짜리 워크숍은 `--days 2`, 이틀짜리 해커톤은 `--days 3`으로 발급합니다.
+
 ```bash
-npm run workshop:code -- new --days 1          # 이틀짜리 해커톤이면 --days 2
+npm run workshop:code -- new --days 2          # 하루짜리 워크숍. 이틀짜리 해커톤이면 --days 3
 SEOUL_WORKSHOP_CODE=<새 코드> npm run workshop:deploy -- --skip-image   # 코드 있는 스모크 테스트
 ```
 

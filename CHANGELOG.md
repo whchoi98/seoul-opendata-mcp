@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The cache key no longer contains the API key: the key segment of the URL is replaced by `{key}` (`sample` in sample mode). Existing L2 (DynamoDB) entries miss once after the upgrade and expire within 24 h, so the first day after upgrading makes more upstream calls.
+- The cache key no longer contains the API key: the key segment of the URL is replaced by `{key}` (`sample` in sample mode). Existing real-key L2 (DynamoDB) entries miss once after the upgrade (sample-mode entries keep the same key and still hit) and expire within 24 h, so the first day after upgrading makes more upstream calls.
 - Error messages carry the masked key that was actually used. `maskedKey()` appends `외 N개` when several keys are set.
 - `src/client/env.ts` exports `parseDotEnv()`, which `loadDotEnv()` now uses.
 
@@ -170,7 +170,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- 캐시 키에 API 키가 들어가지 않습니다. URL의 키 자리를 `{key}`(샘플 모드는 `sample`)로 바꿉니다. 업그레이드 후 기존 L2(DynamoDB) 항목은 한 번 빗나가고 24시간 안에 만료되므로, 업그레이드 첫날에는 업스트림 호출이 늘어납니다.
+- 캐시 키에 API 키가 들어가지 않습니다. URL의 키 자리를 `{key}`(샘플 모드는 `sample`)로 바꿉니다. 업그레이드 후 실제 키로 만든 기존 L2(DynamoDB) 항목은 한 번 빗나가고(샘플 모드 항목은 키가 같아 계속 적중합니다) 24시간 안에 만료되므로, 업그레이드 첫날에는 업스트림 호출이 늘어납니다.
 - 오류 메시지에는 실제로 호출에 쓴 키의 마스킹이 들어갑니다. 키가 여러 개면 `maskedKey()`가 `외 N개`를 붙입니다.
 - `src/client/env.ts`가 `parseDotEnv()`를 내보내고, `loadDotEnv()`가 이 함수를 씁니다.
 

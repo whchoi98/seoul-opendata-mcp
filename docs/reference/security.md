@@ -20,7 +20,7 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 | `maskKey` / `maskedKey` / `maskedSubwayKey` | `src/client/keyPool.ts`, `src/client/seoulApi.ts` | Expose only the first 4 characters of a real key (or the literal `sample`); `maskedKey()` appends `외 N개` when the pool holds more keys |
 | `request` error paths | `src/client/seoulApi.ts` | Embed only the masked key that was actually used in `HTTP-<status>`, `TIMEOUT` and `NETWORK` `SeoulApiError` messages |
 | Cache key | `src/client/seoulApi.ts` (`fetchUnwrapped`) | The request URL with the key segment replaced by `{key}` (`sample` in sample mode), so neither L1, L2 nor the single-flight map holds a raw key |
-| `fetchUnwrapped` sample clamp | `src/client/seoulApi.ts:141-144` | Clamps `end` to `start + 4` when the active key is `sample`, limiting every request to at most 5 rows |
+| `fetchUnwrapped` sample clamp | `src/client/seoulApi.ts` | Clamps `end` to `start + 4` when the pool is the sample key alone, limiting every request to at most 5 rows |
 | `KEY_GUIDE` | `src/normalize/util.ts:9-10` | Shared key-signup URL string surfaced in `SAMPLE_NOTE` and in `INFO-100`/key-related error hints |
 | `SAMPLE_NOTE` | `src/tools/envelope.ts:3` | Sample-mode advisory string appended to every tool response's `notes[]` when `ctx.client.isSample` is `true` |
 | `.env.example` | `.env.example` | Committed placeholder template; real `.env` is listed in `.gitignore` and never committed |
@@ -36,16 +36,17 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 - Mask keys at the source (`maskedKey()`/`maskedSubwayKey()`) rather than redacting at a logging boundary, so there is no code path — including error messages — that can construct a string containing the full key.
 - Treat the subway key as an optional override of the general key, not a second mandatory credential, keeping the common case (one key) simple while still allowing quota isolation for `get_subway_arrivals`.
 - The single HTTP path and env-key handling decisions above are recorded as [ADR-003](../decisions/ADR-003-single-http-path-and-env-keys.md).
+- In the workshop stack the Seoul API keys sit in the AgentCore runtime's environment variables and the code's sha256 in the Lambda's environment variables. `NoEcho` only hides CloudFormation output, so `bedrock-agentcore:GetAgentRuntime` and `lambda:GetFunctionConfiguration` on those two resources are effectively read access to the secrets. The 40-bit unsalted code hash resists casual viewing, not an offline guess.
 - Scan the staged blob (`git show :path`) at commit time, on two layers: the PreToolUse hook gives Claude an immediate, explained block, and the git `pre-commit` hook covers `git add -A && git commit` in one command, which PreToolUse cannot see because it runs before the command stages anything.
 - Seoul keys are 32-char lowercase hex, which also matches fixture image ids (`atchFileId=…`). The scan therefore checks the literal values of `*_KEY`/`*_SECRET`/`*_TOKEN` variables from the local `.env` (reported by variable name only) and flags 32-hex runs only in key context: an `api_key`-style assignment or an `…seoul.go.kr/<key>/` URL path.
 
 ### 4. Code Pointers
 
 - `src/client/env.ts:4-18` — `.env` parsing and precedence rule
-- `src/client/seoulApi.ts:53-63` — key selection and `isSample` derivation
-- `src/client/seoulApi.ts:92-98` — `maskedKey()` / `maskedSubwayKey()`
-- `src/client/seoulApi.ts:110-129` — `request()`, masked key embedded in error messages
-- `src/client/seoulApi.ts:141-144` — `fetchUnwrapped()` sample-mode row clamp
+- `src/client/seoulApi.ts` — key selection and `isSample` derivation
+- `src/client/seoulApi.ts` — `maskedKey()` / `maskedSubwayKey()`
+- `src/client/seoulApi.ts` — `request()`, masked key embedded in error messages
+- `src/client/seoulApi.ts` — `fetchUnwrapped()` sample-mode row clamp
 - `src/normalize/util.ts:9-10` — `KEY_GUIDE`
 - `src/tools/envelope.ts:1-10` — `SAMPLE_NOTE` and its attachment in `ok()`
 - `manifest.json:21-36` — MCPB `user_config` key declarations
@@ -72,7 +73,7 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 | `maskKey` / `maskedKey` / `maskedSubwayKey` | `src/client/keyPool.ts`, `src/client/seoulApi.ts` | 실제 키의 앞 4글자만(또는 리터럴 `sample`) 보여 줍니다. 풀에 키가 더 있으면 `maskedKey()`가 `외 N개`를 붙입니다 |
 | `request` 에러 경로 | `src/client/seoulApi.ts` | `HTTP-<status>`, `TIMEOUT`, `NETWORK` `SeoulApiError` 메시지에 실제로 호출에 쓴 키의 마스킹만 넣습니다 |
 | 캐시 키 | `src/client/seoulApi.ts`(`fetchUnwrapped`) | 요청 URL의 키 자리를 `{key}`(샘플 모드는 `sample`)로 바꾼 값입니다. L1, L2, single-flight 맵 어디에도 원문 키가 남지 않습니다 |
-| `fetchUnwrapped` 샘플 클램프 | `src/client/seoulApi.ts:141-144` | 활성 키가 `sample`일 때 `end`를 `start + 4`로 클램프하여 요청당 최대 5행으로 제한합니다 |
+| `fetchUnwrapped` 샘플 클램프 | `src/client/seoulApi.ts` | 키 풀이 샘플 키 하나일 때 `end`를 `start + 4`로 클램프하여 요청당 최대 5행으로 제한합니다 |
 | `KEY_GUIDE` | `src/normalize/util.ts:9-10` | `SAMPLE_NOTE`와 `INFO-100` 등 키 관련 에러 힌트에 사용되는 공용 키 발급 URL 문자열 |
 | `SAMPLE_NOTE` | `src/tools/envelope.ts:3` | `ctx.client.isSample`이 `true`일 때 모든 tool 응답의 `notes[]`에 추가되는 샘플 모드 안내 문자열 |
 | `.env.example` | `.env.example` | 커밋되는 플레이스홀더 템플릿; 실제 `.env`는 `.gitignore`에 등록되어 절대 커밋되지 않습니다 |
@@ -88,16 +89,17 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 - 로깅 경계에서 마스킹하는 대신 소스 시점에서 키를 마스킹합니다(`maskedKey()`/`maskedSubwayKey()`). 이를 통해 에러 메시지를 포함한 어떤 코드 경로도 전체 키를 담은 문자열을 만들 수 없습니다.
 - 지하철 키를 두 번째 필수 자격증명이 아니라 일반 키의 선택적 오버라이드로 취급하여, 일반적인 경우(키 1개)를 단순하게 유지하면서도 `get_subway_arrivals`의 쿼터 분리는 필요할 때 가능하게 합니다.
 - 위 단일 HTTP 경로 및 env 키 처리 결정은 [ADR-003](../decisions/ADR-003-single-http-path-and-env-keys.md)로 기록되어 있습니다.
+- 워크숍 스택에서는 서울 API 키가 AgentCore 런타임의 환경 변수에, 코드의 sha256이 Lambda의 환경 변수에 들어 있습니다. `NoEcho`는 CloudFormation 출력만 가리므로, 두 리소스에 대한 `bedrock-agentcore:GetAgentRuntime`과 `lambda:GetFunctionConfiguration` 권한은 사실상 비밀을 읽는 권한입니다. 40비트에 솔트가 없는 코드 해시는 가벼운 열람을 막을 뿐 오프라인 대입은 막지 못합니다.
 - 커밋 시점에 stage된 내용(`git show :path`)을 두 단계로 검사합니다. PreToolUse 훅은 Claude에게 이유와 함께 바로 막았음을 알리고, git `pre-commit` 훅은 한 명령 안의 `git add -A && git commit`을 막습니다. PreToolUse는 명령이 파일을 stage하기 전에 실행되므로 이 경우를 볼 수 없습니다.
 - 서울 키는 32자리 소문자 hex라서 픽스처의 이미지 ID(`atchFileId=…`)와 형식이 같습니다. 그래서 로컬 `.env`의 `*_KEY`/`*_SECRET`/`*_TOKEN` 변수 값 자체를 찾고(보고에는 변수 이름만 씀), 32자리 hex는 `api_key` 형태의 대입문이나 `…seoul.go.kr/<key>/` URL 경로처럼 키 문맥에서만 잡습니다.
 
 ### 4. 코드 포인터
 
 - `src/client/env.ts:4-18` -- `.env` 파싱 및 우선순위 규칙
-- `src/client/seoulApi.ts:53-63` -- 키 선택 및 `isSample` 도출
-- `src/client/seoulApi.ts:92-98` -- `maskedKey()` / `maskedSubwayKey()`
-- `src/client/seoulApi.ts:110-129` -- `request()`, 에러 메시지에 마스킹된 키 포함
-- `src/client/seoulApi.ts:141-144` -- `fetchUnwrapped()` 샘플 모드 행 수 클램프
+- `src/client/seoulApi.ts` -- 키 선택 및 `isSample` 도출
+- `src/client/seoulApi.ts` -- `maskedKey()` / `maskedSubwayKey()`
+- `src/client/seoulApi.ts` -- `request()`, 에러 메시지에 마스킹된 키 포함
+- `src/client/seoulApi.ts` -- `fetchUnwrapped()` 샘플 모드 행 수 클램프
 - `src/normalize/util.ts:9-10` -- `KEY_GUIDE`
 - `src/tools/envelope.ts:1-10` -- `SAMPLE_NOTE`와 `ok()`에서의 부착 로직
 - `manifest.json:21-36` -- MCPB `user_config` 키 선언
