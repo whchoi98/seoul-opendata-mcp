@@ -12,7 +12,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { parseDotEnv } from '../src/client/env.js'
 import {
-  REGION, REPOSITORY, STACK, codeKeyOf, imageTag, registrationCommand, stackParameters, type ParameterName,
+  REGION, REPOSITORY, STACK, codeKeyOf, imageTag, registrationCommand, stackBlocker, stackParameters, type ParameterName,
 } from './workshop-lib.js'
 import { aws, awsJson, createStack, deleteStack, describeStack, run, sleep, stackOutputs, updateStack } from './workshop-aws.js'
 
@@ -179,13 +179,21 @@ function remove(stack: any): void {
     console.log(`스택 ${STACK}이 없습니다`)
     return
   }
+  if (stack.StackStatus?.endsWith('_IN_PROGRESS')) {
+    console.log(stackBlocker(stack.StackStatus))
+    return
+  }
+  // 첫 생성이 롤백되면 버킷이 이미 없고 Outputs도 비어 있다
   const bucket = stackOutputs(stack).BucketName
-  console.log(`삭제 대상: 스택 ${STACK}, 버킷 ${bucket}의 모든 객체. ECR 이미지는 지우지 않습니다`)
+  console.log(bucket
+    ? `삭제 대상: 스택 ${STACK}, 버킷 ${bucket}의 모든 객체. ECR 이미지는 지우지 않습니다`
+    : `삭제 대상: 스택 ${STACK}. 버킷이 없어 비울 객체도 없습니다. ECR 이미지는 지우지 않습니다`)
   if (!values.yes) {
     console.log('실제로 지우려면 --yes를 붙여 다시 실행하세요')
     return
   }
-  aws(['s3', 'rm', `s3://${bucket}`, '--recursive'])
+  if (bucket) aws(['s3', 'rm', `s3://${bucket}`, '--recursive'])
+  else console.log('버킷이 없어 비우기를 건너뜁니다')
   deleteStack()
   console.log('삭제했습니다')
 }
@@ -197,6 +205,8 @@ async function main(): Promise<void> {
   }
   let stack = describeStack()
   if (values.delete) return remove(stack)
+  const blocker = stackBlocker(stack?.StackStatus)
+  if (blocker) throw new Error(blocker)
   if (!values['skip-image']) requireCleanTree()
   const keys = values['env-file'] ? keysFrom(values['env-file']) : undefined
 

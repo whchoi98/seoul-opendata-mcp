@@ -4,7 +4,7 @@
  * 코드 원문은 new에서 한 번만 출력한다. 스택에는 해시만 남는다.
  */
 import { parseArgs } from 'node:util'
-import { STACK, kstIso, newCode, parseDays, sha256Hex, stackParameters } from './workshop-lib.js'
+import { STACK, kstIso, newCode, parseDays, sha256Hex, stackBlocker, stackParameters } from './workshop-lib.js'
 import { describeStack, stackParameterValue, updateStack } from './workshop-aws.js'
 
 const USAGE = `사용법:
@@ -24,6 +24,10 @@ function main(): void {
   const days = command === 'new' ? parseDays(values.days) : 0 // AWS를 부르기 전에 인자를 검사한다
   const stack = describeStack()
   if (!stack) throw new Error(`스택 ${STACK}이 없습니다. 먼저 npm run workshop:deploy를 실행하세요`)
+  if (command !== 'show') {
+    const blocker = stackBlocker(stack.StackStatus)
+    if (blocker) throw new Error(blocker)
+  }
 
   if (command === 'new') {
     const code = newCode()

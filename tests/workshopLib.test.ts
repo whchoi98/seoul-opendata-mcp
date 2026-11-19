@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import {
   CODE_ALPHABET, PARAMETERS, newCode, sha256Hex, parseDays, kstIso, stackParameters,
-  imageTag, codeKeyOf, registrationCommand, withSecretFile,
+  imageTag, codeKeyOf, registrationCommand, withSecretFile, stackBlocker,
 } from '../scripts/workshop-lib.js'
 
 describe('workshop-lib', () => {
@@ -73,5 +73,15 @@ describe('workshop-lib', () => {
     let seen = ''
     expect(() => withSecretFile({}, path => { seen = path; throw new Error('boom') })).toThrow('boom')
     expect(existsSync(seen)).toBe(false)
+  })
+
+  it('stackBlocker는 복구가 필요하거나 진행 중인 스택만 막는다', () => {
+    expect(stackBlocker('ROLLBACK_COMPLETE')).toContain('--delete --yes')
+    expect(stackBlocker('UPDATE_IN_PROGRESS')).toContain('UPDATE_IN_PROGRESS')
+    expect(stackBlocker('CREATE_IN_PROGRESS')).toContain('CREATE_IN_PROGRESS')
+    expect(stackBlocker('CREATE_COMPLETE')).toBeUndefined()
+    expect(stackBlocker('UPDATE_COMPLETE')).toBeUndefined()
+    expect(stackBlocker('UPDATE_ROLLBACK_COMPLETE')).toBeUndefined()
+    expect(stackBlocker(undefined)).toBeUndefined()
   })
 })

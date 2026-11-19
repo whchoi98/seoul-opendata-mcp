@@ -62,6 +62,17 @@ export function codeKeyOf(source: string | Buffer): string {
   return `code/code-check-${sha256Hex(source).slice(0, 16)}.zip`
 }
 
+/** 스택이 지금 갱신하거나 삭제할 수 없는 상태면 그 이유를 돌려준다. 정상 상태나 스택이 없으면 undefined */
+export function stackBlocker(status: string | undefined): string | undefined {
+  if (status === 'ROLLBACK_COMPLETE') {
+    return `스택 ${STACK}의 첫 생성이 실패해 ROLLBACK_COMPLETE 상태입니다. npm run workshop:deploy -- --delete --yes로 지운 뒤 다시 배포하세요`
+  }
+  if (status?.endsWith('_IN_PROGRESS')) {
+    return `스택 ${STACK}이 ${status} 상태입니다. 끝난 뒤 다시 실행하세요`
+  }
+  return undefined
+}
+
 export function registrationCommand(gatewayUrl: string): string {
   return `claude mcp add --transport http seoul ${gatewayUrl} --header "Authorization: Bearer <코드>"`
 }
