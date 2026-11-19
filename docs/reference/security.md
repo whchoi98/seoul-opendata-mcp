@@ -15,9 +15,11 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 | Component | Path | Purpose |
 |---|---|---|
 | `loadDotEnv` | `src/client/env.ts` | Reads a local `.env` file and fills only the environment variables not already set on `process.env` |
-| `SeoulApiClient` constructor | `src/client/seoulApi.ts:53-63` | Selects the active key (`opts.apiKey ?? process.env.SEOUL_API_KEY ?? 'sample'`) and derives `isSample` |
-| `maskedKey` / `maskedSubwayKey` | `src/client/seoulApi.ts:92-98` | Expose only the first 4 characters of a real key (or the literal `sample`), never the full value |
-| `request` error paths | `src/client/seoulApi.ts:110-129` | Embed only the masked key in `HTTP-<status>`, `TIMEOUT` and `NETWORK` `SeoulApiError` messages |
+| `SeoulApiClient` constructor | `src/client/seoulApi.ts` | Builds the general key pool from `opts.apiKey ?? process.env.SEOUL_API_KEY` (comma-separated, `parseKeys`) and a one-key subway pool; `isSample` is true only when the general pool is the sample key alone |
+| `KeyPool` | `src/client/keyPool.ts` | Picks the first key under its daily limit that is not cooling down; raw keys stay in memory and the ledger sees only `keyIdOf()` hashes |
+| `maskKey` / `maskedKey` / `maskedSubwayKey` | `src/client/keyPool.ts`, `src/client/seoulApi.ts` | Expose only the first 4 characters of a real key (or the literal `sample`); `maskedKey()` appends `외 N개` when the pool holds more keys |
+| `request` error paths | `src/client/seoulApi.ts` | Embed only the masked key that was actually used in `HTTP-<status>`, `TIMEOUT` and `NETWORK` `SeoulApiError` messages |
+| Cache key | `src/client/seoulApi.ts` (`fetchUnwrapped`) | The request URL with the key segment replaced by `{key}` (`sample` in sample mode), so neither L1, L2 nor the single-flight map holds a raw key |
 | `fetchUnwrapped` sample clamp | `src/client/seoulApi.ts:141-144` | Clamps `end` to `start + 4` when the active key is `sample`, limiting every request to at most 5 rows |
 | `KEY_GUIDE` | `src/normalize/util.ts:9-10` | Shared key-signup URL string surfaced in `SAMPLE_NOTE` and in `INFO-100`/key-related error hints |
 | `SAMPLE_NOTE` | `src/tools/envelope.ts:3` | Sample-mode advisory string appended to every tool response's `notes[]` when `ctx.client.isSample` is `true` |
@@ -64,9 +66,11 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 | 구성요소 | 경로 | 목적 |
 |---|---|---|
 | `loadDotEnv` | `src/client/env.ts` | 로컬 `.env` 파일을 읽어 `process.env`에 아직 설정되지 않은 변수만 채웁니다 |
-| `SeoulApiClient` 생성자 | `src/client/seoulApi.ts:53-63` | 활성 키(`opts.apiKey ?? process.env.SEOUL_API_KEY ?? 'sample'`)를 선택하고 `isSample`을 도출합니다 |
-| `maskedKey` / `maskedSubwayKey` | `src/client/seoulApi.ts:92-98` | 실제 키의 앞 4글자만(또는 리터럴 `sample`) 노출하며, 전체 값은 절대 노출하지 않습니다 |
-| `request` 에러 경로 | `src/client/seoulApi.ts:110-129` | `HTTP-<status>`, `TIMEOUT`, `NETWORK` `SeoulApiError` 메시지에 마스킹된 키만 포함시킵니다 |
+| `SeoulApiClient` 생성자 | `src/client/seoulApi.ts` | `opts.apiKey ?? process.env.SEOUL_API_KEY`(쉼표 목록, `parseKeys`)로 일반 키 풀을, 키 하나로 지하철 풀을 만듭니다. 일반 풀이 샘플 키 하나일 때만 `isSample`이 참입니다 |
+| `KeyPool` | `src/client/keyPool.ts` | 하루 한도 미만이고 쿨다운 중이 아닌 첫 키를 고릅니다. 원문 키는 메모리에만 두고 장부에는 `keyIdOf()` 해시만 넘깁니다 |
+| `maskKey` / `maskedKey` / `maskedSubwayKey` | `src/client/keyPool.ts`, `src/client/seoulApi.ts` | 실제 키의 앞 4글자만(또는 리터럴 `sample`) 보여 줍니다. 풀에 키가 더 있으면 `maskedKey()`가 `외 N개`를 붙입니다 |
+| `request` 에러 경로 | `src/client/seoulApi.ts` | `HTTP-<status>`, `TIMEOUT`, `NETWORK` `SeoulApiError` 메시지에 실제로 호출에 쓴 키의 마스킹만 넣습니다 |
+| 캐시 키 | `src/client/seoulApi.ts`(`fetchUnwrapped`) | 요청 URL의 키 자리를 `{key}`(샘플 모드는 `sample`)로 바꾼 값입니다. L1, L2, single-flight 맵 어디에도 원문 키가 남지 않습니다 |
 | `fetchUnwrapped` 샘플 클램프 | `src/client/seoulApi.ts:141-144` | 활성 키가 `sample`일 때 `end`를 `start + 4`로 클램프하여 요청당 최대 5행으로 제한합니다 |
 | `KEY_GUIDE` | `src/normalize/util.ts:9-10` | `SAMPLE_NOTE`와 `INFO-100` 등 키 관련 에러 힌트에 사용되는 공용 키 발급 URL 문자열 |
 | `SAMPLE_NOTE` | `src/tools/envelope.ts:3` | `ctx.client.isSample`이 `true`일 때 모든 tool 응답의 `notes[]`에 추가되는 샘플 모드 안내 문자열 |

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { SeoulApiClient } from '../src/client/seoulApi.js'
+import { InMemoryLedger, keyIdOf } from '../src/client/quota.js'
 
 const jsonResponse = (body: unknown) =>
   new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
@@ -292,5 +293,151 @@ describe('SeoulApiClient', () => {
     expect(subwayFresh.rows).toHaveLength(1)
     expect(subwayFresh.note).toBeUndefined()
     expect(fetchFn).toHaveBeenCalledTimes(2) // 지하철 키 요청은 업스트림까지 도달
+  })
+})
+
+describe('SeoulApiClient 키 풀', () => {
+  const pageOf = (service: string) =>
+    jsonResponse({ [service]: { list_total_count: 1, RESULT: { CODE: 'INFO-000', MESSAGE: 'ok' }, row: [{ a: 1 }] } })
+  const serviceOf = (url: string) => url.split('/')[5]
+  const xml337 = () =>
+    new Response('<RESULT><CODE>ERROR-337</CODE><MESSAGE>호출 제한</MESSAGE></RESULT>', { status: 200 })
+
+  it('SEOUL_API_KEY 환경 변수의 쉼표 목록을 읽는다', () => {
+    delete process.env.SEOUL_SUBWAY_API_KEY
+    process.env.SEOUL_API_KEY = 'AAAA1111,BBBB2222'
+    try {
+      const c = new SeoulApiClient({ fetchFn: vi.fn() as any })
+      expect(c.isSample).toBe(false)
+      expect(c.maskedKey()).toBe('AAAA…(masked) 외 1개')
+      expect(c.maskedSubwayKey()).toBe('AAAA…(masked)')
+    } finally {
+      delete process.env.SEOUL_API_KEY
+    }
+  })
+
+  it('첫 키가 하루 한도에 닿으면 다음 키로 호출한다', async () => {
+    const ledger = new InMemoryLedger(1)
+    await ledger.increment(keyIdOf('K1'))
+    const fetchFn = vi.fn().mockResolvedValue(pageOf('bikeList'))
+    const c = new SeoulApiClient({ apiKey: 'K1,K2', fetchFn: fetchFn as any, ledger })
+    await c.getJson('bikeList', 1, 5)
+    expect(fetchFn.mock.calls[0][0]).toBe('http://openapi.seoul.go.kr:8088/K2/json/bikeList/1/5')
+  })
+
+  it('모든 키가 소진되면 업스트림을 부르지 않고 풀 한도를 안내한다', async () => {
+    const ledger = new InMemoryLedger(1)
+    await ledger.increment(keyIdOf('K1'))
+    await ledger.increment(keyIdOf('K2'))
+    const fetchFn = vi.fn()
+    const c = new SeoulApiClient({ apiKey: 'K1,K2', fetchFn: fetchFn as any, ledger })
+    const u = await c.getJson('bikeList', 1, 5)
+    expect(u.rows).toHaveLength(0)
+    expect(u.note).toContain('일일 API 쿼터(2회)')
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  it('80% 안내는 풀 전체 합계로 계산한다', async () => {
+    const ledger = new InMemoryLedger(5)
+    for (let i = 0; i < 4; i++) {
+      await ledger.increment(keyIdOf('K1'))
+      await ledger.increment(keyIdOf('K2'))
+    }
+    const fetchFn = vi.fn().mockResolvedValue(pageOf('bikeList'))
+    const c = new SeoulApiClient({ apiKey: 'K1,K2', fetchFn: fetchFn as any, ledger })
+    const u = await c.getJson('bikeList', 1, 5)
+    expect(u.note).toContain('80% 사용(8/10)')
+  })
+
+  it('k1으로 저장한 캐시가 k2를 고르는 상태에서도 적중한다', async () => {
+    const ledger = new InMemoryLedger(1)
+    const fetchFn = vi.fn().mockResolvedValue(pageOf('bikeList'))
+    const c = new SeoulApiClient({ apiKey: 'K1,K2', fetchFn: fetchFn as any, ledger })
+    await c.getJson('bikeList', 1, 5) // K1으로 호출, K1 1/1 소진
+    const again = await c.getJson('bikeList', 1, 5) // 이제 K2를 고르지만 캐시가 fresh
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(again.rows).toHaveLength(1)
+  })
+
+  it('동시 요청이 서로 다른 키를 골라도 업스트림 호출은 한 번이다', async () => {
+    const ledger = new InMemoryLedger(1)
+    let resolveFetch!: (r: Response) => void
+    const fetchFn = vi.fn().mockReturnValue(new Promise<Response>(res => { resolveFetch = res }))
+    const c = new SeoulApiClient({ apiKey: 'K1,K2', fetchFn: fetchFn as any, ledger })
+    const first = c.getJson('bikeList', 1, 5) // K1을 고르고 응답 대기
+    await new Promise(r => setTimeout(r, 10))
+    await ledger.increment(keyIdOf('K1')) // 그사이 K1 소진
+    const second = c.getJson('bikeList', 1, 5) // K2를 고르지만 같은 캐시 키라 진행 중인 호출에 합류
+    await new Promise(r => setTimeout(r, 10))
+    resolveFetch(pageOf('bikeList'))
+    await Promise.all([first, second])
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('ERROR-337이면 그 키를 10분 쉬게 하고 다음 키로 한 번 다시 부른다', async () => {
+    let t = 0
+    const fetchFn = vi.fn(async (url: string) =>
+      url.includes('/K1/') && t < 600_000 ? xml337() : pageOf(serviceOf(url)))
+    const c = new SeoulApiClient({ apiKey: 'K1,K2', fetchFn: fetchFn as any, now: () => t })
+    const u = await c.getJson('bikeList', 1, 5)
+    expect(u.rows).toHaveLength(1)
+    expect(fetchFn.mock.calls.map(([url]) => (url.includes('/K1/') ? 'K1' : 'K2'))).toEqual(['K1', 'K2'])
+    await c.getJson('GetParkingInfo', 1, 5) // 쿨다운 중이라 바로 K2
+    expect(fetchFn.mock.calls[2][0]).toContain('/K2/')
+    t = 600_000
+    await c.getJson('AccInfo', 1, 5) // 10분이 지나 다시 K1
+    expect(fetchFn.mock.calls[3][0]).toContain('/K1/')
+  })
+
+  it('키가 하나면 ERROR-337에 쿨다운 없이 오류를 그대로 던진다', async () => {
+    const fetchFn = vi.fn().mockResolvedValueOnce(xml337()).mockResolvedValueOnce(pageOf('GetParkingInfo'))
+    const c = new SeoulApiClient({ apiKey: 'K1', fetchFn: fetchFn as any })
+    await expect(c.getJson('bikeList', 1, 5)).rejects.toMatchObject({ code: 'ERROR-337' })
+    const u = await c.getJson('GetParkingInfo', 1, 5) // 쿨다운이 없으므로 바로 업스트림 호출
+    expect(u.rows).toHaveLength(1)
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('샘플 모드는 ERROR-337을 재시도하지 않는다', async () => {
+    delete process.env.SEOUL_API_KEY
+    const fetchFn = vi.fn().mockResolvedValue(xml337())
+    const c = new SeoulApiClient({ fetchFn: fetchFn as any })
+    await expect(c.getJson('bikeList', 1, 5)).rejects.toMatchObject({ code: 'ERROR-337' })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('캐시 키에는 원문 키 대신 자리 표시가 들어가고, 샘플과 실제 키는 서로 다른 항목이다', async () => {
+    delete process.env.SEOUL_API_KEY
+    const keys: string[] = []
+    const l2 = { async get() { return undefined }, async set(k: string) { keys.push(k) } }
+    for (const apiKey of [undefined, 'SECRETKEY123,OTHERKEY456']) {
+      const c = new SeoulApiClient({ apiKey, fetchFn: vi.fn().mockResolvedValue(pageOf('bikeList')) as any })
+      c.attachL2(l2)
+      await c.getJson('bikeList', 1, 5)
+    }
+    expect(keys).toEqual([
+      'http://openapi.seoul.go.kr:8088/sample/json/bikeList/1/5',
+      'http://openapi.seoul.go.kr:8088/{key}/json/bikeList/1/5',
+    ])
+  })
+
+  it('오류 메시지와 로그에는 실제로 쓴 키의 마스킹만 남고 원문 키는 없다', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const timeout = new DOMException('timeout', 'TimeoutError')
+      const fetchFn = vi.fn(async (url: string) => {
+        if (url.includes('/SECRETKEY123/')) return xml337()
+        throw timeout
+      })
+      const c = new SeoulApiClient({ apiKey: 'SECRETKEY123,OTHERKEY456', fetchFn: fetchFn as any, retryDelayMs: 0 })
+      const e = await c.getJson('bikeList', 1, 5).catch(x => x)
+      expect(e).toMatchObject({ code: 'TIMEOUT' })
+      expect(e.message).toContain('OTHE…(masked)')
+      const text = [e.message, ...err.mock.calls.flat().map(String)].join('\n')
+      expect(text).not.toContain('SECRETKEY123')
+      expect(text).not.toContain('OTHERKEY456')
+    } finally {
+      err.mockRestore()
+    }
   })
 })

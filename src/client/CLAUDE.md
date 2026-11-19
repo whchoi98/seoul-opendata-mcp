@@ -5,6 +5,7 @@
 
 ## Key Files
 - `seoulApi.ts` - `SeoulApiClient` 본체. `SOFT_TTL` 맵(데이터셋별 원천 정렬 soft TTL), `buildUrl`/`request`(재시도)/`parseJsonWithXmlFallback`, `getJson`/`getXml`/`getSubway`, `maskedKey()`/`maskedSubwayKey()`, URL당 single-flight(`inflight` 맵), stale-while-revalidate·쿼터 소진 처리(`fetchUnwrapped`).
+- `keyPool.ts` - `parseKeys`(쉼표 목록, 비면 `['sample']`) / `maskKey`(로그와 오류 메시지의 유일한 키 표기) / `KeyPool`(앞 키부터 하루 한도까지 쓰고 다음 키로, `ERROR-337` 쿨다운은 프로세스 메모리에만).
 - `cache.ts` - `CacheBackend`(인터페이스) / `InMemoryCache`(L1, `MAX_L1_ENTRIES` 1000개 상한 LRU) / `CompositeCache`(L1+선택적 L2, soft/hard TTL 판정 — `HARD_TTL_MS` 24h). L2 실패는 잡아서 로그만 남기고 L1으로 폴백.
 - `quota.ts` - `QuotaLedger`(인터페이스) / `InMemoryLedger`(기본, 프로세스별) / `kstDayKey`(KST 하루 경계) / `keyIdOf`(키를 저장하지 않는 sha256 식별자) / `parseQuotaLimit`(`QUOTA_DAILY_LIMIT` 검증, 기본 1000).
 - `dynamo.ts` - `DynamoDbCache`(L2 `CacheBackend` 구현) / `DynamoDbLedger`(L2 `QuotaLedger` 구현) / `maybeAttachL2`(`CACHE_TABLE_NAME` 설정 시에만 `@aws-sdk/*`를 lazy import하여 연결; 실패해도 L1/인메모리 원장으로 계속 동작).
@@ -20,3 +21,5 @@
 - `SEOUL_API_KEY`가 없으면 `key === 'sample'`(sample 모드)로 동작하며, `isSample`로 판별합니다.
 - L2(`CACHE_TABLE_NAME`)와 쿼터 원장의 모든 실패 경로는 요청을 실패시키지 않고 로그만 남긴 뒤 L1/인메모리 원장으로 폴백해야 합니다 — 새 실패 지점을 추가할 때도 이 규칙을 지킵니다.
 - `@aws-sdk/*`는 `dynamo.ts`의 `maybeAttachL2` 내부에서만, `CACHE_TABLE_NAME`이 설정된 경우에만 import합니다(stdio/로컬 경로에 비용을 지우지 않기 위함). 다른 곳에서 top-level import하지 않습니다.
+- 캐시 키(L1, L2, single-flight 맵)에는 원문 키를 넣지 않습니다. URL의 키 자리를 `{key}`(샘플 모드는 `sample`)로 바꾼 값을 씁니다.
+- 호출에 쓸 키는 `KeyPool.pick()`만 고릅니다. 오류 메시지에는 실제로 호출에 쓴 키를 `maskKey()`로만 넣습니다.

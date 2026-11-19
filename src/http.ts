@@ -84,4 +84,5 @@ createServer((req, res) => {
 }).listen(port, '0.0.0.0', () => {
   console.error(`[${SERVER_NAME}] v${SERVER_VERSION} Streamable HTTP on 0.0.0.0:${port} (stateless)`)
   if (client.isSample) console.error(`[${SERVER_NAME}] SEOUL_API_KEY 미설정 — 샘플 키로 동작합니다.`)
+  else console.error(`[${SERVER_NAME}] SEOUL_API_KEY ${client.maskedKey()}`)
 })
