@@ -65,7 +65,7 @@ describe('infra/seoul-workshop.yaml', () => {
     const server = tg.Properties.TargetConfiguration.Mcp.McpServer
     expect(server.ListingMode).toBe('DEFAULT')
     expect(server.Endpoint.Sub).toBe(
-      'https://bedrock-agentcore.${AWS::Region}.amazonaws.com/runtimes/arn%3A${AWS::Partition}%3Abedrock-agentcore%3A${AWS::Region}%3A${AWS::AccountId}%3Aruntime%2F${WorkshopRuntime.AgentRuntimeId}/invocations?qualifier=DEFAULT',
+      'https://bedrock-agentcore.${AWS::Region}.${AWS::URLSuffix}/runtimes/arn%3A${AWS::Partition}%3Abedrock-agentcore%3A${AWS::Region}%3A${AWS::AccountId}%3Aruntime%2F${WorkshopRuntime.AgentRuntimeId}/invocations?qualifier=DEFAULT',
     )
   })
 

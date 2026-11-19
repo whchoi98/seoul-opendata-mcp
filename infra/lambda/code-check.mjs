@@ -55,8 +55,8 @@ export function createHandler({ codeSha256, validUntil, ratePerMinute, incr, now
     const id = body.id ?? null
     const method = typeof body.method === 'string' ? body.method : null
     const tool = method === 'tools/call' && typeof body.params?.name === 'string' ? body.params.name : null
-    const finish = (decision, output) => {
-      log(JSON.stringify({ method, tool, decision }))
+    const finish = (decision, output, extra = {}) => {
+      log(JSON.stringify({ method, tool, decision, ...extra }))
       return output
     }
 
@@ -67,9 +67,9 @@ export function createHandler({ codeSha256, validUntil, ratePerMinute, incr, now
         const t = now()
         const count = await incr(minuteKey(t), Math.floor(t / 1000) + 120)
         if (count > ratePerMinute) return finish('rate_limited', limited(id))
-      } catch {
+      } catch (e) {
         // The counter guards against runaway loops, not against strangers: let the call through.
-        return finish('rate_check_failed', pass(body))
+        return finish('rate_check_failed', pass(body), { error: e?.name ?? 'Error' })
       }
     }
     return finish('pass', pass(body))

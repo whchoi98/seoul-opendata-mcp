@@ -266,7 +266,7 @@ Resources:
         Mcp:
           McpServer:
             # The gateway calls this URL as given, so the runtime ARN is URL-encoded here.
-            Endpoint: !Sub "https://bedrock-agentcore.${AWS::Region}.amazonaws.com/runtimes/arn%3A${AWS::Partition}%3Abedrock-agentcore%3A${AWS::Region}%3A${AWS::AccountId}%3Aruntime%2F${WorkshopRuntime.AgentRuntimeId}/invocations?qualifier=DEFAULT"
+            Endpoint: !Sub "https://bedrock-agentcore.${AWS::Region}.${AWS::URLSuffix}/runtimes/arn%3A${AWS::Partition}%3Abedrock-agentcore%3A${AWS::Region}%3A${AWS::AccountId}%3Aruntime%2F${WorkshopRuntime.AgentRuntimeId}/invocations?qualifier=DEFAULT"
             ListingMode: DEFAULT
       CredentialProviderConfigurations:
         - CredentialProviderType: GATEWAY_IAM_ROLE

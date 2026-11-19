@@ -104,6 +104,8 @@ describe('code-check 인터셉터', () => {
     const out = await handler(event(auth, callBody(1)))
     expect(out.mcp.transformedGatewayRequest).toBeDefined()
     expect(JSON.parse(logs[0]).decision).toBe('rate_check_failed')
+    expect(JSON.parse(logs[0]).error).toBe('Error')
+    expect(logs).toHaveLength(1)
   })
 
   it('카운터 키는 UTC 분 단위이고 만료는 120초 뒤다', async () => {

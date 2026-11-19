@@ -150,15 +150,18 @@ async function listAllTools(client: Client): Promise<Array<{ name: string }>> {
 
 async function smoke(url: string): Promise<void> {
   let stage: string = 'none'
+  let rejection = ''
   try {
     const anonymous = await connect(url).catch(e => { stage = 'initialize'; throw e })
     await listAllTools(anonymous).catch(e => { stage = 'tools/list'; throw e })
     await anonymous.close()
-  } catch {
-    // stage에 어느 단계에서 막혔는지 남아 있다
+  } catch (e) {
+    // stage에 어느 단계에서 막혔는지 남아 있다. 메시지는 MCP SDK와 Gateway가 만들며 비밀을 담지 않는다
+    const err = e as Error
+    rejection = `${err?.name ?? 'Error'}: ${String(err?.message ?? e).slice(0, 200)}`
   }
   if (stage === 'none') throw new Error('코드 없는 요청이 통과했습니다')
-  console.log(`코드 없는 요청 거부 확인(${stage} 단계에서 거부)`)
+  console.log(`코드 없는 요청 거부 확인(${stage} 단계에서 거부: ${rejection})`)
 
   const code = process.env.SEOUL_WORKSHOP_CODE
   if (!code) {
@@ -211,6 +214,7 @@ async function main(): Promise<void> {
   const keys = values['env-file'] ? keysFrom(values['env-file']) : undefined
 
   if (!stack) {
+    if (values['skip-image']) throw new Error('아직 런타임이 없어 --skip-image를 쓸 수 없습니다')
     if (!keys) throw new Error('스택을 처음 만들 때는 --env-file이 필요합니다')
     console.log(`스택 ${STACK}을 이미지와 코드 없이 만듭니다`)
     createStack(stackParameters(keys, 'create'), TEMPLATE)
