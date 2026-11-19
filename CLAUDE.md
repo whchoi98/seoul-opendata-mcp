@@ -18,7 +18,7 @@ src/data/       핫스팟 121곳, 52개/6카테고리 데이터셋 카탈로그
 tests/          vitest 스위트(단위 290+, live 9개) + harness/(훅·구조 검사); 픽스처=실API 캡처 불변
 scripts/        capture-fixtures.ts, live-sweep.ts, setup.sh, install-hooks.sh, workshop-*.ts(워크숍 스택 배포와 코드 관리)
 infra/          워크숍 Gateway 스택 템플릿(seoul-workshop.yaml)과 인터셉터 Lambda(lambda/code-check.mjs)
-docs/           architecture, api-reference, onboarding, workshop 안내, decisions/(ADR), runbooks/, reference/(계층별 구현 참조)
+docs/           architecture, api-reference, onboarding, workshop 안내, decisions/(ADR), runbooks/, reference/(계층별 구현 참조), images/(README 인포그래픽과 생성 스크립트)
 ```
 
 ## Key Commands
@@ -52,7 +52,7 @@ docs/           architecture, api-reference, onboarding, workshop 안내, decisi
 - `infra/` 템플릿 또는 인터셉터 변경 -> `infra/CLAUDE.md`, `docs/reference/iac.md`, `docs/reference/infrastructure.md`를 갱신합니다.
 - `Dockerfile` 또는 `src/http.ts`의 런타임 계약 변경 -> `docs/reference/infrastructure.md`와 `docs/runbooks/agentcore-deploy.md`를 갱신합니다.
 - `scripts/` 스크립트 추가 또는 옵션 변경 -> `scripts/CLAUDE.md`를 갱신하고, 워크숍 절차가 바뀌면 `docs/workshop.md`도 고칩니다.
-- 구조나 계층이 바뀌는 변경 -> `docs/architecture.md`의 구성요소와 다이어그램을 갱신합니다.
+- 구조나 계층이 바뀌는 변경 -> `docs/architecture.md`의 구성요소와 다이어그램을 갱신하고, README 인포그래픽(`docs/images/`, 문구는 `docs/images/src/arch_ko.py`와 `arch_en.py`)도 다시 만듭니다.
 
 <!-- AUTO-MANAGED:references -->
 - [docs/reference/security.md](docs/reference/security.md) - API 키 처리, 샘플 모드 제한

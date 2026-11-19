@@ -33,6 +33,13 @@ Seoul OpenData MCP is a stdio [MCP](https://modelcontextprotocol.io) server, wri
 
 ## Architecture
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-en-dark.png">
+  <img src="docs/images/architecture-en-light.png" alt="Seoul OpenData MCP architecture: three access paths, the request pipeline, quota protection in three layers, and the workshop gateway checks" width="100%">
+</picture>
+
+Inside the server, a request passes through these layers:
+
 ```mermaid
 flowchart TD
     MCPClient["MCP Client<br/>(Claude Desktop / Code)"] -->|"stdio JSON-RPC"| Server["seoul-opendata-mcp<br/>23 tools"]
@@ -357,6 +364,13 @@ Seoul OpenData MCP는 TypeScript로 작성된 stdio [MCP](https://modelcontextpr
 - **무설정 샘플 모드, 키 2종, 캐싱** — 인증키가 전혀 없어도 동작하고, 독립된 키 2종(일반+지하철)을 폴백과 함께 지원하며, 데이터셋별로 조정된 TTL로 응답을 메모리에 캐시해 하루 약 1,000회 무료 쿼터를 보호합니다.
 
 ## 아키텍처
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-ko-dark.png">
+  <img src="docs/images/architecture-ko-light.png" alt="Seoul OpenData MCP 아키텍처: 접근 경로 3종, 요청 처리 흐름, 쿼터 보호 3단, 워크숍 Gateway 검사" width="100%">
+</picture>
+
+서버 안에서 요청은 다음 계층을 거칩니다.
 
 ```mermaid
 flowchart TD

@@ -3,3 +3,4 @@ dist/
 *.mcpb
 .env
 .env.workshop
+__pycache__/
