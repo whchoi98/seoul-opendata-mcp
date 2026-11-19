@@ -1,0 +1,77 @@
+import { describe, it, expect } from 'vitest'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import {
+  CODE_ALPHABET, PARAMETERS, newCode, sha256Hex, parseDays, kstIso, stackParameters,
+  imageTag, codeKeyOf, registrationCommand, withSecretFile,
+} from '../scripts/workshop-lib.js'
+
+describe('workshop-lib', () => {
+  it('코드는 seoul-XXXX-XXXX 형식이고 헷갈리는 문자를 쓰지 않는다', () => {
+    for (let i = 0; i < 50; i++) expect(newCode()).toMatch(/^seoul-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$/)
+    expect(CODE_ALPHABET).toHaveLength(32)
+    expect(CODE_ALPHABET).not.toMatch(/[01OI]/)
+  })
+
+  it('코드 문자는 주입한 난수로 고른다', () => {
+    expect(newCode(() => 0)).toBe('seoul-2222-2222')
+    expect(newCode(max => max - 1)).toBe('seoul-ZZZZ-ZZZZ')
+  })
+
+  it('sha256Hex는 Node crypto와 같은 값을 낸다', () => {
+    expect(sha256Hex('seoul-ABCD-2345')).toBe(createHash('sha256').update('seoul-ABCD-2345').digest('hex'))
+  })
+
+  it('--days는 기본 1이고 1~14 정수만 받는다', () => {
+    expect(parseDays(undefined)).toBe(1)
+    expect(parseDays('14')).toBe(14)
+    for (const bad of ['0', '15', '1.5', 'two', '']) expect(() => parseDays(bad)).toThrow()
+  })
+
+  it('kstIso는 +09:00 오프셋의 초 단위 시각이다', () => {
+    expect(kstIso(Date.UTC(2026, 10, 19, 1, 2, 3, 456))).toBe('2026-11-19T10:02:03+09:00')
+    expect(Date.parse(kstIso(Date.UTC(2026, 10, 19, 15, 0, 0)))).toBe(Date.UTC(2026, 10, 19, 15, 0, 0))
+  })
+
+  it('update에서는 주지 않은 파라미터를 이전 값으로 유지한다', () => {
+    const params = stackParameters({ CodeKey: 'code/x.zip' }, 'update')
+    expect(params).toHaveLength(PARAMETERS.length)
+    expect(params.find(p => p.ParameterKey === 'CodeKey')).toEqual({ ParameterKey: 'CodeKey', ParameterValue: 'code/x.zip' })
+    expect(params.find(p => p.ParameterKey === 'SeoulApiKey')).toEqual({ ParameterKey: 'SeoulApiKey', UsePreviousValue: true })
+  })
+
+  it('create에서는 주지 않은 파라미터를 빼서 템플릿 기본값을 쓴다', () => {
+    expect(stackParameters({ SeoulApiKey: 'k1,k2' }, 'create')).toEqual([{ ParameterKey: 'SeoulApiKey', ParameterValue: 'k1,k2' }])
+  })
+
+  it('이미지 태그와 코드 키 형식', () => {
+    expect(imageTag('0.7.0', '1234567890abcdef')).toBe('0.7.0-workshop-1234567')
+    expect(codeKeyOf('export const x = 1\n')).toMatch(/^code\/code-check-[0-9a-f]{16}\.zip$/)
+    expect(codeKeyOf('a')).toBe(codeKeyOf('a'))
+    expect(codeKeyOf('a')).not.toBe(codeKeyOf('b'))
+  })
+
+  it('등록 명령에는 코드 대신 자리 표시가 들어간다', () => {
+    expect(registrationCommand('https://gw.example/mcp')).toBe(
+      'claude mcp add --transport http seoul https://gw.example/mcp --header "Authorization: Bearer <코드>"',
+    )
+  })
+
+  it('withSecretFile은 0600 파일을 쓰고 끝나면 지운다', () => {
+    let seen = ''
+    const result = withSecretFile({ secret: 's' }, path => {
+      seen = path
+      expect(statSync(path).mode & 0o777).toBe(0o600)
+      expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ secret: 's' })
+      return 42
+    })
+    expect(result).toBe(42)
+    expect(existsSync(seen)).toBe(false)
+  })
+
+  it('withSecretFile은 fn이 던져도 파일을 지운다', () => {
+    let seen = ''
+    expect(() => withSecretFile({}, path => { seen = path; throw new Error('boom') })).toThrow('boom')
+    expect(existsSync(seen)).toBe(false)
+  })
+})
