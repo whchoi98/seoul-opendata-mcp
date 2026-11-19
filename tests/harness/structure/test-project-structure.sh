@@ -36,3 +36,28 @@ assert_bash_syntax "scripts/setup.sh valid bash" "scripts/setup.sh"
 assert_file_exists "scripts/install-hooks.sh exists" "scripts/install-hooks.sh"
 assert_file_executable "scripts/install-hooks.sh is executable" "scripts/install-hooks.sh"
 assert_bash_syntax "scripts/install-hooks.sh valid bash" "scripts/install-hooks.sh"
+
+# --- Module CLAUDE.md coverage: every code directory documents itself ---
+for dir in src/*/ scripts/ infra/ tests/; do
+    assert_file_exists "${dir}CLAUDE.md exists" "${dir}CLAUDE.md"
+done
+
+# --- docs/reference: a detected layer has its doc ---
+# Signals follow the layer detection used by /init-project and /add-reference-doc.
+if [ -f "Dockerfile" ]; then
+    assert_file_exists "docs/reference/infrastructure.md exists (Dockerfile present)" "docs/reference/infrastructure.md"
+fi
+if compgen -G "infra/*.yaml" > /dev/null; then
+    assert_file_exists "docs/reference/iac.md exists (infra/*.yaml present)" "docs/reference/iac.md"
+fi
+
+# --- docs/reference: the index and the root CLAUDE.md link every layer doc ---
+INDEX_TEXT=$(cat docs/reference/INDEX.md 2>/dev/null || true)
+ROOT_CLAUDE_TEXT=$(cat CLAUDE.md 2>/dev/null || true)
+for doc in docs/reference/*.md; do
+    name=$(basename "$doc")
+    if [ "$name" != "INDEX.md" ]; then
+        assert_contains "docs/reference/INDEX.md links $name" "$INDEX_TEXT" "]($name)"
+        assert_contains "CLAUDE.md links docs/reference/$name" "$ROOT_CLAUDE_TEXT" "(docs/reference/$name)"
+    fi
+done

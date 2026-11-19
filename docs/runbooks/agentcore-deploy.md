@@ -119,6 +119,8 @@ This creates a new immutable version; the `DEFAULT` endpoint moves to it automat
 - This is by design, not an error — it is the intended degradation once `QUOTA_DAILY_LIMIT` is reached (default 1000; see `src/client/quota.ts`).
 - Checks: confirm `QUOTA_DAILY_LIMIT` matches the intended daily budget for the key in use, and confirm `CACHE_TABLE_NAME` is set so the quota ledger (`DynamoDbLedger`) is actually shared across sessions — if it is unset, each session/process keeps its own independent counter, which usually understates real usage in a multi-session deployment and is rarely the intended configuration.
 - Recovery is automatic at the next KST midnight (the ledger keys on a KST calendar day); no manual reset endpoint is provided.
+- To raise the budget, list several keys in `SEOUL_API_KEY` separated by commas. `QUOTA_DAILY_LIMIT` applies to each key, the client moves to the next key when one reaches it, and the exhausted note appears only when every key is used up ([ADR-006](../decisions/ADR-006-key-pool-with-key-independent-cache-keys.md)).
+- A different note, `서울 API 호출 제한으로 새 데이터를 가져올 수 없습니다. 약 N분 뒤 다시 시도하세요.`, does not mean the quota is spent. It means the keys still under their limit are cooling down for 10 minutes after `ERROR-337`.
 
 ## Notes
 - Last verified: 2026-08-19 (against `npm test` 133 passed + 4 skipped, `npm run build`, `RUN_LIVE=1` live tests, and `scripts/live-sweep.ts`; no live AgentCore Runtime deployment was performed as part of that verification — see the [architecture doc](../architecture.md) and [ADR-004](../decisions/ADR-004-session-scaling-two-tier-cache.md) for the design this runbook operates).
@@ -239,6 +241,8 @@ aws bedrock-agentcore-control update-agent-runtime \
 - 이는 설계된 동작이며 에러가 아닙니다 — `QUOTA_DAILY_LIMIT`(기본 1000, `src/client/quota.ts` 참조)에 도달했을 때의 의도된 저하입니다.
 - 확인할 것: 사용 중인 키의 실제 일일 예산과 `QUOTA_DAILY_LIMIT`이 일치하는지, 쿼터 원장(`DynamoDbLedger`)이 세션 간 실제로 공유되도록 `CACHE_TABLE_NAME`이 설정되어 있는지 — 미설정이면 각 세션/프로세스가 독립된 카운터를 가지므로, 다중 세션 배포에서는 실제 사용량을 과소평가하기 쉬우며 보통 의도한 설정이 아닙니다.
 - 복구는 다음 KST 자정(원장은 KST 달력일을 기준으로 함)에 자동으로 이루어지며, 수동 초기화 엔드포인트는 제공되지 않습니다.
+- 예산을 늘리려면 `SEOUL_API_KEY`에 쉼표로 여러 키를 넣습니다. `QUOTA_DAILY_LIMIT`은 키마다 적용되고, 한 키가 한도에 닿으면 다음 키를 쓰며, 모든 키를 다 썼을 때만 소진 안내가 나옵니다([ADR-006](../decisions/ADR-006-key-pool-with-key-independent-cache-keys.md)).
+- `서울 API 호출 제한으로 새 데이터를 가져올 수 없습니다. 약 N분 뒤 다시 시도하세요.`라는 안내는 쿼터 소진이 아닙니다. 한도가 남은 키가 `ERROR-337` 뒤 10분 쿨다운 중이라는 뜻입니다.
 
 ## 참고
 - 최종 검증일: 2026-08-19 (`npm test` 133 passed + 4 skipped, `npm run build`, `RUN_LIVE=1` 라이브 테스트, `scripts/live-sweep.ts` 기준. 이 검증 범위에는 실제 AgentCore Runtime 배포가 포함되지 않았습니다 — 이 런북이 다루는 설계는 [아키텍처 문서](../architecture.md)와 [ADR-004](../decisions/ADR-004-session-scaling-two-tier-cache.md)를 참고하세요.)

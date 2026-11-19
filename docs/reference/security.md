@@ -53,7 +53,7 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 
 ### 5. Cross-references
 - Related modules: `src/client/response.ts` (`SeoulApiError`, `INFO-100` key-related hint)
-- Related ADRs: [ADR-003](../decisions/ADR-003-single-http-path-and-env-keys.md) (single HTTP path and env keys)
+- Related ADRs: [ADR-003](../decisions/ADR-003-single-http-path-and-env-keys.md) (single HTTP path and env keys), [ADR-005](../decisions/ADR-005-workshop-shared-code-at-the-gateway.md) (workshop access by one shared code), [ADR-006](../decisions/ADR-006-key-pool-with-key-independent-cache-keys.md) (key pool and key-independent cache keys)
 - Related runbooks: none recorded yet — see `docs/architecture.md` Operations section for a suggested "key rotation / sample-mode diagnosis" runbook
 
 <a id="korean"></a>
@@ -106,5 +106,5 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 
 ### 5. 상호 참조
 - 관련 모듈: `src/client/response.ts` (`SeoulApiError`, `INFO-100` 키 관련 힌트)
-- 관련 ADR: [ADR-003](../decisions/ADR-003-single-http-path-and-env-keys.md) (단일 HTTP 경로 및 env 키)
+- 관련 ADR: [ADR-003](../decisions/ADR-003-single-http-path-and-env-keys.md) (단일 HTTP 경로 및 env 키), [ADR-005](../decisions/ADR-005-workshop-shared-code-at-the-gateway.md) (워크숍 접근을 공용 코드 하나로 확인), [ADR-006](../decisions/ADR-006-key-pool-with-key-independent-cache-keys.md) (키 풀과 키에 의존하지 않는 캐시 키)
 - 관련 런북: 아직 없음 -- `docs/architecture.md`의 운영 절에서 제안하는 "키 회전 / 샘플 모드 진단" 런북 참고

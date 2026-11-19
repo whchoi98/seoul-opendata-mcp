@@ -1,10 +1,12 @@
 # API Reference
 
-23 [MCP](https://modelcontextprotocol.io) tools exposed by `seoul-opendata-mcp` v0.6.0, grouped as they are registered in `src/index.ts` / `src/tools/*.ts`. Input schemas below are transcribed from each tool's `zod` `inputSchema` in source; output summaries list the fields of the `data` payload before it is wrapped in the common response envelope.
+23 [MCP](https://modelcontextprotocol.io) tools exposed by `seoul-opendata-mcp` v0.7.0, grouped as they are registered in `src/index.ts` / `src/tools/*.ts`. Input schemas below are transcribed from each tool's `zod` `inputSchema` in source; output summaries list the fields of the `data` payload before it is wrapped in the common response envelope.
 
 ## Protocol
 
 This is not a REST API. The server speaks MCP over **stdio** (`StdioServerTransport`, `dist/index.js`) for local clients: connect via `npx -y seoul-opendata-mcp` (see `README.md`) or `claude mcp add`. For Amazon Bedrock AgentCore Runtime it also speaks **Streamable HTTP** (`dist/http.js`, stateless): `POST /mcp` on `0.0.0.0:8000` and `GET /ping` for health (see `docs/runbooks/agentcore-deploy.md`). Either way, call tools by name with a JSON arguments object, matching each Input Schema table below.
+
+A workshop deployment puts an Amazon Bedrock AgentCore Gateway in front of a dedicated runtime. Through the gateway the same tools are named `seoul___<tool>` (for example `seoul___get_city_snapshot`), and every request must carry `Authorization: Bearer <workshop code>` (see `docs/workshop.md`).
 
 ## Authentication
 
@@ -13,7 +15,9 @@ Two environment variables, read by `SeoulApiClient` (`src/client/seoulApi.ts`) d
 | Variable | Required | Used by | Fallback when unset |
 |---|---|---|---|
 | `SEOUL_API_KEY` | No | Every tool except `get_subway_arrivals` | Built-in `sample` key (scope-limited, see below) |
-| `SEOUL_SUBWAY_API_KEY` | No | `get_subway_arrivals` only | Falls back to `SEOUL_API_KEY` |
+| `SEOUL_SUBWAY_API_KEY` | No | `get_subway_arrivals` only | Falls back to the first key of `SEOUL_API_KEY` |
+
+`SEOUL_API_KEY` may list several keys separated by commas. The client uses the first key that is under its daily limit and not cooling down, and moves to the next key when one runs out (`src/client/keyPool.ts`). With one key nothing changes.
 
 Get a free key at [data.seoul.go.kr](https://data.seoul.go.kr) -> sign in -> "인증키 신청" (5 minutes, issued immediately).
 
@@ -632,16 +636,25 @@ Upstream/client errors surface as `SeoulApiError` (`src/client/response.ts`), wh
 | `INFO-000` | Success (never surfaced as an error) |
 | `INFO-100` | Key-related error (missing/invalid/quota) — triggers the key-signup hint |
 | `INFO-200` | No data available for the given query (not an error; surfaced as a `notes[]` string) |
+| `ERROR-337` | Upstream call limit. With two or more keys the client sets that key aside for 10 minutes and retries once with the next key; with one key the error is surfaced |
 | `HTTP-<status>` | Non-2xx HTTP response from the upstream, after one retry on 5xx (300 ms backoff) |
 | `TIMEOUT` | Upstream did not answer within `timeoutMs` (15 s); not retried |
 | `NETWORK` | Network failure, after one retry (300 ms backoff) |
 | `PARSE` | Response body did not match any of the 8 known envelope shapes |
 
-Every error message includes the masked key (`maskedKey()`/`maskedSubwayKey()`), never the raw value.
+Every error message includes the masked form (`maskKey()`) of the key the call actually used, never the raw value.
+
+The workshop gateway answers before the server is reached in three cases:
+
+| Gateway response | When |
+|---|---|
+| HTTP 403 with JSON-RPC error `-32001`, "워크숍 코드가 올바르지 않습니다…" | The `Authorization: Bearer` code is missing or wrong |
+| HTTP 403 with JSON-RPC error `-32001`, "워크숍 코드가 만료되었습니다…" | The code has expired or was revoked |
+| Tool result with `isError: true`, "요청이 많습니다. 1분 뒤 다시 시도하세요…" | More `tools/call` requests arrived in one UTC minute than the gateway's per-minute limit |
 
 ## Caching / Rate Behavior
 
-`SeoulApiClient` caches unwrapped responses keyed by the full request URL in a two-tier cache: an in-process L1 (an LRU bounded at `MAX_L1_ENTRIES` = 1000) and, when `CACHE_TABLE_NAME` is set, a shared DynamoDB L2. Each service has a **soft TTL** aligned with how often its source updates (`SOFT_TTL` in `src/client/seoulApi.ts`); every entry has a 24 h **hard TTL** (`HARD_TTL_MS`).
+`SeoulApiClient` caches unwrapped responses keyed by the request URL with its key segment replaced by `{key}` (`sample` in sample mode) in a two-tier cache: an in-process L1 (an LRU bounded at `MAX_L1_ENTRIES` = 1000) and, when `CACHE_TABLE_NAME` is set, a shared DynamoDB L2. Each service has a **soft TTL** aligned with how often its source updates (`SOFT_TTL` in `src/client/seoulApi.ts`); every entry has a 24 h **hard TTL** (`HARD_TTL_MS`).
 
 | Services | Soft TTL |
 |---|---|
@@ -654,4 +667,4 @@ Every error message includes the masked key (`maskedKey()`/`maskedSubwayKey()`),
 
 Within the soft TTL a cached entry is served as-is. Between soft and hard TTL it is served immediately with a `notes[]` age disclosure while one background refresh runs (stale-while-revalidate); identical concurrent requests share one upstream call (single-flight).
 
-A daily quota ledger (`QUOTA_DAILY_LIMIT`, default 1000 per key per KST day) adds a usage note at 80% and switches to cache-only serving at 100%. It is a soft limit: concurrent requests right at the limit can overshoot it slightly. Sample keys are additionally clamped to at most 5 rows per request by `fetchUnwrapped`.
+A daily quota ledger (`QUOTA_DAILY_LIMIT`, default 1000 per key per KST day) adds a usage note at 80% and switches to cache-only serving at 100%. With several keys both use the pool totals, and the client moves to the next key before it falls back to the cache. When the only keys still under their limit are cooling down after `ERROR-337`, the response carries a rate-limit note with a retry time instead of the daily-quota note. It is a soft limit: concurrent requests right at the limit can overshoot it slightly. Sample keys are additionally clamped to at most 5 rows per request by `fetchUnwrapped`.

@@ -291,9 +291,10 @@ seoul-opendata-mcp/
     normalize/       # Envelope unwrap (8 shapes) + per-domain normalizers
     tools/           # 23 MCP tools grouped into 9 categories
     data/            # 121 hotspots + 52-dataset catalog
-  tests/             # 170+ unit tests + 9 live tests; fixtures are real captures
-  scripts/           # capture-fixtures, live-sweep, setup
-  docs/              # architecture, api-reference, ADRs
+  tests/             # 290+ unit tests + 9 live tests; fixtures are real captures
+  scripts/           # capture-fixtures, live-sweep, setup, workshop deploy and code
+  infra/             # workshop gateway stack (CloudFormation) + interceptor Lambda
+  docs/              # architecture, api-reference, workshop guide, ADRs, reference
 ```
 
 ## Testing
@@ -615,9 +616,10 @@ seoul-opendata-mcp/
     normalize/       # 봉투 언랩(8가지 형태) + 도메인별 정규화
     tools/           # 9개 카테고리로 묶인 23개 MCP tool
     data/            # 121개 핫스팟 + 52개 데이터셋 카탈로그
-  tests/             # 유닛 테스트 170개 이상 + 라이브 테스트 9개, fixture는 실제 캡처본
-  scripts/           # capture-fixtures, live-sweep, setup
-  docs/              # architecture, api-reference, ADR
+  tests/             # 유닛 테스트 290개 이상 + 라이브 테스트 9개, fixture는 실제 캡처본
+  scripts/           # capture-fixtures, live-sweep, setup, 워크숍 배포와 코드 관리
+  infra/             # 워크숍 Gateway 스택(CloudFormation) + 인터셉터 Lambda
+  docs/              # architecture, api-reference, 워크숍 안내, ADR, reference
 ```
 
 ## 테스트

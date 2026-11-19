@@ -36,8 +36,9 @@ Get a free key at [data.seoul.go.kr](https://data.seoul.go.kr): sign in (or sign
 
 ```bash
 # .env
+# Several keys may be listed, separated by commas; the server moves to the next key when one reaches its daily limit
 SEOUL_API_KEY=your-general-key-here
-# Optional -- subway realtime arrivals only; falls back to SEOUL_API_KEY when unset
+# Optional -- subway realtime arrivals only; falls back to the first key of SEOUL_API_KEY when unset
 SEOUL_SUBWAY_API_KEY=
 ```
 
@@ -71,16 +72,17 @@ If `SEOUL_API_KEY` is unset when the server starts from the CLI, it prints a std
 
 - Read [`CLAUDE.md`](../CLAUDE.md) for project-specific conventions.
 - Read [`docs/architecture.md`](architecture.md) for the full system design: Ingestion / Processing / Query-Presentation / Security layers, both Mermaid diagrams, and the Key Design Decisions.
-- Review `docs/decisions/` for recorded architectural decisions ([ADR-001](decisions/ADR-001-fixtures-as-source-of-truth.md), [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md), [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md)) -- write a new ADR by copying [`docs/decisions/.template.md`](decisions/.template.md).
-- Review `docs/reference/` for layer-by-layer implementation detail (`api.md`, `security.md`, `agent-llm.md`; see [`docs/reference/INDEX.md`](reference/INDEX.md)).
+- Review `docs/decisions/` for recorded architectural decisions ([ADR-001](decisions/ADR-001-fixtures-as-source-of-truth.md), [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md), [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md), [ADR-004](decisions/ADR-004-session-scaling-two-tier-cache.md), [ADR-005](decisions/ADR-005-workshop-shared-code-at-the-gateway.md), [ADR-006](decisions/ADR-006-key-pool-with-key-independent-cache-keys.md)) -- write a new ADR by copying [`docs/decisions/.template.md`](decisions/.template.md).
+- Review `docs/reference/` for layer-by-layer implementation detail (`api.md`, `security.md`, `agent-llm.md`, `infrastructure.md`, `iac.md`; see [`docs/reference/INDEX.md`](reference/INDEX.md)).
 
-In one sentence: a stdio MCP server wraps two Seoul city-data HTTP APIs behind one HTTP client (`src/client`), normalizes eight upstream envelope shapes into stable domain types (`src/normalize`), and presents 19 MCP tools (`src/tools`) plus a 28-dataset catalog fallback to any LLM agent that speaks MCP.
+In one sentence: an MCP server wraps two Seoul city-data HTTP APIs behind one HTTP client (`src/client`), normalizes eight upstream envelope shapes into stable domain types (`src/normalize`), and presents 23 MCP tools (`src/tools`) plus a 52-dataset catalog fallback to any LLM agent that speaks MCP. It runs over stdio locally and over Streamable HTTP on Amazon Bedrock AgentCore Runtime (`src/http.ts`).
 
 ## Development Workflow
 
 - **Branch naming**: `feat/`, `fix/`, `docs/`, `refactor/`
 - **Commit convention**: Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`)
-- **Before opening a PR**: `npm run build && npm test` must both pass locally
+- **Git hooks**: run `bash scripts/install-hooks.sh` once after cloning; it installs the `pre-commit` secret scan and the `commit-msg` hook
+- **Before opening a PR**: `npm run build && npm test` must both pass locally; also run `bash tests/harness/run-all.sh` when hooks, scripts or the docs structure change
 - **Adding a new normalized field or tool**: capture a fixture first (`scripts/capture-fixtures.ts`) rather than hand-writing a mock upstream payload -- see the "Fixtures are truth" decision in `docs/architecture.md`
 - **Adding a new raw dataset**: add an entry to `src/data/catalog.ts` (`CATALOG`) rather than a new dedicated tool, unless the dataset is expected to be high-traffic enough to justify a typed tool (see the "Catalog hybrid" decision in `docs/architecture.md`)
 
@@ -90,7 +92,12 @@ In one sentence: a stdio MCP server wraps two Seoul city-data HTTP APIs behind o
 - **Sample mode** -- the zero-config fallback described above (`SeoulApiClient.isSample`). Every tool response carries a `sample`-mode note in `notes[]` when active; do not confuse a short/limited result with a bug until you have confirmed a real key is set.
 - **Envelope shapes** -- the Seoul Open Data Plaza does not return one consistent JSON/XML shape across services. `unwrap()` in `src/client/response.ts` handles 8 distinct shapes; if you add a new dataset and see a `PARSE` `SeoulApiError`, the upstream is very likely returning a 9th shape that needs a new branch there.
 - **Relative, not absolute, congestion** -- `get_population` and `get_commercial_activity` intentionally return categorical levels (e.g. `여유`/`보통`/`약간 붐빔`/`붐빔`) rather than a device/footfall count, because the underlying feed is a telecom/card-payment sample, not a census. Do not present these levels to users as exact counts.
-- **Catalog hybrid** -- 13 datasets have a dedicated, typed tool (12 of which are also callable via `call_dataset`; 1 -- `get_disaster_alerts` -- is tool-only); the other 15 are reachable only via `search_dataset` -> `get_dataset_spec` -> `call_dataset`, which return raw (non-normalized) fields. See `docs/api-reference.md` for the full list.
+- **Catalog hybrid** -- 25 of the 52 catalog datasets are served by a dedicated, typed tool (24 of them are also callable via `call_dataset`; 1, behind `get_disaster_alerts`, is tool-only); the other 27 are reachable only via `search_dataset` -> `get_dataset_spec` -> `call_dataset`, which return raw (non-normalized) fields. See `docs/api-reference.md` for the full list.
+- **Key pool** -- `SEOUL_API_KEY` may hold several comma-separated keys. The client uses the first key under its daily limit and shares one cache entry across keys (`src/client/keyPool.ts`). With one key nothing changes.
+
+## Workshop Gateway
+
+Facilitators run a separate AWS stack, `seoul-workshop`, so that workshop participants reach the server with one shared code instead of their own API key. Deploying it creates billable resources, so run `npm run workshop:deploy` only with the project owner's approval. Workshop keys go in `.env.workshop`, not `.env`, because a local stdio session reads `.env` and would spend the same quota outside the shared ledger. See [`docs/workshop.md`](workshop.md) for the steps and [`docs/reference/iac.md`](reference/iac.md) for the template and scripts.
 
 ## Troubleshooting
 
@@ -107,7 +114,8 @@ In one sentence: a stdio MCP server wraps two Seoul city-data HTTP APIs behind o
 
 - [`docs/architecture.md`](architecture.md) -- layered architecture, both Mermaid diagrams, Key Design Decisions
 - [`docs/api-reference.md`](api-reference.md) -- all 23 tools: input schema, output summary, example question
-- [`docs/reference/INDEX.md`](reference/INDEX.md) -- implementation reference index (api / security / agent-llm layers)
+- [`docs/reference/INDEX.md`](reference/INDEX.md) -- implementation reference index (api, security, agent-llm, infrastructure and iac layers)
+- [`docs/workshop.md`](workshop.md) -- workshop gateway guide for participants and facilitators
 - [`README.md`](../README.md) / [`README.ko.md`](../README.ko.md) -- user-facing quick start and tool list
 - [Seoul Open Data Plaza](https://data.seoul.go.kr) -- upstream API key issuance and dataset documentation
 - [Model Context Protocol](https://modelcontextprotocol.io) -- MCP client/server quickstart
