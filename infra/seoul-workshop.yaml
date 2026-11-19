@@ -1,0 +1,297 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  seoul-opendata-mcp workshop: a workshop-only AgentCore Runtime V2 for the Seoul
+  open data MCP server, behind an AgentCore Gateway whose REQUEST interceptor
+  checks a shared workshop code.
+
+# Deployed by scripts/workshop-deploy.ts in two passes. The first pass leaves
+# McpImageUri and CodeKey empty and creates the table, the bucket and the roles.
+# The second pass passes both and creates the runtime, the interceptor, the
+# gateway and its target.
+# Design: docs/superpowers/specs/2026-11-19-workshop-gateway-design.md
+
+Parameters:
+  McpImageUri:
+    Type: String
+    Default: ""
+    Description: seoul-opendata-mcp image as <repository uri>@sha256:<digest>. Empty on the first pass.
+  McpRepositoryName:
+    Type: String
+    Default: seoul-opendata-mcp
+    Description: Existing ECR repository that holds the MCP server image.
+  CodeKey:
+    Type: String
+    Default: ""
+    Description: S3 key of the interceptor zip in WorkshopBucket. Empty on the first pass.
+  SeoulApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Seoul Open Data Plaza API keys, comma-separated.
+  SeoulSubwayApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Seoul real-time subway API key.
+  CodeSha256:
+    Type: String
+    NoEcho: true
+    Default: ""
+    AllowedPattern: "^([0-9a-f]{64})?$"
+    Description: sha256 (hex) of the workshop code. Empty rejects every request.
+  CodeValidUntil:
+    Type: String
+    Default: ""
+    AllowedPattern: "^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+09:00)?$"
+    Description: Expiry of the workshop code in KST, for example 2026-12-03T18:00:00+09:00. Empty rejects every request.
+  RatePerMinute:
+    Type: Number
+    Default: 120
+    MinValue: 1
+    Description: tools/call requests the whole gateway accepts per minute.
+  QuotaDailyLimit:
+    Type: Number
+    Default: 1000
+    MinValue: 1
+    Description: Daily upstream calls per Seoul API key (QUOTA_DAILY_LIMIT of the server).
+
+Conditions:
+  HasImage: !Not [!Equals [!Ref McpImageUri, ""]]
+  HasCode: !Not [!Equals [!Ref CodeKey, ""]]
+  HasAll: !And [!Condition HasImage, !Condition HasCode]
+
+Resources:
+  WorkshopTable:
+    # Response cache, daily quota ledger and the per-minute counters of the interceptor.
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: pk, AttributeType: S}
+      KeySchema:
+        - {AttributeName: pk, KeyType: HASH}
+      TimeToLiveSpecification:
+        AttributeName: expireAt
+        Enabled: true
+
+  WorkshopBucket:
+    # Holds the interceptor zip under code/.
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  RuntimeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: bedrock-agentcore.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: {"aws:SourceAccount": !Ref "AWS::AccountId"}
+              ArnLike:
+                "aws:SourceArn": !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*"
+      Policies:
+        - PolicyName: workshop-runtime
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ImageAuthorization
+                # ecr:GetAuthorizationToken has no resource-level form.
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Sid: ImagePull
+                Effect: Allow
+                Action: [ecr:BatchGetImage, ecr:GetDownloadUrlForLayer, ecr:BatchCheckLayerAvailability]
+                Resource: !Sub "arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${McpRepositoryName}"
+              - Sid: RuntimeLogs
+                Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents, logs:DescribeLogStreams]
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/seoul_workshop_mcp-*"
+              - Sid: WorkshopTable
+                Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
+                Resource: !GetAtt WorkshopTable.Arn
+
+  WorkshopRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Condition: HasImage
+    Properties:
+      AgentRuntimeName: seoul_workshop_mcp
+      Description: Seoul open data MCP server for workshops, reached through the workshop gateway.
+      PlatformVersion: V2
+      RoleArn: !GetAtt RuntimeRole.Arn
+      AgentRuntimeArtifact:
+        ContainerConfiguration: {ContainerUri: !Ref McpImageUri}
+      NetworkConfiguration: {NetworkMode: PUBLIC}
+      ProtocolConfiguration: MCP
+      LifecycleConfiguration:
+        IdleRuntimeSessionTimeout: 900
+        MaxLifetime: 28800
+      EnvironmentVariables:
+        SEOUL_API_KEY: !Ref SeoulApiKey
+        SEOUL_SUBWAY_API_KEY: !Ref SeoulSubwayApiKey
+        CACHE_TABLE_NAME: !Ref WorkshopTable
+        QUOTA_DAILY_LIMIT: !Ref QuotaDailyLimit
+
+  CodeCheckLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: HasCode
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-code-check"
+      RetentionInDays: 14
+
+  CodeCheckRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: code-check
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Logs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-code-check:*"
+              - Sid: RateCounter
+                Effect: Allow
+                Action: dynamodb:UpdateItem
+                Resource: !GetAtt WorkshopTable.Arn
+
+  CodeCheckFunction:
+    Type: AWS::Lambda::Function
+    Condition: HasCode
+    DependsOn: CodeCheckLogGroup
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-code-check"
+      Description: REQUEST interceptor of the workshop gateway (shared code, expiry, per-minute limit).
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      Handler: code-check.handler
+      MemorySize: 128
+      Timeout: 5
+      Role: !GetAtt CodeCheckRole.Arn
+      Code:
+        S3Bucket: !Ref WorkshopBucket
+        S3Key: !Ref CodeKey
+      Environment:
+        Variables:
+          CODE_SHA256: !Ref CodeSha256
+          VALID_UNTIL: !Ref CodeValidUntil
+          RATE_PER_MINUTE: !Ref RatePerMinute
+          TABLE_NAME: !Ref WorkshopTable
+
+  GatewayRole:
+    # Name patterns instead of GetAtt: the role exists before the conditional resources do.
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: bedrock-agentcore.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: {"aws:SourceAccount": !Ref "AWS::AccountId"}
+              ArnLike:
+                "aws:SourceArn": !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*"
+      Policies:
+        - PolicyName: workshop-gateway
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Interceptor
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-code-check"
+              - Sid: Runtime
+                # Runtime ids are <name>-<10 characters>; the pattern also covers the endpoint ARN.
+                Effect: Allow
+                Action: bedrock-agentcore:InvokeAgentRuntime
+                Resource: !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/seoul_workshop_mcp-*"
+
+  WorkshopGateway:
+    Type: AWS::BedrockAgentCore::Gateway
+    Condition: HasAll
+    Properties:
+      Name: !Sub "${AWS::StackName}-gateway"
+      Description: Workshop gateway for the Seoul open data MCP server. Callers send Authorization Bearer <workshop code>.
+      RoleArn: !GetAtt GatewayRole.Arn
+      ProtocolType: MCP
+      ProtocolConfiguration:
+        Mcp:
+          SupportedVersions: ["2025-03-26", "2025-06-18", "2025-11-25", "2026-07-28"]
+      AuthorizerType: NONE
+      InterceptorConfigurations:
+        - Interceptor:
+            Lambda:
+              Arn: !GetAtt CodeCheckFunction.Arn
+          InterceptionPoints: [REQUEST]
+          InputConfiguration:
+            PassRequestHeaders: true
+
+  SeoulTarget:
+    Type: AWS::BedrockAgentCore::GatewayTarget
+    Condition: HasAll
+    Properties:
+      GatewayIdentifier: !Ref WorkshopGateway
+      Name: seoul
+      Description: seoul_workshop_mcp runtime, signed with the gateway role.
+      TargetConfiguration:
+        Mcp:
+          McpServer:
+            # The gateway calls this URL as given, so the runtime ARN is URL-encoded here.
+            Endpoint: !Sub "https://bedrock-agentcore.${AWS::Region}.amazonaws.com/runtimes/arn%3A${AWS::Partition}%3Abedrock-agentcore%3A${AWS::Region}%3A${AWS::AccountId}%3Aruntime%2F${WorkshopRuntime.AgentRuntimeId}/invocations?qualifier=DEFAULT"
+            ListingMode: DEFAULT
+      CredentialProviderConfigurations:
+        - CredentialProviderType: GATEWAY_IAM_ROLE
+          CredentialProvider:
+            IamCredentialProvider:
+              Service: bedrock-agentcore
+              Region: !Ref "AWS::Region"
+
+Outputs:
+  BucketName:
+    Value: !Ref WorkshopBucket
+  TableName:
+    Value: !Ref WorkshopTable
+  RuntimeId:
+    Condition: HasImage
+    Value: !GetAtt WorkshopRuntime.AgentRuntimeId
+  RuntimeArn:
+    Condition: HasImage
+    Value: !GetAtt WorkshopRuntime.AgentRuntimeArn
+  GatewayId:
+    Condition: HasAll
+    Value: !GetAtt WorkshopGateway.GatewayIdentifier
+  GatewayUrl:
+    Condition: HasAll
+    Value: !GetAtt WorkshopGateway.GatewayUrl
+  TargetId:
+    Condition: HasAll
+    Value: !GetAtt SeoulTarget.TargetId
