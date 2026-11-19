@@ -27,6 +27,7 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 | `user_config` | `manifest.json:21-36` | Declares both keys as `sensitive: true`, optional inputs for the MCPB one-click installer |
 | `secret-scan.sh` | `.claude/hooks/secret-scan.sh` | Blocks a commit whose staged files contain a secret: Claude Code PreToolUse hook on `git commit` (exit 2) and git `pre-commit` hook (`--pre-commit`, exit 1) |
 | `install-hooks.sh` | `scripts/install-hooks.sh` | Installs the git `pre-commit` (secret scan) and `commit-msg` hooks into `.git/hooks` |
+| `code-check.mjs` | `infra/lambda/code-check.mjs` | Workshop gateway REQUEST interceptor: compares the sha256 of the `Bearer` code with `CODE_SHA256` in constant time, checks `VALID_UNTIL`, limits `tools/call` per minute, and logs only `{method, tool, decision}` |
 
 ### 3. Key Decisions
 
@@ -78,6 +79,7 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 | `user_config` | `manifest.json:21-36` | 두 키를 모두 `sensitive: true`인 선택적 입력으로 선언하여 MCPB 원클릭 설치에 사용합니다 |
 | `secret-scan.sh` | `.claude/hooks/secret-scan.sh` | stage된 파일에 비밀이 있으면 커밋을 막습니다. `git commit`에 걸리는 Claude Code PreToolUse 훅(exit 2)과 git `pre-commit` 훅(`--pre-commit`, exit 1) 두 경로로 동작합니다 |
 | `install-hooks.sh` | `scripts/install-hooks.sh` | git `pre-commit`(비밀 검사)과 `commit-msg` 훅을 `.git/hooks`에 설치합니다 |
+| `code-check.mjs` | `infra/lambda/code-check.mjs` | 워크숍 Gateway REQUEST 인터셉터. `Bearer` 코드의 sha256을 `CODE_SHA256`과 상수 시간으로 비교하고, `VALID_UNTIL`과 분당 `tools/call` 한도를 확인합니다. 로그에는 `{method, tool, decision}`만 남깁니다 |
 
 ### 3. 주요 결정
 
