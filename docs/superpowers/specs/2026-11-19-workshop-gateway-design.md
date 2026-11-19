@@ -171,7 +171,7 @@ export const handler = createHandler({ /* process.env와 DynamoDB 기반 incr */
 - 캐시 키: `buildCacheKey`는 `buildUrl`과 같은 문자열을 만들되 키 자리에 `{key}`를 넣는다. 샘플 모드에서는 `sample`을 넣는다. 캐시 조회와 저장, single-flight 맵이 모두 이 키를 쓴다.
 - 호출 URL: 고른 키로 `buildUrl`을 만든다. 이 URL은 `request()`에만 쓰고 저장하지 않는다.
 - 쿼터 판정: 지금의 `budget` 자리에 `pick` 결과를 쓴다. `exhausted`이면 지금처럼 캐시만으로 응답하고, 80% 안내는 `pool.ratio`로 계산한다.
-- `ERROR-337` 처리: 샘플이 아닌 키에서 `SeoulApiError.code === 'ERROR-337'`이 나면 그 키를 10분 쿨다운에 넣고, 다른 키가 있으면 한 번만 다시 호출한다. 다시 호출해도 실패하면 오류를 그대로 던진다. 이 코드는 샘플 키의 초당 제한에서 확인됐고, 실제 키에서의 의미는 확인되지 않았다(10.1). 초당 제한이든 하루 한도든 손실이 작도록 10분으로 정했다.
+- `ERROR-337` 처리: 풀에 키가 둘 이상일 때 `SeoulApiError.code === 'ERROR-337'`이 나면 그 키를 10분 쿨다운에 넣고, 고를 수 있는 다른 키가 있으면 한 번만 다시 호출한다. 다시 호출해도 실패하면 오류를 그대로 던진다. 키가 하나(샘플 포함)면 쿨다운 없이 지금처럼 오류를 던진다. 키가 하나일 때 동작을 바꾸지 않기 위해서다. 이 코드는 샘플 키의 초당 제한에서 확인됐고, 실제 키에서의 의미는 확인되지 않았다(10.1). 초당 제한이든 하루 한도든 손실이 작도록 10분으로 정했다.
 - 마스킹: `maskKey(k)` 함수를 둔다. 오류 메시지에는 실제로 호출한 키만 마스킹해 넣는다. `maskedKey()`는 첫 키를 마스킹하고, 키가 여러 개면 `외 N개`를 붙인다.
 - `isSample`, `maskedSubwayKey()`, 공개 메서드 시그니처는 바꾸지 않는다.
 
@@ -197,7 +197,8 @@ DynamoDB `pk`는 지금처럼 캐시 키의 sha256이다. 캐시 키 형식이 �
 | `infra/seoul-workshop.yaml` | 스택 템플릿 |
 | `infra/lambda/code-check.mjs` | 인터셉터 |
 | `infra/CLAUDE.md` | 이 디렉터리의 규칙(승인 없이 스택 변경 금지, 템플릿에 계정 ID와 ARN을 쓰지 않음, 기존 리소스를 건드리지 않음) |
-| `scripts/workshop-lib.ts` | 순수 함수: 코드 생성, 해시, 만료 시각 계산, 파라미터 파일 구성, env 파일 읽기 |
+| `scripts/workshop-lib.ts` | 순수 함수: 코드 생성, 해시, 만료 시각 계산, 파라미터 목록 구성, 임시 비밀 파일 |
+| `scripts/workshop-aws.ts` | aws CLI와 docker 호출 래퍼, 스택 생성, 갱신, 삭제 |
 | `scripts/workshop-deploy.ts` | 배포와 삭제 |
 | `scripts/workshop-code.ts` | 코드 `new`, `revoke`, `show` |
 | `docs/workshop.md` | 참가자와 진행자 안내 |
@@ -211,14 +212,14 @@ npm `files`는 `dist`와 README만 포함하므로 위 파일은 패키지에 �
 1. 작업 트리가 깨끗한지 확인한다. 깨끗하지 않으면 멈춘다. 이미지 태그와 커밋을 일대일로 맞추기 위해서다.
 2. 스택이 없으면 이미지와 코드 없이 만든다. 이 단계에서는 테이블, 버킷, 역할만 생긴다.
 3. 이미지를 빌드해(호스트가 arm64이므로 `docker build`) 기존 ECR 저장소 `seoul-opendata-mcp`에 `<버전>-workshop-<커밋 7자>` 태그로 올리고 digest를 얻는다. 같은 태그가 이미 있으면 그 digest를 쓴다.
-4. `code-check.mjs`를 zip으로 묶어 `code/code-check-<zip sha256 앞 16자>.zip`으로 올린다. 같은 키가 있으면 올리지 않는다.
+4. `code-check.mjs`를 zip으로 묶어 `code/code-check-<code-check.mjs sha256 앞 16자>.zip`으로 올린다. 같은 키가 있으면 올리지 않는다. zip은 만들 때마다 안에 든 시각이 달라 해시가 바뀌므로 원본 파일의 해시를 쓴다.
 5. 스택을 digest와 코드 키로 갱신한다. 키는 env 파일에서 읽고, 파라미터는 권한 0600인 임시 JSON 파일로 `--parameters file://`에 넘긴 뒤 지운다. 키와 코드 해시는 화면에 출력하지 않는다. 스택을 처음 만들 때는 `--env-file`이 반드시 있어야 하고, 없으면 2단계 전에 멈춘다. 이미 있는 스택에서 `--env-file`을 빼면 키 파라미터는 `UsePreviousValue`로 넘긴다. 코드 관련 파라미터는 항상 `UsePreviousValue`다.
 6. 런타임이 `READY`이고 `PlatformVersion`이 `V2`인지 확인한다.
 7. `synchronize-gateway-targets`를 호출하고, 대상 상태가 `READY`가 될 때까지 기다린다.
-8. 스모크 테스트를 한다. 코드 없이 `tools/list`를 보내 거부되는지 확인한다. 코드가 발급돼 있으면 `SEOUL_WORKSHOP_CODE` 환경 변수로 받아 `tools/list` 23개와 `seoul___search_place` 호출을 확인한다. `search_place`는 내장 핫스팟만 조회하므로 서울 API 쿼터를 쓰지 않는다.
+8. 스모크 테스트를 `@modelcontextprotocol/sdk` 클라이언트로 한다. 저장소 규칙상 임의 `fetch`를 쓰지 않는다. 코드 없이 접속해 거부되는지 확인한다. 코드가 발급돼 있으면 `SEOUL_WORKSHOP_CODE` 환경 변수로 받아 `tools/list` 23개와 `seoul___search_place` 호출을 확인한다. `search_place`는 내장 핫스팟만 조회하므로 서울 API 쿼터를 쓰지 않는다.
 9. Gateway URL과 참가자 등록 명령(코드 자리는 `<코드>`)을 출력한다.
 
-`--skip-image`는 3단계를 건너뛰고 현재 digest를 유지한다. `--delete`는 버킷을 비운 뒤 스택을 지운다. 둘 다 실행 전에 무엇을 바꾸는지 출력한다.
+`--skip-image`는 3단계를 건너뛰고 현재 digest를 유지한다. `--delete`는 지울 대상(스택과 버킷 객체)을 먼저 출력하고, `--yes`가 함께 있을 때만 버킷을 비운 뒤 스택을 지운다. ECR 이미지는 지우지 않는다.
 
 ### 5.3 코드 명령 (`npm run workshop:code -- <명령>`)
 
@@ -259,7 +260,7 @@ npm `files`는 `dist`와 README만 포함하므로 위 파일은 패키지에 �
 - k1으로 저장한 캐시가, k1이 소진돼 k2를 고르는 상태에서도 적중함
 - 같은 요청 두 개가 서로 다른 키를 고르더라도 업스트림 호출이 한 번으로 합쳐짐
 - `ERROR-337`이 나면 k2로 한 번 재시도하고, k1은 10분 동안 선택되지 않다가 10분 뒤 다시 선택됨
-- 샘플 모드에서 `ERROR-337`이 나면 재시도하지 않음
+- 키가 하나(샘플 포함)일 때 `ERROR-337`이 나면 재시도도 쿨다운도 하지 않음
 - 오류 메시지와 `console.error` 출력에 원문 키가 없음
 - 샘플 모드의 캐시 키와 실제 키 모드의 캐시 키가 다름
 
@@ -277,7 +278,7 @@ npm `files`는 `dist`와 README만 포함하므로 위 파일은 패키지에 �
 
 ### 6.3 템플릿 구조 (`tests/infra/workshopTemplate.test.ts`)
 
-`yaml` 패키지를 devDependency로 추가하고, `!Ref`, `!Sub`, `!GetAtt` 같은 짧은 태그를 객체로 읽는 사용자 태그를 등록한다.
+`js-yaml`과 `@types/js-yaml`을 devDependency로 추가하고, `!Ref`, `!Sub`, `!GetAtt` 같은 짧은 태그를 객체로 읽는 사용자 타입을 등록한다.
 
 - 런타임: V2, MCP, PUBLIC, `AuthorizerConfiguration` 없음, 이름이 `seoul_workshop_`으로 시작
 - Gateway: `AuthorizerType: NONE`, REQUEST 인터셉터가 정확히 하나, `PassRequestHeaders: true`, `SearchType` 없음
@@ -297,7 +298,7 @@ npm `files`는 `dist`와 README만 포함하므로 위 파일은 패키지에 �
 - `--days` 범위(1~14) 밖이면 오류
 - 만료 시각이 `+09:00` 형식
 - 파라미터 파일에서 지정하지 않은 파라미터는 `UsePreviousValue: true`
-- env 파일 읽기: 따옴표, 주석, `export` 접두사
+- env 파일 읽기: `src/client/env.ts`에서 분리한 `parseDotEnv`를 서버와 스크립트가 함께 쓴다. 따옴표, 주석, 빈 줄, `=`가 없는 줄을 검사한다
 
 ## 7. 문서 갱신
 
