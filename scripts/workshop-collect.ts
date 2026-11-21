@@ -13,6 +13,7 @@ import { SeoulApiClient } from '../src/client/seoulApi.js'
 import { openStore } from '../src/store/attach.js'
 import { collect, formatPlan, formatQuota, formatReport, formatStatus, remainingQuota, statusOf } from '../src/store/collector.js'
 import { STORE_PREFIX } from '../src/store/snapshot.js'
+import { formatVerify, runVerify } from '../src/store/verify.js'
 import { REGION, STACK, parseCollectDays } from './workshop-lib.js'
 import { describeStack, stackOutputs, stackParameterValue } from './workshop-aws.js'
 
@@ -20,6 +21,7 @@ const USAGE = `사용법:
   npm run workshop:collect -- daily     매일 묶음: 전체와 머리 스냅샷, 새 날짜와 월 파티션
   npm run workshop:collect -- static    첫차와 막차, 시간표(약 1,850회, 워크숍 당일이 아닌 날)
   npm run workshop:collect -- status    데이터셋별 스냅샷 수, 수집 시각, 기한 내 여부
+  npm run workshop:collect -- verify    수집한 스냅샷을 실제 API와 비교(약 50회). 규칙을 바꾸거나 처음 수집했을 때
 옵션:
   --env-file <경로>     키를 읽을 파일(기본 .env.workshop)
   --store <주소>        스냅샷을 둘 곳. 기본은 스택 버킷의 s3://<버킷>/${STORE_PREFIX}. 디렉터리 경로면 로컬에 저장
@@ -58,7 +60,7 @@ function readStack(): StackInfo {
 
 async function main(): Promise<void> {
   const command = positionals[0]
-  if (values.help || (command !== 'daily' && command !== 'static' && command !== 'status')) {
+  if (values.help || (command !== 'daily' && command !== 'static' && command !== 'status' && command !== 'verify')) {
     console.log(USAGE)
     if (!values.help && command) process.exitCode = 1
     return
@@ -85,6 +87,13 @@ async function main(): Promise<void> {
   if (client.isSample) throw new Error(`${envFile}에 SEOUL_API_KEY가 없습니다`)
   const quota = await remainingQuota(parseKeys(env.SEOUL_API_KEY), ledger)
   console.log(formatQuota(quota))
+
+  if (command === 'verify') {
+    const verified = await runVerify(client, store, { only })
+    console.log(formatVerify(verified))
+    if (!verified.ok) process.exitCode = 1
+    return
+  }
 
   const report = await collect(client, store, {
     bundle: command, only, days, force: values.force, dryRun: values['dry-run'], remaining: quota.remaining,

@@ -12,6 +12,7 @@
 - `reader.ts` - `SnapshotReader`. 메모리 보관(96MB, 오래 안 쓴 것부터 버림), 10분 뒤 ETag 재확인, 없는 객체와 오류 5분 기억, 동시 읽기 합치기, 3초 시간 제한.
 - `attach.ts` - `openStore()`(주소가 `s3://`면 S3, 아니면 디렉터리)와 `maybeAttachStore()`(`STORE_URI`가 있을 때만 `SeoulApiClient.attachStore()` 호출, 실패해도 서버는 계속 동작).
 - `collector.ts` - 수집 계획(`planCollection`), 실행(`collect`), 증분 건너뛰기, 예산 검사, 상태(`statusOf`), 출력 문자열. `scripts/workshop-collect.ts`와 수집 Lambda가 함께 씁니다.
+- `verify.ts` - 실제 API 대비 검사. 카탈로그 예시 값으로 요청을 만들고(`casesFor`), 스냅샷의 답과 서울 API의 답을 전체 건수와 행으로 비교합니다(`runVerify`). "검증으로 결정" 자리는 일치와 부분일치 두 가정으로 비교합니다.
 
 ## Rules
 - 허용 목록 방식입니다. 규칙 표에 없는 서비스, 미지원 자리, 형식에 맞지 않는 파티션 값은 답하지 않고 지금 경로(캐시와 서울 API)로 넘깁니다. 추측으로 답하지 않습니다.
