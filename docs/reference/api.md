@@ -46,6 +46,8 @@ The API layer is the MCP tool surface (23 tools, `src/tools/*.ts`) plus the sing
 - `isNoData(u)` in `src/client/response.ts` is true only for an empty `INFO-200` ("no matching rows") result. A tool phrases an empty result as "not found" only when it is true; an empty result with a quota-exhausted note is passed through as that note.
 - Real-estate dong filter: the transaction services filter legal dong by code (`STDG_CD`), not name. `lookupDongCode()` gets the code from a 1-row `IndividuallyPostedLandPriceService` call (its `BJDONG_CD` is the same code; soft TTL 24 h). If that lookup fails for a reason other than "no data", the tool falls back to matching the name within the latest 500 rows and says so in `notes`.
 - Real-estate normalization contract (`src/normalize/realestate.ts`): `normalizeRealEstate` (sale) adds `landArea`, `buildYear`, `dealMethod`, `rightType`, `cancelDate` to the previous fields; `normalizeRentDeal` and `normalizeLandPrice` are new. Cancelled sales (`cancelDate` set) are dropped by the tool unless `includeCancelled` is true.
+- **Snapshot store before the cache.** With `STORE_URI` set, `fetchUnwrapped` asks the snapshot store first for JSON requests to the general API. The store answers only what its rule table (`src/store/rules.ts`) allows: a service with a rule, positions marked equal or contains, and partition values that pass a format check. It returns the same `Unwrapped` shape, so tools and normalizers are unchanged. A store answer adds the note `사전 적재 데이터(M월 D일 수집)`; an empty store answer carries only the upstream no-data note, which `isNoData()` relies on. Anything else falls through to the cache and the Seoul API.
+- **Expired snapshots only as a last resort.** Each dataset has a maximum age (24 hours for reservations, 3 days for cultural events, 7 days for most, 30 days for timetables, none for past-date statistics). An expired snapshot is used only when no key is usable and the cache has nothing, and the note then says so.
 
 ### 4. Code Pointers
 
@@ -60,6 +62,9 @@ The API layer is the MCP tool surface (23 tools, `src/tools/*.ts`) plus the sing
 - `src/data/catalog.ts:81-120` — `searchCatalog()`/`exampleParams()`/`validateCall()`
 - `src/tools/realestate.ts` — `SLOTS`/`buildPath()` (positional path filters), `lookupDongCode()`, `get_real_estate_prices`, `get_land_price`
 - `src/normalize/realestate.ts` — `normalizeDistrict()`, `normalizeRealEstate()`, `normalizeRentDeal()`, `normalizeLandPrice()`
+- `src/store/rules.ts` and `src/store/engine.ts`: the rule table and the pure functions that pick a snapshot and apply filters, range, and maximum age.
+- `src/store/reader.ts`: in-process snapshot memory (96 MB), ETag revalidation after 10 minutes, a 3-second read timeout.
+- `src/client/snapshotSource.ts`: the `SnapshotSource` interface the client knows, and the note text.
 
 ### 5. Cross-references
 - Related modules: `src/normalize/*.ts` (domain mappers consumed by every tool)
@@ -109,6 +114,8 @@ API 계층은 MCP tool 표면(23개, `src/tools/*.ts`)과 그 기반이 되는 �
 - `src/client/response.ts`의 `isNoData(u)`는 비어 있는 `INFO-200`(조건에 맞는 행 없음) 응답일 때만 참입니다. tool은 이 값이 참일 때만 빈 결과를 "없음"으로 안내하고, 쿼터 소진 안내가 붙은 빈 결과는 그 안내를 그대로 전달합니다.
 - 부동산 법정동 필터: 실거래가 서비스는 법정동을 이름이 아닌 코드(`STDG_CD`)로 거릅니다. `lookupDongCode()`가 `IndividuallyPostedLandPriceService`를 1행만 호출해 코드를 얻습니다(`BJDONG_CD`가 같은 코드, soft TTL 24시간). 이 조회가 "데이터 없음"이 아닌 이유로 실패하면 최신 500건 안에서 이름으로 거르고 그 사실을 `notes`에 적습니다.
 - 부동산 정규화 계약(`src/normalize/realestate.ts`): `normalizeRealEstate`(매매)는 기존 필드에 `landArea`, `buildYear`, `dealMethod`, `rightType`, `cancelDate`를 더했습니다. `normalizeRentDeal`과 `normalizeLandPrice`는 새로 추가했습니다. 해제된 매매(`cancelDate`가 있는 행)는 `includeCancelled`가 true가 아니면 tool이 뺍니다.
+- **캐시보다 사전 적재 저장소가 먼저입니다.** `STORE_URI`를 설정하면 `fetchUnwrapped`가 일반 API의 JSON 요청을 저장소에 먼저 묻습니다. 저장소는 규칙 표(`src/store/rules.ts`)가 허용한 것만 답합니다. 규칙이 있는 서비스, 일치나 부분일치로 표시한 자리, 형식 검사를 통과한 파티션 값입니다. 응답은 같은 `Unwrapped` 형태라서 tool과 정규화 함수는 그대로입니다. 저장소가 답하면 `사전 적재 데이터(M월 D일 수집)` 안내가 붙고, 0건이면 서울 API와 같은 "데이터 없음" 문구만 붙습니다. `isNoData()`가 이 문구로 판단합니다. 나머지 요청은 캐시와 서울 API로 갑니다.
+- **기한 지난 스냅샷은 마지막 수단입니다.** 데이터셋마다 기한이 있습니다(공공예약 24시간, 문화행사 3일, 대부분 7일, 시간표 30일, 지난 날짜 통계는 없음). 기한이 지난 스냅샷은 쓸 키가 없고 캐시에도 없을 때만 쓰고, 안내 문구에 그 사실을 적습니다.
 
 ### 4. 코드 포인터
 
@@ -123,6 +130,9 @@ API 계층은 MCP tool 표면(23개, `src/tools/*.ts`)과 그 기반이 되는 �
 - `src/data/catalog.ts:81-120` -- `searchCatalog()`/`exampleParams()`/`validateCall()`
 - `src/tools/realestate.ts` -- `SLOTS`/`buildPath()`(자리 기반 경로 필터), `lookupDongCode()`, `get_real_estate_prices`, `get_land_price`
 - `src/normalize/realestate.ts` -- `normalizeDistrict()`, `normalizeRealEstate()`, `normalizeRentDeal()`, `normalizeLandPrice()`
+- `src/store/rules.ts`, `src/store/engine.ts`: 규칙 표와, 스냅샷을 고르고 필터, 범위, 기한을 적용하는 순수 함수.
+- `src/store/reader.ts`: 프로세스 메모리 보관(96MB), 10분 뒤 ETag 재확인, 읽기 시간 제한 3초.
+- `src/client/snapshotSource.ts`: 클라이언트가 아는 `SnapshotSource` 인터페이스와 안내 문구.
 
 ### 5. 상호 참조
 - 관련 모듈: `src/normalize/*.ts` (모든 tool이 사용하는 도메인 매퍼)

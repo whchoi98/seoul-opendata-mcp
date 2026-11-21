@@ -74,9 +74,25 @@ npm run workshop:deploy -- --env-file .env.workshop
 
 첫 스택 생성이 실패해 `ROLLBACK_COMPLETE` 상태가 되면 `npm run workshop:deploy -- --delete --yes`로 스택을 지운 뒤 다시 배포합니다.
 
+배포한 뒤 시간표 스냅샷을 한 번 받아 둡니다. 약 1,850회를 부르므로 워크숍 당일이 아닌 날에 합니다. 도중에 끊기면 다시 실행해 이어 받습니다.
+
+```bash
+npm run workshop:collect -- static --dry-run   # 계획과 남은 한도 확인
+npm run workshop:collect -- static
+```
+
 ### 워크숍 전날
 
 `--days N`은 코드를 발급한 시각부터 N×24시간 뒤에 만료됩니다. 전날 오후에 발급하면 `--days 1`은 워크숍 당일 같은 시각에 끝나므로, 하루짜리 워크숍은 `--days 2`, 이틀짜리 해커톤은 `--days 3`으로 발급합니다.
+
+스냅샷을 새로 받습니다. 약 100회를 부르고 몇 분 걸립니다. 참가자 요청 가운데 약국, 공영주차장 안내, 문화행사, 공공예약, 승하차 통계, 시간표는 이 스냅샷으로 답하므로 서울 API를 부르지 않습니다.
+
+```bash
+npm run workshop:collect -- daily
+npm run workshop:collect -- status    # 모든 데이터셋이 "기한 내" 또는 "기한 없음"인지 확인
+```
+
+공공예약은 기한이 24시간이라 워크숍 당일 아침에 `daily`를 한 번 더 돌리면 좋습니다. 매일 자동으로 받으려면 `npm run workshop:deploy -- --skip-image --collect-schedule "cron(0 5 * * ? *)"`로 스케줄을 켭니다.
 
 ```bash
 npm run workshop:code -- new --days 2          # 하루짜리 워크숍. 이틀짜리 해커톤이면 --days 3
@@ -92,6 +108,7 @@ SEOUL_WORKSHOP_CODE=<새 코드> npm run workshop:deploy -- --skip-image   # 코
 | 분당 한도에 자주 걸림 | `npm run workshop:deploy -- --skip-image --rate-per-minute 240` |
 | 코드가 유출됨 | `npm run workshop:code -- new` 후 새 코드를 다시 안내 |
 | 만료 시각 확인 | `npm run workshop:code -- show` |
+| 스냅샷이 오래됨(응답의 수집 날짜가 지난 날짜) | `npm run workshop:collect -- daily`. 10분 안에 런타임에 반영됩니다 |
 
 ### 워크숍 후
 

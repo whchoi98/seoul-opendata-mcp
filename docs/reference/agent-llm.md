@@ -34,6 +34,7 @@ The agent/LLM layer is everything in this codebase written specifically to be re
 - The `search_dataset` description takes the catalog size from `CATALOG.length`, and `get_dataset_spec` examples come from `exampleParams()`, which fills skipped path positions with a space; neither is hand-written text that can drift from the catalog.
 - In the workshop stack the gateway interceptor answers before the server does, with three LLM-facing messages: a bad code (HTTP 403, "워크숍 코드가 올바르지 않습니다 ..."), an expired code (HTTP 403, "워크숍 코드가 만료되었습니다 ..."), and the per-minute limit (a normal `isError` tool result, "요청이 많습니다. 1분 뒤 다시 시도하세요.", so the model reads it and waits). The texts live in `MESSAGES` in `infra/lambda/code-check.mjs`.
 - Input schemas are generated from `zod` v4 (since v0.4.0). Descriptions, types and numeric/pattern constraints are unchanged from v3, but the generated JSON Schema no longer carries `additionalProperties: false`; unknown arguments are still stripped at runtime, so an extra key from the model is ignored rather than rejected.
+- **Pre-collected data is labeled.** When the snapshot store answers, `notes` carries `사전 적재 데이터(M월 D일 수집)` (collection date in KST). The envelope's `asOf` is still the response time, so the note is the only sign that the data is from an earlier collection. When an expired snapshot is used because the Seoul API is unavailable, the note reads `일일 API 쿼터 소진. 기한이 지난 사전 적재 데이터(M월 D일 수집, 약 N일 경과)로 응답합니다` or the same with `서울 API 호출 제한.` at the front.
 
 ### 4. Code Pointers
 
@@ -82,6 +83,7 @@ Agent · LLM 계층은 이 코드베이스에서 사람 개발자가 아니라 L
 - `search_dataset` 설명의 카탈로그 개수는 `CATALOG.length`에서 가져오고, `get_dataset_spec` 예시는 건너뛰는 경로 자리를 공백으로 채우는 `exampleParams()`가 만듭니다. 둘 다 카탈로그와 어긋날 수 있는 손으로 쓴 문구가 아닙니다.
 - 워크숍 스택에서는 Gateway 인터셉터가 서버보다 먼저 응답하며, LLM이 읽는 메시지가 세 가지입니다. 코드 오류(HTTP 403, "워크숍 코드가 올바르지 않습니다 ..."), 만료(HTTP 403, "워크숍 코드가 만료되었습니다 ..."), 분당 한도(정상 `isError` tool 결과, "요청이 많습니다. 1분 뒤 다시 시도하세요.")입니다. 한도 안내를 오류 코드가 아니라 결과로 돌려주므로 모델이 읽고 기다립니다. 문구는 `infra/lambda/code-check.mjs`의 `MESSAGES`에 있습니다.
 - 입력 스키마는 v0.4.0부터 `zod` v4로 생성합니다. 설명, 타입, 수치와 패턴 제약은 v3와 같지만, 생성된 JSON Schema에 `additionalProperties: false`가 더 이상 들어가지 않습니다. 정의되지 않은 인자는 런타임에 여전히 버려지므로, 모델이 여분의 키를 보내도 거부하지 않고 무시합니다.
+- **미리 받아 둔 데이터에는 표시를 붙입니다.** 사전 적재 저장소가 답하면 `notes`에 `사전 적재 데이터(M월 D일 수집)`(수집 날짜는 KST)가 들어갑니다. 봉투의 `asOf`는 응답 시각이라서, 이 문구가 며칠 전에 받은 데이터임을 알리는 유일한 표시입니다. 서울 API를 쓸 수 없어 기한 지난 스냅샷으로 답할 때는 `일일 API 쿼터 소진. 기한이 지난 사전 적재 데이터(M월 D일 수집, 약 N일 경과)로 응답합니다` 또는 앞부분이 `서울 API 호출 제한.`인 문구가 들어갑니다.
 
 ### 4. 코드 포인터
 

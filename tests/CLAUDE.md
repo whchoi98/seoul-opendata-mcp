@@ -16,6 +16,9 @@ vitest 스위트입니다. 픽스처 기반 단위 테스트 290개 이상과, �
 - `infra/codeCheck.test.ts` - 워크숍 인터셉터의 판정 순서(코드, 만료, 분당 한도)와 로그에 비밀 값이 없는지 검사합니다.
 - `infra/workshopTemplate.test.ts` - `infra/seoul-workshop.yaml`을 `js-yaml`로 읽어 런타임, Gateway, IAM 범위, `NoEcho`, 출력 같은 불변 조건을 검사합니다.
 - `workshopLib.test.ts`, `workshopAws.test.ts` - 워크숍 스크립트의 순수 함수와 `run` 래퍼를 검사합니다. AWS를 부르지 않습니다.
+- `store/` - 사전 적재 저장소 테스트: 스냅샷 형식, 규칙 표와 카탈로그의 일관성, 규칙 엔진, 디렉터리와 S3 저장소(가짜 클라이언트), 읽기 경로, 수집기, 실제 API 대비 검사, tool 출력 동등성(`parity.test.ts`). 서울 API와 AWS를 부르지 않습니다.
+- `infra/collectLambda.test.ts` - 수집 Lambda의 `runDaily`가 실패를 던지고 로그에 원문 키를 남기지 않는지 검사합니다.
+- `workshopBundle.test.ts` - 수집 Lambda가 `handler`를 내보내는 한 파일로 묶이고 AWS SDK가 빠지는지 검사합니다.
 - `harness/` - vitest와 별개인 bash 하네스(`bash tests/harness/run-all.sh`). 훅 등록, secret-scan 패턴과 실제 차단 동작(임시 git 저장소에서 종료 코드 확인), 프로젝트 구조를 검사합니다. 구조 검사는 코드 디렉터리마다 `CLAUDE.md`가 있는지, `docs/reference/` 문서가 인덱스와 루트 `CLAUDE.md`에 연결되어 있는지도 봅니다.
 
 ## Rules — 픽스처 불변 원칙 및 재캡처 절차

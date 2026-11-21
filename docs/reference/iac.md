@@ -14,8 +14,8 @@ The IaC layer declares the workshop stack `seoul-workshop` in one CloudFormation
 
 | Component | Path | Purpose |
 |---|---|---|
-| Stack template | `infra/seoul-workshop.yaml` | Nine parameters, three conditions, ten resources and seven outputs. Declares the table, bucket, three IAM roles, runtime, interceptor log group and function, gateway and gateway target |
-| Conditions | `infra/seoul-workshop.yaml` (`HasImage`, `HasCode`, `HasAll`) | Let the stack exist before the image and the interceptor zip do. The runtime needs `HasImage`, the Lambda and its log group need `HasCode`, the gateway and target need both |
+| Stack template | `infra/seoul-workshop.yaml` | Eleven parameters, four conditions, sixteen resources and seven outputs. Declares the table, bucket, three IAM roles, runtime, interceptor log group and function, gateway and gateway target, and behind `HasSchedule` the collector log group, role, function, invoke config, schedule role and schedule |
+| Conditions | `infra/seoul-workshop.yaml` (`HasImage`, `HasCode`, `HasAll`, `HasSchedule`) | Let the stack exist before the image and the interceptor zip do. The runtime needs `HasImage`, the Lambda and its log group need `HasCode`, the gateway and target need both. The collector resources need `HasSchedule`, which holds when both `CollectSchedule` and `CollectCodeKey` are set |
 | Deploy script | `scripts/workshop-deploy.ts` | `npm run workshop:deploy`. Creates the stack in two passes or updates it, builds and pushes the image, uploads the interceptor zip, checks the runtime, synchronizes the gateway target and runs a smoke test. `--delete --yes` empties the bucket and deletes the stack |
 | Code script | `scripts/workshop-code.ts` | `npm run workshop:code -- new|revoke|show`. Changes only `CodeSha256` and `CodeValidUntil`, keeping every other parameter at its previous value |
 | Pure helpers | `scripts/workshop-lib.ts` | Region, stack name, parameter list, `stackParameters` (`UsePreviousValue` on update), `imageTag`, `codeKeyOf`, `stackBlocker`, `withSecretFile` |
@@ -33,6 +33,8 @@ The IaC layer declares the workshop stack `seoul-workshop` in one CloudFormation
 - A first creation that fails leaves the stack in `ROLLBACK_COMPLETE`, which can be neither updated nor reused. `stackBlocker` stops with the recovery command instead of failing later with an unclear CloudFormation error.
 - After an image change the script calls `synchronize-gateway-targets` and waits for `lastSynchronizedAt` to advance, because the gateway caches the target's tool list.
 - Template and interceptor changes are test-first: `tests/infra/workshopTemplate.test.ts` and `tests/infra/codeCheck.test.ts` change before the files they cover.
+- **New parameters are left out on update.** CloudFormation rejects `UsePreviousValue` for a parameter the stack does not have yet. `stackParameters()` takes the stack's current parameter names and omits any parameter that is neither given nor present, so the template default applies. `workshop:code`, which reuses the previous template, relies on the same rule.
+- **The schedule is a parameter, not a separate stack.** `CollectSchedule` and `CollectCodeKey` gate six resources through `HasSchedule`. The deploy script always uploads the collector bundle, so turning the schedule on or off is a parameter change.
 
 ### 4. Code Pointers
 
@@ -61,8 +63,8 @@ IaC 계층은 워크숍 스택 `seoul-workshop`을 CloudFormation 템플릿 하�
 
 | 구성요소 | 경로 | 목적 |
 |---|---|---|
-| 스택 템플릿 | `infra/seoul-workshop.yaml` | 파라미터 9개, 조건 3개, 리소스 10개, 출력 7개입니다. 테이블, 버킷, IAM 역할 3개, 런타임, 인터셉터 로그 그룹과 함수, Gateway, Gateway 대상을 선언합니다 |
-| 조건 | `infra/seoul-workshop.yaml`(`HasImage`, `HasCode`, `HasAll`) | 이미지와 인터셉터 zip이 생기기 전에도 스택이 존재할 수 있게 합니다. 런타임은 `HasImage`, Lambda와 로그 그룹은 `HasCode`, Gateway와 대상은 둘 다 필요합니다 |
+| 스택 템플릿 | `infra/seoul-workshop.yaml` | 파라미터 11개, 조건 4개, 리소스 16개, 출력 7개입니다. 테이블, 버킷, IAM 역할 3개, 런타임, 인터셉터 로그 그룹과 함수, Gateway, Gateway 대상을 선언하고, `HasSchedule` 조건 아래에 수집 로그 그룹, 역할, 함수, 호출 설정, 스케줄 역할, 스케줄을 선언합니다 |
+| 조건 | `infra/seoul-workshop.yaml`(`HasImage`, `HasCode`, `HasAll`, `HasSchedule`) | 이미지와 인터셉터 zip이 생기기 전에도 스택이 존재할 수 있게 합니다. 런타임은 `HasImage`, Lambda와 로그 그룹은 `HasCode`, Gateway와 대상은 둘 다 필요합니다. 수집 리소스는 `CollectSchedule`과 `CollectCodeKey`가 모두 있을 때 참인 `HasSchedule`이 필요합니다 |
 | 배포 스크립트 | `scripts/workshop-deploy.ts` | `npm run workshop:deploy`입니다. 스택을 두 단계로 만들거나 갱신하고, 이미지를 빌드해 올리고, 인터셉터 zip을 올리고, 런타임을 확인하고, Gateway 대상을 동기화한 뒤 스모크 테스트를 합니다. `--delete --yes`는 버킷을 비우고 스택을 지웁니다 |
 | 코드 스크립트 | `scripts/workshop-code.ts` | `npm run workshop:code -- new|revoke|show`입니다. `CodeSha256`과 `CodeValidUntil`만 바꾸고 나머지 파라미터는 이전 값을 유지합니다 |
 | 순수 함수 | `scripts/workshop-lib.ts` | 리전, 스택 이름, 파라미터 목록, `stackParameters`(갱신 때 `UsePreviousValue`), `imageTag`, `codeKeyOf`, `stackBlocker`, `withSecretFile`입니다 |
@@ -80,6 +82,8 @@ IaC 계층은 워크숍 스택 `seoul-workshop`을 CloudFormation 템플릿 하�
 - 첫 생성이 실패하면 스택이 `ROLLBACK_COMPLETE`에 남고, 이 상태에서는 갱신도 재사용도 할 수 없습니다. `stackBlocker`가 복구 명령을 안내하며 먼저 멈추므로, 뒤에서 알아보기 어려운 CloudFormation 오류로 실패하지 않습니다.
 - 이미지를 바꾼 뒤에는 `synchronize-gateway-targets`를 부르고 `lastSynchronizedAt`이 바뀔 때까지 기다립니다. Gateway가 대상의 tool 목록을 캐시하기 때문입니다.
 - 템플릿과 인터셉터는 테스트를 먼저 고칩니다. `tests/infra/workshopTemplate.test.ts`와 `tests/infra/codeCheck.test.ts`를 고친 뒤에 대상 파일을 고칩니다.
+- **새 파라미터는 갱신 때 빼고 보냅니다.** CloudFormation은 스택에 아직 없는 파라미터에 `UsePreviousValue`를 받지 않습니다. `stackParameters()`가 스택의 현재 파라미터 이름을 받아, 값을 주지 않았고 스택에도 없는 파라미터는 빼서 템플릿 기본값이 쓰이게 합니다. 이전 템플릿을 그대로 쓰는 `workshop:code`도 같은 규칙에 기댑니다.
+- **스케줄은 별도 스택이 아니라 파라미터입니다.** `CollectSchedule`과 `CollectCodeKey`가 `HasSchedule` 조건으로 리소스 6개를 켜고 끕니다. 배포 스크립트가 수집 코드 묶음을 항상 올려 두므로 스케줄을 켜고 끄는 일은 파라미터 변경입니다.
 
 ### 4. 코드 포인터
 

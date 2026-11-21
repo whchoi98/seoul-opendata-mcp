@@ -39,6 +39,8 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 - In the workshop stack the Seoul API keys sit in the AgentCore runtime's environment variables and the code's sha256 in the Lambda's environment variables. `NoEcho` only hides CloudFormation output, so `bedrock-agentcore:GetAgentRuntime` and `lambda:GetFunctionConfiguration` on those two resources are effectively read access to the secrets. The 40-bit unsalted code hash resists casual viewing, not an offline guess.
 - Scan the staged blob (`git show :path`) at commit time, on two layers: the PreToolUse hook gives Claude an immediate, explained block, and the git `pre-commit` hook covers `git add -A && git commit` in one command, which PreToolUse cannot see because it runs before the command stages anything.
 - Seoul keys are 32-char lowercase hex, which also matches fixture image ids (`atchFileId=…`). The scan therefore checks the literal values of `*_KEY`/`*_SECRET`/`*_TOKEN` variables from the local `.env` (reported by variable name only) and flags 32-hex runs only in key context: an `api_key`-style assignment or an `…seoul.go.kr/<key>/` URL path.
+- **Partition values are checked before they become a key.** A participant can pass any string through `call_dataset`, and a partition value becomes part of an S3 key or a file path. Each partition position has a format (`^\d{8}$`, `^[1-9]호선$`, and so on) and only values that pass are used; anything else is not answered by the store. `DirectoryStore` also refuses keys that resolve outside its root.
+- **The collector shows keys only masked.** `npm run workshop:collect` reads keys from `.env.workshop`, prints them through `maskKey()`, and records its calls in the same quota ledger as the runtime. With the schedule enabled, the collector Lambda holds the Seoul API keys in its environment, so `lambda:GetFunctionConfiguration` on it is equivalent to reading the keys.
 
 ### 4. Code Pointers
 
@@ -92,6 +94,8 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 - 워크숍 스택에서는 서울 API 키가 AgentCore 런타임의 환경 변수에, 코드의 sha256이 Lambda의 환경 변수에 들어 있습니다. `NoEcho`는 CloudFormation 출력만 가리므로, 두 리소스에 대한 `bedrock-agentcore:GetAgentRuntime`과 `lambda:GetFunctionConfiguration` 권한은 사실상 비밀을 읽는 권한입니다. 40비트에 솔트가 없는 코드 해시는 가벼운 열람을 막을 뿐 오프라인 대입은 막지 못합니다.
 - 커밋 시점에 stage된 내용(`git show :path`)을 두 단계로 검사합니다. PreToolUse 훅은 Claude에게 이유와 함께 바로 막았음을 알리고, git `pre-commit` 훅은 한 명령 안의 `git add -A && git commit`을 막습니다. PreToolUse는 명령이 파일을 stage하기 전에 실행되므로 이 경우를 볼 수 없습니다.
 - 서울 키는 32자리 소문자 hex라서 픽스처의 이미지 ID(`atchFileId=…`)와 형식이 같습니다. 그래서 로컬 `.env`의 `*_KEY`/`*_SECRET`/`*_TOKEN` 변수 값 자체를 찾고(보고에는 변수 이름만 씀), 32자리 hex는 `api_key` 형태의 대입문이나 `…seoul.go.kr/<key>/` URL 경로처럼 키 문맥에서만 잡습니다.
+- **파티션 값은 키가 되기 전에 형식을 검사합니다.** 참가자는 `call_dataset`으로 어떤 문자열이든 넘길 수 있고, 파티션 값은 S3 키나 파일 경로의 일부가 됩니다. 파티션 자리마다 형식(`^\d{8}$`, `^[1-9]호선$` 등)이 있어 통과한 값만 쓰고, 나머지는 저장소가 답하지 않습니다. `DirectoryStore`도 루트 밖으로 풀리는 키를 거부합니다.
+- **수집기는 키를 마스킹해서만 보여 줍니다.** `npm run workshop:collect`는 `.env.workshop`에서 키를 읽어 `maskKey()`로만 출력하고, 호출을 런타임과 같은 쿼터 장부에 기록합니다. 스케줄을 켜면 수집 Lambda의 환경 변수에도 서울 API 키가 들어가므로, 그 함수의 `lambda:GetFunctionConfiguration` 권한은 키 읽기 권한과 같습니다.
 
 ### 4. 코드 포인터
 

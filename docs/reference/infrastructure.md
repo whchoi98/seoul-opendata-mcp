@@ -19,12 +19,13 @@ The infrastructure layer is what the server runs on outside a local stdio sessio
 | HTTP entry point | `src/http.ts` | AgentCore Runtime MCP contract: `POST /mcp` and `GET /ping` on `0.0.0.0:8000` (`PORT` overrides). Stateless: every request gets its own server and transport. Other methods on `/mcp` return 405 |
 | L2 attachment | `src/client/dynamo.ts` (`maybeAttachL2`) | When `CACHE_TABLE_NAME` is set, lazily imports `@aws-sdk/*` and attaches the shared cache and quota ledger. On failure the server keeps running on L1 |
 | ECR repository | `seoul-opendata-mcp` (not created by this repo) | Holds the images. The workshop deploy pushes `<version>-workshop-<commit 7>` and never moves `latest` or `X.Y.Z` |
-| Workshop runtime | `infra/seoul-workshop.yaml` (`WorkshopRuntime`) | AgentCore Runtime `seoul_workshop_mcp`, platform version V2, public network, MCP protocol, 15-minute idle timeout, 8-hour maximum lifetime. Receives `SEOUL_API_KEY`, `SEOUL_SUBWAY_API_KEY`, `CACHE_TABLE_NAME` and `QUOTA_DAILY_LIMIT` as environment variables |
+| Workshop runtime | `infra/seoul-workshop.yaml` (`WorkshopRuntime`) | AgentCore Runtime `seoul_workshop_mcp`, platform version V2, public network, MCP protocol, 15-minute idle timeout, 8-hour maximum lifetime. Receives `SEOUL_API_KEY`, `SEOUL_SUBWAY_API_KEY`, `CACHE_TABLE_NAME`, `QUOTA_DAILY_LIMIT` and `STORE_URI` as environment variables |
 | Workshop table | `infra/seoul-workshop.yaml` (`WorkshopTable`) | One on-demand DynamoDB table with hash key `pk` and TTL attribute `expireAt`. Holds three item kinds (see Key Decisions) |
-| Workshop bucket | `infra/seoul-workshop.yaml` (`WorkshopBucket`) | Holds the interceptor zip under `code/`. Public access blocked, SSE-S3 |
+| Workshop bucket | `infra/seoul-workshop.yaml` (`WorkshopBucket`) | Holds the Lambda zips under `code/` and the pre-collected snapshots under `store/v1/` (gzip JSON, one object per dataset or partition, deleted after 90 days). Public access blocked, SSE-S3 |
 | Interceptor Lambda | `infra/lambda/code-check.mjs`, `CodeCheckFunction` | `nodejs22.x`, arm64, 128 MB, 5 s timeout. Checks the shared code, its expiry and the per-minute `tools/call` limit before the gateway forwards a request |
+| Collector Lambda (optional) | `infra/lambda/collect.ts`, `CollectFunction`, `CollectDailySchedule` | Created only when `CollectSchedule` is set. `nodejs22.x`, arm64, 1024 MB, 15-minute timeout. An EventBridge Scheduler schedule in Asia/Seoul runs the daily collection; failed runs are not retried |
 | Workshop gateway | `infra/seoul-workshop.yaml` (`WorkshopGateway`, `SeoulTarget`) | AgentCore Gateway with `AuthorizerType: NONE` and one REQUEST interceptor. Target `seoul` points at the workshop runtime, so tools appear as `seoul___<tool>` |
-| IAM roles | `infra/seoul-workshop.yaml` (`RuntimeRole`, `CodeCheckRole`, `GatewayRole`) | Runtime: pull from the one repository, write its own log groups, get/put/update on the table. Lambda: write its log group, `UpdateItem` on the table. Gateway: invoke the interceptor and the workshop runtime |
+| IAM roles | `infra/seoul-workshop.yaml` (`RuntimeRole`, `CodeCheckRole`, `GatewayRole`) | Runtime: pull from the one repository, write its own log groups, get/put/update on the table, read `store/*` in the bucket. Lambda: write its log group, `UpdateItem` on the table. Gateway: invoke the interceptor and the workshop runtime |
 | Log groups | CloudWatch Logs | `/aws/lambda/<stack>-code-check` (14-day retention) and `/aws/bedrock-agentcore/runtimes/seoul_workshop_mcp-<id>-DEFAULT` |
 
 ### 3. Key Decisions
@@ -69,12 +70,13 @@ The infrastructure layer is what the server runs on outside a local stdio sessio
 | HTTP 진입점 | `src/http.ts` | AgentCore Runtime MCP 계약인 `0.0.0.0:8000`의 `POST /mcp`와 `GET /ping`을 구현합니다(`PORT`로 바꿀 수 있음). 상태가 없어서 요청마다 서버와 transport를 새로 만듭니다. `/mcp`의 다른 메서드는 405를 돌려줍니다 |
 | L2 연결 | `src/client/dynamo.ts`(`maybeAttachL2`) | `CACHE_TABLE_NAME`이 있으면 `@aws-sdk/*`를 lazy import해 공유 캐시와 쿼터 장부를 붙입니다. 실패해도 서버는 L1만으로 계속 동작합니다 |
 | ECR 저장소 | `seoul-opendata-mcp`(이 저장소가 만들지 않음) | 이미지를 보관합니다. 워크숍 배포는 `<버전>-workshop-<커밋 7자>` 태그만 올리고 `latest`와 `X.Y.Z`는 옮기지 않습니다 |
-| 워크숍 런타임 | `infra/seoul-workshop.yaml`(`WorkshopRuntime`) | AgentCore Runtime `seoul_workshop_mcp`입니다. 플랫폼 버전 V2, 공용 네트워크, MCP 프로토콜, 유휴 제한 15분, 최대 수명 8시간입니다. `SEOUL_API_KEY`, `SEOUL_SUBWAY_API_KEY`, `CACHE_TABLE_NAME`, `QUOTA_DAILY_LIMIT`를 환경 변수로 받습니다 |
+| 워크숍 런타임 | `infra/seoul-workshop.yaml`(`WorkshopRuntime`) | AgentCore Runtime `seoul_workshop_mcp`입니다. 플랫폼 버전 V2, 공용 네트워크, MCP 프로토콜, 유휴 제한 15분, 최대 수명 8시간입니다. `SEOUL_API_KEY`, `SEOUL_SUBWAY_API_KEY`, `CACHE_TABLE_NAME`, `QUOTA_DAILY_LIMIT`, `STORE_URI`를 환경 변수로 받습니다 |
 | 워크숍 테이블 | `infra/seoul-workshop.yaml`(`WorkshopTable`) | 해시 키 `pk`와 TTL 속성 `expireAt`을 가진 온디맨드 DynamoDB 테이블 하나입니다. 세 종류의 항목을 담습니다(주요 결정 참조) |
-| 워크숍 버킷 | `infra/seoul-workshop.yaml`(`WorkshopBucket`) | 인터셉터 zip을 `code/` 아래에 둡니다. 공개 접근을 막고 SSE-S3로 암호화합니다 |
+| 워크숍 버킷 | `infra/seoul-workshop.yaml`(`WorkshopBucket`) | Lambda zip을 `code/` 아래에, 사전 적재 스냅샷을 `store/v1/` 아래에 둡니다(gzip JSON, 데이터셋이나 파티션마다 객체 하나, 90일 뒤 삭제). 퍼블릭 액세스 차단, SSE-S3 |
 | 인터셉터 Lambda | `infra/lambda/code-check.mjs`, `CodeCheckFunction` | `nodejs22.x`, arm64, 128MB, 제한 시간 5초입니다. Gateway가 요청을 넘기기 전에 공용 코드, 만료, 분당 `tools/call` 한도를 확인합니다 |
+| 수집 Lambda(선택) | `infra/lambda/collect.ts`, `CollectFunction`, `CollectDailySchedule` | `CollectSchedule`을 넣었을 때만 만듭니다. `nodejs22.x`, arm64, 1024MB, 제한 시간 15분. EventBridge Scheduler 스케줄(Asia/Seoul)이 매일 수집을 실행하고, 실패한 실행은 다시 시도하지 않습니다 |
 | 워크숍 Gateway | `infra/seoul-workshop.yaml`(`WorkshopGateway`, `SeoulTarget`) | `AuthorizerType: NONE`에 REQUEST 인터셉터 하나를 둔 AgentCore Gateway입니다. 대상 `seoul`이 워크숍 런타임을 가리키므로 tool 이름은 `seoul___<tool>`로 보입니다 |
-| IAM 역할 | `infra/seoul-workshop.yaml`(`RuntimeRole`, `CodeCheckRole`, `GatewayRole`) | 런타임은 저장소 하나에서 이미지를 받고, 자기 로그 그룹에 쓰고, 테이블에 get, put, update를 합니다. Lambda는 자기 로그 그룹에 쓰고 테이블에 `UpdateItem`만 합니다. Gateway는 인터셉터와 워크숍 런타임만 호출합니다 |
+| IAM 역할 | `infra/seoul-workshop.yaml`(`RuntimeRole`, `CodeCheckRole`, `GatewayRole`) | 런타임은 저장소 하나에서 이미지를 받고, 자기 로그 그룹에 쓰고, 테이블에 get, put, update를 합니다, 버킷의 `store/*` 읽기. Lambda는 자기 로그 그룹에 쓰고 테이블에 `UpdateItem`만 합니다. Gateway는 인터셉터와 워크숍 런타임만 호출합니다 |
 | 로그 그룹 | CloudWatch Logs | `/aws/lambda/<스택>-code-check`(14일 보관)와 `/aws/bedrock-agentcore/runtimes/seoul_workshop_mcp-<id>-DEFAULT`입니다 |
 
 ### 3. 주요 결정

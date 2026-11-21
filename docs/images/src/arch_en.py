@@ -1,10 +1,10 @@
-"""English text for the architecture infographic. Every value is checked against the repository at v0.7.0."""
+"""English text for the architecture infographic. Every value is checked against the repository at v0.8.0."""
 from arch_page import render
 
 T = dict(
     title="Seoul OpenData MCP Architecture",
     sub_en="Access Paths, Request Pipeline, Quota Protection",
-    sub_ko="as of v0.7.0",
+    sub_ko="as of v0.8.0",
     s1=("Three Access Paths", "Same server code, different authentication"),
     lanes=[
         dict(caller=("Local MCP client", "Claude Desktop, Claude Code"), link="stdio, no auth",
@@ -20,7 +20,7 @@ T = dict(
     s2=("Request Pipeline", "Every upstream call takes one path"),
     steps=[
         ("MCP tool", "23 tools, zod input checks", "blue", False),
-        ("SeoulApiClient", "key pool, cache, one retry", "purple", False),
+        ("SeoulApiClient", "store, key pool, cache, retry", "purple", False),
         ("Seoul Open Data Plaza API", "openapi, swopenapi", None, False),
         ("unwrap", "8 envelope shapes", "blue", False),
         ("normalize", "per-domain field mapping", "blue", False),
@@ -37,8 +37,7 @@ T = dict(
         ("Quota ledger", "orange", "per KST day",
          ["Call count per key", "Usage note at 80%", "Cache-only answers at 100%"]),
     ],
-    insight=("One cache entry for every key",
-             "The cache key replaces the key segment with {key}, so a response fetched with any key is reused"),
+    insight=("Snapshot store first", "37 slow-changing datasets are answered from S3 snapshots with no upstream call"),
     s4=("Workshop Gateway Checks", "Code, expiry, then per-minute limit"),
     head=("Check", "On failure"),
     rows=[
@@ -48,7 +47,7 @@ T = dict(
     ],
     **{"pass": "On pass, the gateway calls the dedicated Runtime with its IAM role"},
     ddb=("One DynamoDB table", "Cache, quota ledger and per-minute counters"),
-    note="As of v0.7.0. Numbers are default settings",
+    note="As of v0.8.0. Numbers are default settings",
 )
 
 

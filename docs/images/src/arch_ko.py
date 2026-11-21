@@ -1,10 +1,10 @@
-"""Korean text for the architecture infographic. Every value is checked against the repository at v0.7.0."""
+"""Korean text for the architecture infographic. Every value is checked against the repository at v0.8.0."""
 from arch_page import render
 
 T = dict(
     title="Seoul OpenData MCP 아키텍처",
     sub_en="Access Paths, Request Pipeline, Quota Protection",
-    sub_ko="v0.7.0 구조 요약",
+    sub_ko="v0.8.0 구조 요약",
     s1=("접근 경로 3종", "서버 코드는 동일, 인증 방식만 차이"),
     lanes=[
         dict(caller=("로컬 MCP 클라이언트", "Claude Desktop, Claude Code"), link="stdio, 인증 없음",
@@ -20,7 +20,7 @@ T = dict(
     s2=("요청 처리 흐름", "모든 업스트림 호출이 단일 경로 통과"),
     steps=[
         ("MCP tool", "23개, zod 입력 검증", "blue", False),
-        ("SeoulApiClient", "키 풀, 캐시, 재시도 1회", "purple", False),
+        ("SeoulApiClient", "저장소, 키 풀, 캐시, 재시도", "purple", False),
         ("서울 열린데이터광장 API", "openapi, swopenapi", None, False),
         ("unwrap", "응답 봉투 8종 해제", "blue", False),
         ("normalize", "도메인별 필드 정규화", "blue", False),
@@ -35,7 +35,7 @@ T = dict(
         ("쿼터 장부", "orange", "KST 하루 단위",
          ["키별 호출 수 집계", "80% 도달 시 사용량 안내", "100% 도달 시 캐시만으로 응답"]),
     ],
-    insight=("키와 무관한 캐시 공유", "캐시 키의 키 자리를 {key}로 치환, 어느 키로 받은 응답이든 재사용"),
+    insight=("사전 적재 저장소 우선 조회", "느린 데이터 37종은 S3 스냅샷으로 응답, 서울 API 호출 0회"),
     s4=("워크숍 Gateway 검사", "코드, 만료, 분당 한도 순서"),
     head=("검사 항목", "실패 시 응답"),
     rows=[
@@ -45,7 +45,7 @@ T = dict(
     ],
     **{"pass": "통과 시 Gateway IAM 역할로 전용 Runtime 호출"},
     ddb=("DynamoDB 테이블 1개", "캐시, 쿼터 장부, 분당 카운터 저장"),
-    note="v0.7.0 기준, 수치는 기본 설정값",
+    note="v0.8.0 기준, 수치는 기본 설정값",
 )
 
 

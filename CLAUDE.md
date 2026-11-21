@@ -7,17 +7,18 @@ seoul-opendata-mcp(v0.8.0, MIT)는 서울 열린데이터광장(Seoul Open Data 
 - TypeScript(strict, ESM), Node.js >=18
 - @modelcontextprotocol/sdk(stdio와 Streamable HTTP transport), zod(입력 스키마 검증), fast-xml-parser(XML 폴백 파싱)
 - vitest(단위 테스트 + 선택적 live-smoke 테스트), js-yaml(템플릿 테스트)
-- 배포: Docker(`linux/arm64`), Amazon Bedrock AgentCore Runtime과 Gateway, CloudFormation(`infra/`), DynamoDB(선택적 L2 캐시와 쿼터 장부, `@aws-sdk/*`는 lazy import)
+- 배포: Docker(`linux/arm64`), Amazon Bedrock AgentCore Runtime과 Gateway, CloudFormation(`infra/`), DynamoDB(선택적 L2 캐시와 쿼터 장부, `@aws-sdk/*`는 lazy import), S3(선택적 사전 적재 저장소, `@aws-sdk/client-s3`는 lazy import)
 
 ## Project Structure
 ```
 src/client/     HTTP 클라이언트: 키 풀과 폴백, 2단 캐시, 쿼터 장부, 페이지네이션, 재시도, XML 폴백, .env 로더
+src/store/      사전 적재 저장소: 규칙 표, 규칙 엔진, 스냅샷 형식, 디렉터리와 S3 저장소, 읽기 경로, 수집기, 실제 API 대비 검사
 src/normalize/  봉투(envelope) unwrap + 도메인별 필드 정규화
 src/tools/      MCP tool 23개: 도메인 register 6개 파일 + meta/stats/health
 src/data/       핫스팟 121곳, 52개/6카테고리 데이터셋 카탈로그
 tests/          vitest 스위트(단위 290+, live 9개) + harness/(훅·구조 검사); 픽스처=실API 캡처 불변
-scripts/        capture-fixtures.ts, live-sweep.ts, setup.sh, install-hooks.sh, workshop-*.ts(워크숍 스택 배포와 코드 관리)
-infra/          워크숍 Gateway 스택 템플릿(seoul-workshop.yaml)과 인터셉터 Lambda(lambda/code-check.mjs)
+scripts/        capture-fixtures.ts, live-sweep.ts, setup.sh, install-hooks.sh, workshop-*.ts(워크숍 스택 배포, 코드 관리, 스냅샷 수집)
+infra/          워크숍 Gateway 스택 템플릿(seoul-workshop.yaml)과 인터셉터 Lambda(lambda/code-check.mjs), 수집 Lambda(lambda/collect.ts)
 docs/           architecture, api-reference, onboarding, workshop 안내, decisions/(ADR), runbooks/, reference/(계층별 구현 참조), images/(README 인포그래픽과 생성 스크립트)
 ```
 
@@ -32,6 +33,7 @@ docs/           architecture, api-reference, onboarding, workshop 안내, decisi
 - `bash scripts/install-hooks.sh` - git `pre-commit`(비밀 검사)과 `commit-msg` 훅 설치 (clone 직후 1회)
 - `npm run workshop:deploy` - 워크숍 Gateway 스택 배포(승인 후에만 실행, `docs/workshop.md` 참조)
 - `npm run workshop:code -- new|revoke|show` - 워크숍 코드 발급, 폐기, 조회
+- `npm run workshop:collect -- daily|static|status|verify` - 사전 적재 스냅샷 수집, 상태 조회, 실제 API 대비 검사(실제 API를 부르므로 승인 후에만 실행)
 
 ## Conventions
 - `tests/fixtures/`의 픽스처는 실API 캡처 결과로 불변입니다. 직접 수정하지 않고, 재캡처는 `scripts/capture-fixtures.ts`로만 합니다(`tests/CLAUDE.md` 참조).
@@ -53,6 +55,7 @@ docs/           architecture, api-reference, onboarding, workshop 안내, decisi
 - `Dockerfile` 또는 `src/http.ts`의 런타임 계약 변경 -> `docs/reference/infrastructure.md`와 `docs/runbooks/agentcore-deploy.md`를 갱신합니다.
 - `scripts/` 스크립트 추가 또는 옵션 변경 -> `scripts/CLAUDE.md`를 갱신하고, 워크숍 절차가 바뀌면 `docs/workshop.md`도 고칩니다.
 - 구조나 계층이 바뀌는 변경 -> `docs/architecture.md`의 구성요소와 다이어그램을 갱신하고, README 인포그래픽(`docs/images/`, 문구는 `docs/images/src/arch_ko.py`와 `arch_en.py`)도 다시 만듭니다.
+- `src/store/rules.ts`의 규칙 변경 -> `tests/store/rules.test.ts`를 먼저 고치고 `docs/reference/api.md`의 저장소 절을 갱신합니다.
 
 <!-- AUTO-MANAGED:references -->
 - [docs/reference/security.md](docs/reference/security.md) - API 키 처리, 샘플 모드 제한

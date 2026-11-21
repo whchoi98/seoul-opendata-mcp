@@ -184,6 +184,7 @@ Besides the stdio server above, this repo also ships a Streamable HTTP entrypoin
    | `SEOUL_SUBWAY_API_KEY` | Subway-only key (same as stdio mode). | falls back to the first key of `SEOUL_API_KEY` |
    | `CACHE_TABLE_NAME` | Optional — DynamoDB table name for the shared global L2 cache and daily quota ledger. Unset means L1-only, per-session cache and quota. | (unset) |
    | `QUOTA_DAILY_LIMIT` | Daily per-key call budget before the server switches to stale-only responses. | `1000` |
+   | `STORE_URI` | Optional — `s3://<bucket>/store/v1` or a directory holding pre-collected snapshots. When set, 37 slow-changing datasets are answered from snapshots before the cache and the Seoul API. See [docs/workshop.md](docs/workshop.md). | (unset) |
    | `PORT` | HTTP listen port. | `8000` |
 
 4. **Extending via AgentCore Gateway** — to expose these 23 tools to other agents/orchestrators without touching any code, register the deployed Runtime endpoint as an `mcpServer`-type target on an [AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html). The Streamable HTTP contract this server already implements is exactly what a Gateway target expects, so this is a registration-only step — no changes to this repository.
@@ -288,6 +289,7 @@ cp .env.example .env
 - Bike stations, parking lots, air quality, cultural events, subway arrivals and timetables, public reservations, pharmacies, and the batch statistics tools are **not** limited to the 121 hotspots — they cover their respective full Seoul-wide datasets (e.g. all 25 districts for air quality, ~3,000 bike stations).
 - **Real-estate filters** — year, district, legal dong (when given with `district`), building name, and building type are applied by the upstream API. `rentType`, and a `dong` given without `district`, are applied only within the latest 500 rows. `get_land_price` returns parcels in API order, not sorted by price.
 - **Catalog tools cover 52 curated datasets** — `search_dataset` / `get_dataset_spec` / `call_dataset` give raw access to datasets that don't (yet) have a dedicated normalized tool.
+- With `STORE_URI` set, slow-changing datasets are answered from pre-collected snapshots with no upstream call, and the response `notes` carry the collection date (recorded as [ADR-007](docs/decisions/ADR-007-snapshot-store-with-server-side-filters.md)).
 
 ## Project Structure
 
@@ -295,6 +297,7 @@ cp .env.example .env
 seoul-opendata-mcp/
   src/
     client/          # HTTP client: SeoulApiClient (cache, retry, env loading)
+    store/           # Optional snapshot store: rules, engine, S3/directory stores, reader, collector
     normalize/       # Envelope unwrap (8 shapes) + per-domain normalizers
     tools/           # 23 MCP tools grouped into 9 categories
     data/            # 121 hotspots + 52-dataset catalog
@@ -307,7 +310,7 @@ seoul-opendata-mcp/
 ## Testing
 
 ```bash
-# Unit tests (133 tests, fixtures are real captured API responses)
+# Unit tests (434 tests, fixtures are real captured API responses)
 npm test
 
 # Live tests against the real Seoul Open Data API (9 tests, needs a real key)
@@ -387,6 +390,7 @@ flowchart TD
 - 모든 tool은 업스트림의 8가지 원본 형태 중 무엇에서 시작했든 동일한 `{data, asOf, source, notes}` 봉투로 응답합니다.
 - 서비스별 캐시 TTL(citydata/따릉이/주차/대기질 5분, 문화행사 6시간, 지하철 도착 15초)이 하루 약 1,000회 무료 쿼터를 보호합니다.
 - API 키는 로그나 에러 메시지에 노출되기 전에 항상 마스킹됩니다.
+- `STORE_URI`를 설정하면 느린 데이터는 미리 받아 둔 스냅샷으로 답해 서울 API를 부르지 않고, 응답의 `notes`에 수집 날짜가 들어갑니다([ADR-007](docs/decisions/ADR-007-snapshot-store-with-server-side-filters.md)).
 
 ## 사전 요구 사항
 
@@ -516,6 +520,7 @@ kiro-cli mcp add --name seoul-opendata --command npx --args "-y,seoul-opendata-m
    | `SEOUL_SUBWAY_API_KEY` | 지하철 전용 키(stdio 모드와 동일). | `SEOUL_API_KEY`의 첫 키로 폴백 |
    | `CACHE_TABLE_NAME` | 선택 — 전역 L2 캐시와 일일 쿼터 원장에 쓰이는 DynamoDB 테이블명. 미설정 시 L1 전용, 세션별 캐시·쿼터로 동작. | (미설정) |
    | `QUOTA_DAILY_LIMIT` | 쿼터 소진 시 stale-only 응답으로 전환되기 전까지의 키별 일일 호출 예산. | `1000` |
+   | `STORE_URI` | 선택 사항. 미리 받아 둔 스냅샷이 있는 `s3://<버킷>/store/v1` 또는 디렉터리. 설정하면 느린 데이터 37종을 캐시와 서울 API보다 먼저 스냅샷으로 답합니다. [docs/workshop.md](docs/workshop.md) 참조. | (미설정) |
    | `PORT` | HTTP 리슨 포트. | `8000` |
 
 4. **AgentCore Gateway로 확장** — 코드를 전혀 바꾸지 않고 이 23개 tool을 다른 에이전트/오케스트레이터에 노출하려면, 배포된 Runtime 엔드포인트를 [AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html)의 `mcpServer` 타입 타깃으로 등록하세요. 이 서버가 이미 구현하고 있는 Streamable HTTP 계약이 Gateway 타깃이 기대하는 형태와 정확히 일치하므로, 등록만 하면 되는 단계이며 이 저장소에는 어떤 변경도 필요 없습니다.
@@ -627,6 +632,7 @@ cp .env.example .env
 seoul-opendata-mcp/
   src/
     client/          # HTTP 클라이언트: SeoulApiClient (캐시, 재시도, env 로딩)
+    store/           # 선택적 사전 적재 저장소: 규칙, 엔진, S3와 디렉터리 저장소, 읽기 경로, 수집기
     normalize/       # 봉투 언랩(8가지 형태) + 도메인별 정규화
     tools/           # 9개 카테고리로 묶인 23개 MCP tool
     data/            # 121개 핫스팟 + 52개 데이터셋 카탈로그
@@ -639,7 +645,7 @@ seoul-opendata-mcp/
 ## 테스트
 
 ```bash
-# 유닛 테스트 (133개, fixture는 실제 캡처한 API 응답)
+# 유닛 테스트 (434개, fixture는 실제 캡처한 API 응답)
 npm test
 
 # 실제 서울 열린데이터광장 API를 대상으로 하는 라이브 테스트 (9개, 실제 키 필요)
