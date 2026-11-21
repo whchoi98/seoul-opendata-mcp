@@ -179,7 +179,9 @@ function decide(results: CaseResult[]): Decision[] {
 }
 
 export async function runVerify(
-  client: CollectClient, store: SnapshotStore, opts: { only?: string[]; now?: () => number; delayMs?: number } = {},
+  client: CollectClient, store: SnapshotStore,
+  /** rules: 검사할 규칙 표. 기본은 STORE_RULES이고 테스트가 바꿔 넣는다 */
+  opts: { only?: string[]; now?: () => number; delayMs?: number; rules?: Record<string, StoreRule> } = {},
 ): Promise<VerifyReport> {
   if (client.isSample) throw new Error('샘플 키로는 검사할 수 없습니다. SEOUL_API_KEY를 설정하세요')
   const now = opts.now ?? Date.now
@@ -191,7 +193,7 @@ export async function runVerify(
   let calls = 0
   let aborted: string | undefined
 
-  services: for (const [service, rule] of Object.entries(STORE_RULES)) {
+  services: for (const [service, rule] of Object.entries(opts.rules ?? STORE_RULES)) {
     if (rule.slots.length === 0) continue // 자리가 없는 머리 스냅샷은 첫 페이지 그대로라 비교할 것이 없다
     if (opts.only && !opts.only.includes(service)) continue
     const keys = [...(existing.get(service)?.keys() ?? [])].sort()

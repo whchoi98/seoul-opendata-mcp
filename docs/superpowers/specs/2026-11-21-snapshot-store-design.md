@@ -176,14 +176,14 @@ interface SnapshotStore {
 | 서비스 | 자리별 규칙 |
 |---|---|
 | `TbPharmacyOperateInfo` | `DUTYADDR` 부분일치, `DUTYNAME` 부분일치 |
-| `GetParkInfo` | `ADDR` 부분일치, `PKLT_CD` 일치, `PRK_NOW_INFO_PVSN_YN` 일치 |
-| `culturalEventInfo` | `CODENAME` 검증으로 결정, `TITLE` 부분일치, `DATE` 미지원 |
+| `GetParkInfo` | `ADDR` 부분일치, `PKLT_CD` 일치, `PRK_NOW_INFO_PVSN_YN` 미지원 |
+| `culturalEventInfo` | `CODENAME` 검증으로 결정(미지원 유지), `TITLE` 미지원, `DATE` 미지원 |
 | `SearchInfoBySubwayNameService` | `STATION_NM` 일치 |
 | `ListPublicReservationCulture`, `ListPublicReservationSport`, `ListPublicReservationInstitution`, `ListPublicReservationMedical` | `MINCLASSNM` 부분일치 |
-| `ListPublicReservationEducation` | `MINCLASSNM` 부분일치, `SVCNM` 부분일치, `USETGTINFO` 검증으로 결정, `AREANM` 검증으로 결정 |
+| `ListPublicReservationEducation` | `MINCLASSNM` 부분일치, `SVCNM` 부분일치, `USETGTINFO` 검증으로 결정(미지원 유지), `AREANM` 부분일치 |
 | `tnFcltySttusInfo1011` | `FCLTY_NM` 부분일치 |
 | `ListPriceModelStoreService` | `INDUTY_CODE_SE` 일치 |
-| `OdsnBuildingInfo` | `SISUL_NM` 검증으로 결정 |
+| `OdsnBuildingInfo` | `SISUL_NM` 부분일치 |
 | `CardSubwayStatsNew` | `USE_YMD` 파티션(`^\d{8}$`) |
 | `CardBusStatisticsServiceNew` | `USE_YMD` 파티션(`^\d{8}$`), 머리만 저장 |
 | `CardSubwayTime` | `USE_MM` 파티션(`^\d{6}$`), `SBWY_ROUT_LN_NM` 일치, `STTN` 일치 |
@@ -193,6 +193,8 @@ interface SnapshotStore {
 | 머리 19종 | 자리 없음 |
 
 "검증으로 결정"은 문서만으로 일치인지 부분일치인지 알 수 없는 자리다. 처음에는 미지원으로 두고, 7.2의 검사 결과로 일치나 부분일치를 정한다. 재현할 수 없으면 미지원으로 남긴다.
+
+2026-11-22의 첫 검사 결과로 다음과 같이 정했다. `AREANM`과 `SISUL_NM`은 부분일치다. `CODENAME`은 건수로는 부분일치와 맞지만 결과가 1,000건을 넘고 행 순서가 달라 재현하지 못했다. `USETGTINFO`는 저장된 값을 그대로 보내도 서울 API가 0건을 돌려줘 재현하지 못했다. 두 자리는 미지원으로 남긴다. `PRK_NOW_INFO_PVSN_YN`과 문화행사의 `TITLE`은 미지원으로 바꿨다. 서울 API가 걸러진 결과의 행 순서를 전체 목록과 다르게 돌려주는데 결과가 요청 범위를 넘어서, 같은 범위에서 다른 행이 나오기 때문이다.
 
 ### 4.3 요청 하나를 처리하는 순서
 
@@ -218,7 +220,7 @@ interface SnapshotStore {
 npm run workshop:collect -- daily     # 매일 묶음: 전체와 머리 스냅샷, 새 날짜와 월 파티션
 npm run workshop:collect -- static    # 첫차와 막차, 시간표 (약 1,850회, 워크숍 당일 아닌 날)
 npm run workshop:collect -- status    # 데이터셋별 스냅샷 수, 수집 시각, 기한 내 여부
-npm run workshop:collect -- verify    # 실제 API 대비 검사 (약 80회)
+npm run workshop:collect -- verify    # 실제 API 대비 검사 (약 70회)
 ```
 
 | 옵션 | 뜻 |
@@ -381,7 +383,7 @@ S3 오류, 압축 해제나 파싱 실패, 형식 버전 불일치는 로그만 
 - 전체 건수가 다르거나 행 집합이 다르면 실패, 순서만 다르면 경고로 보고한다.
 - "검증으로 결정" 자리는 일치와 부분일치 두 가정으로 각각 비교해 어느 쪽이 맞는지 보고한다. 예시 값 전체와 그 앞부분, 두 값으로 시험한다. 전체 값만으로는 두 가정이 같은 행을 고르기 때문이다. 결과를 보고 규칙 표를 고친다. 건너뛴 요청은 어느 가정의 근거로도 세지 않는다. 근거가 하나도 없으면 "근거 없음"으로 보고한다.
 - 출력의 각 줄에는 보낸 값을 함께 적는다.
-- 약 80회 호출이 든다. 규칙을 바꾸거나 처음 수집했을 때 돌린다.
+- 약 70회 호출이 든다. 규칙을 바꾸거나 처음 수집했을 때 돌린다.
 
 ## 8. 스택과 배포
 
@@ -430,8 +432,8 @@ CloudFormation은 스택에 아직 없는 파라미터에 `UsePreviousValue`를 
 |---|---|---|
 | AgentCore Runtime 컨테이너의 메모리 한도 | 검증 7단계의 힙 사용량 | 여유가 없으면 96MB 상한을 낮추고 문화행사를 페이지 단위 객체로 쪼갠다 |
 | 접두사 조건이 붙은 `s3:ListBucket`으로도 없는 키에 404가 오는지 | 검증 6단계의 런타임 로그 | 403이 오면 조건을 빼고 버킷 전체 목록 권한을 준다. 버킷에는 `code/`와 `store/`만 있다 |
-| "검증으로 결정" 자리 네 개의 의미 | `verify` | 일치나 부분일치로 정하고, 재현할 수 없으면 미지원으로 남긴다 |
-| 필터를 건 요청과 걸지 않은 요청의 행 순서가 같은지 | `verify`의 순서 경고 | 순서가 다른 데이터셋은 문서에 적는다. 범위가 전체를 덮지 않는 요청에서 다른 행이 나오면 그 자리를 미지원으로 바꾼다 |
+| "검증으로 결정" 자리 네 개의 의미 | `verify` | 확인함(2026-11-22): `AREANM`과 `SISUL_NM`은 부분일치로 정했다. `CODENAME`과 `USETGTINFO`는 재현하지 못해 미지원으로 남겼다(4.2) |
+| 필터를 건 요청과 걸지 않은 요청의 행 순서가 같은지 | `verify`의 순서 경고 | 확인함(2026-11-22): 서울 API는 걸러진 결과에서 정렬 키가 같은 행의 순서를 전체 목록과 다르게 돌려준다(콘서트 1,392건에서 최대 5칸, 주차장 주소 153건에서 최대 34칸, 실시간 제공 여부 1,480건에서 최대 73칸). 결과가 요청 범위를 넘는 `PRK_NOW_INFO_PVSN_YN`과 문화행사 `TITLE`은 미지원으로 바꿨다. `GetParkInfo`의 `ADDR`은 tool이 1,000행을 요청하고 결과가 그 안에 들어와 그대로 둔다 |
 | 세션 첫 호출에서 문화행사 스냅샷(약 4MB 압축)을 읽는 시간 | 검증 7단계 | 3초에 가까우면 페이지 단위 객체로 쪼갠다 |
 | EventBridge 스케줄과 Lambda 묶음의 템플릿 속성 | 구현 계획에서 공식 문서로 확인 | 확인함(2026-11-21): `AWS::Scheduler::Schedule`은 `ScheduleExpression`, `FlexibleTimeWindow`, `Target`(`Arn`, `RoleArn`)이 필수다. 묶음은 `esbuild`로 만들고 테스트가 `handler`를 불러 본다 |
 

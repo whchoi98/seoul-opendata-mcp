@@ -21,7 +21,7 @@ const USAGE = `사용법:
   npm run workshop:collect -- daily     매일 묶음: 전체와 머리 스냅샷, 새 날짜와 월 파티션
   npm run workshop:collect -- static    첫차와 막차, 시간표(약 1,850회, 워크숍 당일이 아닌 날)
   npm run workshop:collect -- status    데이터셋별 스냅샷 수, 수집 시각, 기한 내 여부
-  npm run workshop:collect -- verify    수집한 스냅샷을 실제 API와 비교(약 80회, 남은 한도를 검사하지 않음). 규칙을 바꾸거나 처음 수집했을 때
+  npm run workshop:collect -- verify    수집한 스냅샷을 실제 API와 비교(약 70회, 남은 한도를 검사하지 않음). 규칙을 바꾸거나 처음 수집했을 때
 옵션:
   --env-file <경로>     키를 읽을 파일(기본 .env.workshop)
   --store <주소>        스냅샷을 둘 곳. 기본은 스택 버킷의 s3://<버킷>/${STORE_PREFIX}. 디렉터리 경로면 로컬에 저장

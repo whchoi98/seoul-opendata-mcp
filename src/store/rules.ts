@@ -55,9 +55,9 @@ const STATION_CODE = /^[0-9A-Za-z]{1,8}$/
 export const STORE_RULES: Record<string, StoreRule> = {
   // ── 매일 묶음, 전체 12종 ──
   TbPharmacyOperateInfo: full([contains('DUTYADDR'), contains('DUTYNAME')], 7, 6),
-  GetParkInfo: full([contains('ADDR'), eq('PKLT_CD'), eq('PRK_NOW_INFO_PVSN_YN')], 7, 3),
+  GetParkInfo: full([contains('ADDR'), eq('PKLT_CD'), unsupported('PRK_NOW_INFO_PVSN_YN')], 7, 3),
   culturalEventInfo: {
-    ...full([undecided('CODENAME'), contains('TITLE'), unsupported('DATE')], 3, 20),
+    ...full([undecided('CODENAME'), unsupported('TITLE'), unsupported('DATE')], 3, 20),
     examples: ['콘서트', '서울', '2026-12-24'],
   },
   SearchInfoBySubwayNameService: full([eq('STATION_NM')], 7, 1),
@@ -65,11 +65,11 @@ export const STORE_RULES: Record<string, StoreRule> = {
   ListPublicReservationSport: full([contains('MINCLASSNM')], 1, 1),
   ListPublicReservationInstitution: full([contains('MINCLASSNM')], 1, 1),
   ListPublicReservationEducation: full(
-    [contains('MINCLASSNM'), contains('SVCNM'), undecided('USETGTINFO'), undecided('AREANM')], 1, 1),
+    [contains('MINCLASSNM'), contains('SVCNM'), undecided('USETGTINFO'), contains('AREANM')], 1, 1),
   ListPublicReservationMedical: full([contains('MINCLASSNM')], 1, 1),
   tnFcltySttusInfo1011: full([contains('FCLTY_NM')], 7, 1),
   ListPriceModelStoreService: full([eq('INDUTY_CODE_SE')], 7, 2),
-  OdsnBuildingInfo: full([undecided('SISUL_NM')], 7, 4),
+  OdsnBuildingInfo: full([contains('SISUL_NM')], 7, 4),
 
   // ── 매일 묶음, 머리 19종: call_dataset은 1행부터 최대 50행만 요청한다 ──
   SPOP_DAILYSUM_JACHI: head(),

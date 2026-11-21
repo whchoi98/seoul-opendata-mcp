@@ -95,13 +95,16 @@ describe('STORE_RULES', () => {
     }
   })
 
-  it('검증으로 결정할 자리 네 개는 미지원으로 시작한다', () => {
+  it('검증으로 정하지 못한 자리만 미지원으로 남는다', () => {
     const undecided = services.flatMap(id =>
       STORE_RULES[id].slots.filter(s => s.kind === 'unsupported' && s.decide).map(s => `${id}.${s.field}`))
-    expect(undecided.sort()).toEqual([
-      'ListPublicReservationEducation.AREANM', 'ListPublicReservationEducation.USETGTINFO',
-      'OdsnBuildingInfo.SISUL_NM', 'culturalEventInfo.CODENAME',
-    ])
+    expect(undecided.sort()).toEqual(['ListPublicReservationEducation.USETGTINFO', 'culturalEventInfo.CODENAME'])
+    // 2026-11-22 첫 실제 검사로 정한 자리(스펙 §4.2)
+    const slot = (id: string, field: string) => STORE_RULES[id].slots.find(s => s.field === field)
+    expect(slot('ListPublicReservationEducation', 'AREANM')).toEqual({ field: 'AREANM', kind: 'contains' })
+    expect(slot('OdsnBuildingInfo', 'SISUL_NM')).toEqual({ field: 'SISUL_NM', kind: 'contains' })
+    expect(slot('GetParkInfo', 'PRK_NOW_INFO_PVSN_YN')).toEqual({ field: 'PRK_NOW_INFO_PVSN_YN', kind: 'unsupported' })
+    expect(slot('culturalEventInfo', 'TITLE')).toEqual({ field: 'TITLE', kind: 'unsupported' })
   })
 
   it('필터와 파티션 필드가 픽스처의 실제 행에 있다', () => {

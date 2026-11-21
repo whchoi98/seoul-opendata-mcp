@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import type { Unwrapped } from '../../src/client/response.js'
 import type { CollectClient } from '../../src/store/collector.js'
-import { STORE_RULES } from '../../src/store/rules.js'
+import { readFileSync } from 'node:fs'
+import { STORE_RULES, type SlotRule, type StoreRule } from '../../src/store/rules.js'
 import { encodeSnapshot, snapshotKey, type Snapshot } from '../../src/store/snapshot.js'
 import type { SnapshotStore } from '../../src/store/snapshotStore.js'
 import { casesFor, formatVerify, runVerify } from '../../src/store/verify.js'
@@ -14,6 +15,34 @@ const STATION = 'SearchInfoBySubwayNameService'
 const FIRST_LAST = 'SearchFirstAndLastTrainbyLineServiceNew'
 const B = ' '
 const NO_VALUE = '스냅샷에 이 필드 값이 없어 검사하지 못함'
+
+const eq = (field: string): SlotRule => ({ field, kind: 'eq' })
+const contains = (field: string): SlotRule => ({ field, kind: 'contains' })
+const undecided = (field: string): SlotRule => ({ field, kind: 'unsupported', decide: true })
+const unsupported = (field: string): SlotRule => ({ field, kind: 'unsupported' })
+/** 운영 규칙에서 범위, 기한, 파티션 자리와 계획, 예시 값은 가져오고 필터 자리의 모양만 정한다 */
+const shaped = (service: string, filters: SlotRule[]): StoreRule => {
+  const rule = STORE_RULES[service]
+  return { ...rule, slots: [...rule.slots.filter(s => s.kind === 'partition'), ...filters] }
+}
+/**
+ * 이 테스트의 규칙 표. 운영 규칙 표는 실제 검사 결과로 바뀌므로, 테스트가 쓰는 자리 모양을 여기서 고정한다.
+ * 첫 실제 검사(2026-11-22) 전의 모양이다: 일치(여러 글자, 한 글자), 부분일치, 지원 자리 둘 이상, 결정할 자리 하나뿐인 서비스,
+ * 지원 자리 뒤의 결정할 자리, 그냥 미지원인 자리, 파티션 서비스
+ */
+const RULES: Record<string, StoreRule> = {
+  ...STORE_RULES,
+  TbPharmacyOperateInfo: shaped('TbPharmacyOperateInfo', [contains('DUTYADDR'), contains('DUTYNAME')]),
+  GetParkInfo: shaped('GetParkInfo', [contains('ADDR'), eq('PKLT_CD'), eq('PRK_NOW_INFO_PVSN_YN')]),
+  culturalEventInfo: shaped('culturalEventInfo', [undecided('CODENAME'), contains('TITLE'), unsupported('DATE')]),
+  SearchInfoBySubwayNameService: shaped('SearchInfoBySubwayNameService', [eq('STATION_NM')]),
+  ListPublicReservationEducation: shaped('ListPublicReservationEducation',
+    [contains('MINCLASSNM'), contains('SVCNM'), undecided('USETGTINFO'), undecided('AREANM')]),
+  tnFcltySttusInfo1011: shaped('tnFcltySttusInfo1011', [contains('FCLTY_NM')]),
+  OdsnBuildingInfo: shaped('OdsnBuildingInfo', [undecided('SISUL_NM')]),
+  CardSubwayTime: shaped('CardSubwayTime', [eq('SBWY_ROUT_LN_NM'), eq('STTN')]),
+  SearchFirstAndLastTrainbyLineServiceNew: shaped('SearchFirstAndLastTrainbyLineServiceNew', [eq('SUBW_CD'), eq('OTSD_CD')]),
+}
 const NAME = '더샵둔촌포레(둔촌현대1차A)'
 const seniors = [{ SISUL_NM: NAME }, { SISUL_NM: `${NAME} 별관` }]
 
@@ -54,11 +83,11 @@ const livePharmacyOf = (rows: typeof pharmacies) => (r: Req): Unwrapped => {
   return answer(r.service, rows.filter(p => p.DUTYADDR.includes(addr) && p.DUTYNAME.includes(name)))
 }
 const livePharmacy = livePharmacyOf(pharmacies)
-const verifyOnly = (client: CollectClient, store: SnapshotStore, only: string[]) => runVerify(client, store, { only, now: () => NOW, delayMs: 0 })
+const verifyOnly = (client: CollectClient, store: SnapshotStore, only: string[]) => runVerify(client, store, { only, now: () => NOW, delayMs: 0, rules: RULES })
 
 describe('casesFor', () => {
   it('인자 없음, 자리 하나씩(값 전체와 앞부분), 지원 자리 전부를 카탈로그 예시 값으로 만든다', () => {
-    expect(casesFor(PHARMACY, STORE_RULES[PHARMACY], []).map(c => [c.label, c.path])).toEqual([
+    expect(casesFor(PHARMACY, RULES[PHARMACY], []).map(c => [c.label, c.path])).toEqual([
       ['인자 없음', []],
       ['DUTYADDR만', ['강남구']],
       ['DUTYADDR만(앞부분)', ['강남']],
@@ -69,7 +98,7 @@ describe('casesFor', () => {
   })
 
   it('일치 자리도 앞부분으로 시험한다. 한 글자 값은 앞부분이 같아 만들지 않는다', () => {
-    expect(casesFor(PARK, STORE_RULES[PARK], []).map(c => [c.label, c.path])).toEqual([
+    expect(casesFor(PARK, RULES[PARK], []).map(c => [c.label, c.path])).toEqual([
       ['인자 없음', []],
       ['ADDR만', ['강남']],
       ['ADDR만(앞부분)', ['강']],
@@ -81,7 +110,7 @@ describe('casesFor', () => {
   })
 
   it('검증으로 결정할 자리는 두 가정으로 만들고, 그냥 미지원인 자리는 만들지 않는다', () => {
-    const cases = casesFor('culturalEventInfo', STORE_RULES.culturalEventInfo, [])
+    const cases = casesFor('culturalEventInfo', RULES.culturalEventInfo, [])
     expect(cases.map(c => [c.label, c.path, c.assume?.kind])).toEqual([
       ['인자 없음', [], undefined],
       ['TITLE만', [B, '서울'], undefined],
@@ -95,21 +124,21 @@ describe('casesFor', () => {
   })
 
   it('파티션 자리에는 저장된 파티션 값을 넣는다', () => {
-    expect(casesFor('CardSubwayTime', STORE_RULES.CardSubwayTime, ['202609']).map(c => c.path)).toEqual([
+    expect(casesFor('CardSubwayTime', RULES.CardSubwayTime, ['202609']).map(c => c.path)).toEqual([
       ['202609'], ['202609', '2호선'], ['202609', '2호'], ['202609', B, '강남'], ['202609', B, '강'], ['202609', '2호선', '강남'],
     ])
-    expect(casesFor('CardBusStatisticsServiceNew', STORE_RULES.CardBusStatisticsServiceNew, ['20261116']).map(c => c.path)).toEqual([['20261116']])
+    expect(casesFor('CardBusStatisticsServiceNew', RULES.CardBusStatisticsServiceNew, ['20261116']).map(c => c.path)).toEqual([['20261116']])
   })
 
   it('예시 값을 포함한 행이 스냅샷에 있으면 예시 값을, 없으면 그 필드의 첫 값을 쓴다', () => {
     const stored = [{ DUTYADDR: '서울특별시 서초구 3', DUTYNAME: '서초약국' }, { DUTYADDR: '서울특별시 강남구 1', DUTYNAME: '강남온누리약국' }]
-    expect(casesFor(PHARMACY, STORE_RULES[PHARMACY], [], stored).map(c => c.path)).toEqual([
+    expect(casesFor(PHARMACY, RULES[PHARMACY], [], stored).map(c => c.path)).toEqual([
       [], ['강남구'], ['강남'], [B, '온누리'], [B, '온누'], ['강남구', '온누리'],
     ])
     // 9호선 스냅샷에는 카탈로그의 2호선 예시 값(0222, 222)이 없다. 비어 있는 값은 건너뛴다
     const line9 = [{ SUBW_CD: ' ', OTSD_CD: '' }, { SUBW_CD: '4101', OTSD_CD: '901' }, { SUBW_CD: '4102', OTSD_CD: '902' }]
     const p = ['9호선', '2', '3']
-    expect(casesFor(FIRST_LAST, STORE_RULES[FIRST_LAST], p, line9).map(c => [c.label, c.path])).toEqual([
+    expect(casesFor(FIRST_LAST, RULES[FIRST_LAST], p, line9).map(c => [c.label, c.path])).toEqual([
       ['인자 없음', p],
       ['SUBW_CD만', [...p, '4101']],
       ['SUBW_CD만(앞부분)', [...p, '41']],
@@ -121,7 +150,7 @@ describe('casesFor', () => {
 
   it('일치로 비교하는 자리는 예시 값과 똑같은 행이, 부분일치 자리는 예시 값을 포함한 행이 있어야 예시 값을 쓴다', () => {
     const valueOf = (service: string, rows: any[], label: string, partition: string[] = []) =>
-      casesFor(service, STORE_RULES[service], partition, rows).find(c => c.label === label)!.path.at(-1)
+      casesFor(service, RULES[service], partition, rows).find(c => c.label === label)!.path.at(-1)
     // 일치 자리: 예시 값(강남)과 똑같은 행이 있으면 쓴다. 포함하기만 하면 그 필드의 첫 값으로 바꾼다
     expect(valueOf(STATION, [{ STATION_NM: '강남구청' }, { STATION_NM: '강남' }], 'STATION_NM만')).toBe('강남')
     expect(valueOf(STATION, [{ STATION_NM: '강남구청' }, { STATION_NM: '역삼' }], 'STATION_NM만')).toBe('강남구청')
@@ -136,22 +165,22 @@ describe('casesFor', () => {
   })
 
   it('앞부분은 끝의 공백을 뗀다', () => {
-    const cases = casesFor('tnFcltySttusInfo1011', STORE_RULES.tnFcltySttusInfo1011, [], [{ FCLTY_NM: '서울특별시 강남구 1' }])
+    const cases = casesFor('tnFcltySttusInfo1011', RULES.tnFcltySttusInfo1011, [], [{ FCLTY_NM: '서울특별시 강남구 1' }])
     // 앞 6글자는 '서울특별시 '이다. 서울 API가 끝 공백을 받지 않도록 '서울특별시'로 보낸다
     expect(cases.map(c => [c.label, c.path])).toEqual([
       ['인자 없음', []], ['FCLTY_NM만', ['서울특별시 강남구 1']], ['FCLTY_NM만(앞부분)', ['서울특별시']],
     ])
-    const senior = casesFor(SENIOR, STORE_RULES[SENIOR], [], [{ SISUL_NM: '서울특별시 강남구 1' }])
+    const senior = casesFor(SENIOR, RULES[SENIOR], [], [{ SISUL_NM: '서울특별시 강남구 1' }])
     expect(senior.filter(c => c.label.includes('앞부분')).map(c => c.path)).toEqual([['서울특별시'], ['서울특별시']])
   })
 
   it('스냅샷에 그 필드 값이 하나도 없으면 서울 API를 부르지 않고 건너뛸 자리 표시만 만든다', () => {
-    const station = casesFor(STATION, STORE_RULES[STATION], [], [{ STATION_NM: '' }, { STATION_NM: ' ' }, {}])
+    const station = casesFor(STATION, RULES[STATION], [], [{ STATION_NM: '' }, { STATION_NM: ' ' }, {}])
     expect(station).toEqual([
       { service: STATION, path: [], label: '인자 없음' },
       { service: STATION, path: [], label: 'STATION_NM만', skip: NO_VALUE },
     ])
-    const senior = casesFor(SENIOR, STORE_RULES[SENIOR], [], [])
+    const senior = casesFor(SENIOR, RULES[SENIOR], [], [])
     expect(senior.map(c => [c.label, c.assume, c.skip])).toEqual([
       ['인자 없음', undefined, undefined],
       ['SISUL_NM 가정: 일치', { slot: 0, field: 'SISUL_NM', kind: 'eq' }, NO_VALUE],
@@ -165,7 +194,7 @@ describe('runVerify', () => {
     const m = memoryStore()
     m.seed(PHARMACY, [], pharmacies)
     const { client, calls } = fakeClient(livePharmacy)
-    const report = await runVerify(client, m.store, { only: [PHARMACY], now: () => NOW, delayMs: 0 })
+    const report = await runVerify(client, m.store, { only: [PHARMACY], now: () => NOW, delayMs: 0, rules: RULES })
     expect(report.results.map(r => [r.label, r.status])).toEqual([
       ['인자 없음', 'ok'], ['DUTYADDR만', 'ok'], ['DUTYADDR만(앞부분)', 'ok'],
       ['DUTYNAME만', 'ok'], ['DUTYNAME만(앞부분)', 'ok'], ['지원 자리 전부', 'ok'],
@@ -183,7 +212,7 @@ describe('runVerify', () => {
       if (r.path.length === 2 && r.path[0] === B) return { rows: [pharmacies[0], pharmacies[1]], totalCount: 2 } // 건수는 같고 행이 다르다
       return livePharmacy(r)
     })
-    const report = await runVerify(client, m.store, { only: [PHARMACY], now: () => NOW, delayMs: 0 })
+    const report = await runVerify(client, m.store, { only: [PHARMACY], now: () => NOW, delayMs: 0, rules: RULES })
     expect(report.results.map(r => r.status)).toEqual(['order', 'fail', 'ok', 'fail', 'fail', 'ok'])
     expect(report.results[1].detail).toBe('전체 건수 다름: 저장소 2, 서울 API 1')
     expect(report.results[3].detail).toContain('행 집합 다름')
@@ -349,7 +378,7 @@ describe('runVerify', () => {
     const m = memoryStore()
     m.seed(SENIOR, [], seniors)
     const { client, calls } = fakeClient(liveSenior('eq'))
-    const report = await runVerify(client, m.store, { only: [SENIOR], now: () => NOW, delayMs: 0 })
+    const report = await runVerify(client, m.store, { only: [SENIOR], now: () => NOW, delayMs: 0, rules: RULES })
     expect(report.results.map(r => [r.label, r.status])).toEqual([
       ['인자 없음', 'ok'],
       ['SISUL_NM 가정: 일치(전체 값)', 'ok'], ['SISUL_NM 가정: 부분일치(전체 값)', 'fail'],
@@ -363,7 +392,7 @@ describe('runVerify', () => {
   it('서울 API가 부분일치로 거르면 부분일치로 판정한다', async () => {
     const m = memoryStore()
     m.seed(SENIOR, [], seniors)
-    const report = await runVerify(fakeClient(liveSenior('contains')).client, m.store, { only: [SENIOR], now: () => NOW, delayMs: 0 })
+    const report = await runVerify(fakeClient(liveSenior('contains')).client, m.store, { only: [SENIOR], now: () => NOW, delayMs: 0, rules: RULES })
     expect(report.decisions).toEqual([{ service: SENIOR, field: 'SISUL_NM', verdict: '부분일치' }])
   })
 
@@ -371,14 +400,14 @@ describe('runVerify', () => {
     const one = [{ SISUL_NM: NAME }]
     const m = memoryStore()
     m.seed(SENIOR, [], one)
-    const partial = await runVerify(fakeClient(liveSenior('contains', one)).client, m.store, { only: [SENIOR], now: () => NOW, delayMs: 0 })
+    const partial = await runVerify(fakeClient(liveSenior('contains', one)).client, m.store, { only: [SENIOR], now: () => NOW, delayMs: 0, rules: RULES })
     expect(partial.results.map(r => [r.label, r.status])).toEqual([
       ['인자 없음', 'ok'],
       ['SISUL_NM 가정: 일치(전체 값)', 'ok'], ['SISUL_NM 가정: 부분일치(전체 값)', 'ok'],
       ['SISUL_NM 가정: 일치(앞부분)', 'fail'], ['SISUL_NM 가정: 부분일치(앞부분)', 'ok'],
     ])
     expect(partial.decisions).toEqual([{ service: SENIOR, field: 'SISUL_NM', verdict: '부분일치' }])
-    const exact = await runVerify(fakeClient(liveSenior('eq', one)).client, m.store, { only: [SENIOR], now: () => NOW, delayMs: 0 })
+    const exact = await runVerify(fakeClient(liveSenior('eq', one)).client, m.store, { only: [SENIOR], now: () => NOW, delayMs: 0, rules: RULES })
     expect(exact.results.map(r => [r.label, r.status])).toEqual([
       ['인자 없음', 'ok'],
       ['SISUL_NM 가정: 일치(전체 값)', 'ok'], ['SISUL_NM 가정: 부분일치(전체 값)', 'ok'],
@@ -431,7 +460,7 @@ describe('runVerify', () => {
     m.seed('CardSubwayStatsNew', ['20261115'], [{ USE_YMD: '20261115' }])
     m.seed('CardSubwayStatsNew', ['20261117'], [{ USE_YMD: '20261117' }])
     const { client, calls } = fakeClient(r => answer(r.service, [{ USE_YMD: r.path[0] }]))
-    const report = await runVerify(client, m.store, { only: ['CardSubwayStatsNew'], now: () => NOW, delayMs: 0 })
+    const report = await runVerify(client, m.store, { only: ['CardSubwayStatsNew'], now: () => NOW, delayMs: 0, rules: RULES })
     expect(calls.map(c => c.path)).toEqual([['20261117']])
     expect(report.results[0].status).toBe('ok')
   })
@@ -439,7 +468,7 @@ describe('runVerify', () => {
   it('스냅샷이 없는 서비스는 건너뛰고, 자리가 없는 머리 19종은 검사하지 않는다', async () => {
     const m = memoryStore()
     const { client, calls } = fakeClient(r => noData(r.service))
-    const report = await runVerify(client, m.store, { now: () => NOW, delayMs: 0 })
+    const report = await runVerify(client, m.store, { now: () => NOW, delayMs: 0, rules: RULES })
     expect(calls).toHaveLength(0)
     expect(report.results).toHaveLength(18)
     expect(report.results.every(r => r.status === 'skip' && r.detail === '스냅샷 없음')).toBe(true)
@@ -450,7 +479,7 @@ describe('runVerify', () => {
     const m = memoryStore()
     m.seed(PHARMACY, [], pharmacies)
     const { client, calls } = fakeClient(() => ({ rows: [], totalCount: 0, note: '일일 API 쿼터(3000회)가 소진되어 새 데이터를 가져올 수 없습니다.' }))
-    const report = await runVerify(client, m.store, { only: [PHARMACY], now: () => NOW, delayMs: 0 })
+    const report = await runVerify(client, m.store, { only: [PHARMACY], now: () => NOW, delayMs: 0, rules: RULES })
     expect(calls).toHaveLength(1)
     expect(report.ok).toBe(false)
     expect(report.aborted).toContain('소진되어')
@@ -502,7 +531,7 @@ describe('runVerify', () => {
   it('결과를 상태, 서비스, 요청, 설명으로 출력하고 결정할 자리를 따로 모은다', async () => {
     const m = memoryStore()
     m.seed(SENIOR, [], seniors)
-    const text = formatVerify(await runVerify(fakeClient(liveSenior('eq')).client, m.store, { only: [SENIOR], now: () => NOW, delayMs: 0 }))
+    const text = formatVerify(await runVerify(fakeClient(liveSenior('eq')).client, m.store, { only: [SENIOR], now: () => NOW, delayMs: 0, rules: RULES }))
     // 보낸 값은 라벨 뒤 대괄호에 적는다. 인자 없는 요청에는 대괄호가 없다
     expect(text.split('\n')).toContain('  통과 OdsnBuildingInfo 인자 없음: 2건 일치')
     expect(text.split('\n')).toContain(`  실패 OdsnBuildingInfo SISUL_NM 가정: 부분일치(전체 값) [${NAME}]: 전체 건수 다름: 저장소 2, 서울 API 1`)
@@ -513,5 +542,29 @@ describe('runVerify', () => {
     const lines = formatVerify(await verifyOnly(fakeClient(livePharmacy).client, m.store, [PHARMACY])).split('\n')
     expect(lines).toContain('  통과 TbPharmacyOperateInfo DUTYNAME만(앞부분) [_, 온누]: 2건 일치')
     expect(lines).toContain('  통과 TbPharmacyOperateInfo 지원 자리 전부 [강남구, 온누리]: 1건 일치')
+  })
+})
+
+describe('verify 호출 수', () => {
+  it('운영 규칙 표로 계산한 서울 API 호출 상한이 문서에 적은 "약 N회"와 맞는다', () => {
+    let bound = 0
+    for (const [service, rule] of Object.entries(STORE_RULES)) {
+      if (rule.slots.length === 0) continue
+      const supported = rule.slots.filter(s => s.kind === 'eq' || s.kind === 'contains').length
+      const decide = rule.slots.filter(s => s.kind === 'unsupported' && s.decide).length
+      // 인자 없음 1, 지원 자리마다 값 전체와 앞부분 2, 지원 자리가 둘 이상이면 전부 채운 요청 1, 결정할 자리마다 2
+      const n = 1 + 2 * supported + (supported > 1 ? 1 : 0) + 2 * decide
+      // 카탈로그 예시 값으로 만든 실제 요청은 같은 경로를 한 번만 부르므로 이 상한을 넘지 않는다
+      const partition = rule.slots.filter(s => s.kind === 'partition').map((_, i) => `p${i}`)
+      const paths = new Set(casesFor(service, rule, partition).filter(c => !c.skip).map(c => c.path.join('\u0000')))
+      expect(paths.size, service).toBeLessThanOrEqual(n)
+      bound += n
+    }
+    const documented = Math.ceil(bound / 10) * 10
+    const usage = readFileSync('scripts/workshop-collect.ts', 'utf8')
+    const spec = readFileSync('docs/superpowers/specs/2026-11-21-snapshot-store-design.md', 'utf8')
+    expect(usage).toContain(`수집한 스냅샷을 실제 API와 비교(약 ${documented}회, 남은 한도를 검사하지 않음)`)
+    expect(spec).toContain(`npm run workshop:collect -- verify    # 실제 API 대비 검사 (약 ${documented}회)`)
+    expect(spec).toContain(`- 약 ${documented}회 호출이 든다.`)
   })
 })

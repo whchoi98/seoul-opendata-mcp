@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { isNoData, noDataNote, unwrap } from '../../src/client/response.js'
 import { answerFrom, planRequest } from '../../src/store/engine.js'
-import type { StoreRule } from '../../src/store/rules.js'
+import { STORE_RULES, type StoreRule } from '../../src/store/rules.js'
 import type { Snapshot } from '../../src/store/snapshot.js'
 
 const NOW = Date.parse('2026-11-21T03:00:00.000Z')
@@ -11,6 +11,22 @@ const B = ' '
 const snapshot = (service: string, rows: any[], over: Partial<Snapshot> = {}): Snapshot => ({
   v: 1, service, partition: [], collectedAt: new Date(NOW - 3_600_000).toISOString(), totalCount: rows.length, rows, ...over,
 })
+
+/**
+ * 일치, 부분일치, 미지원이 함께 있는 자리 모양. 운영 규칙 표는 실제 검사 결과로 바뀌므로(스펙 §4.2) 이 테스트가 쓰는 모양을 여기서 고정한다.
+ * 첫 실제 검사(2026-11-22) 전의 규칙이다
+ */
+const MIXED: Record<string, StoreRule> = {
+  GetParkInfo: {
+    ...STORE_RULES.GetParkInfo,
+    slots: [{ field: 'ADDR', kind: 'contains' }, { field: 'PKLT_CD', kind: 'eq' }, { field: 'PRK_NOW_INFO_PVSN_YN', kind: 'eq' }],
+  },
+  culturalEventInfo: {
+    ...STORE_RULES.culturalEventInfo,
+    slots: [{ field: 'CODENAME', kind: 'unsupported', decide: true }, { field: 'TITLE', kind: 'contains' }, { field: 'DATE', kind: 'unsupported' }],
+  },
+  OdsnBuildingInfo: { ...STORE_RULES.OdsnBuildingInfo, slots: [{ field: 'SISUL_NM', kind: 'unsupported', decide: true }] },
+}
 
 const pharmacies = [
   { DUTYNAME: '강남온누리약국', DUTYADDR: '서울특별시 강남구 테헤란로 1' },
@@ -68,10 +84,10 @@ describe('planRequest', () => {
   })
 
   it('미지원 자리에 값이 오면 답하지 않는다', () => {
-    expect(planRequest('culturalEventInfo', ['콘서트', B, B])).toBeUndefined()
-    expect(planRequest('culturalEventInfo', [B, '재즈', '2026-12-24'])).toBeUndefined()
-    expect(planRequest('culturalEventInfo', [B, '재즈', B])!.filters).toEqual([{ field: 'TITLE', kind: 'contains', value: '재즈' }])
-    expect(planRequest('OdsnBuildingInfo', ['경로당'])).toBeUndefined()
+    expect(planRequest('culturalEventInfo', ['콘서트', B, B], MIXED)).toBeUndefined()
+    expect(planRequest('culturalEventInfo', [B, '재즈', '2026-12-24'], MIXED)).toBeUndefined()
+    expect(planRequest('culturalEventInfo', [B, '재즈', B], MIXED)!.filters).toEqual([{ field: 'TITLE', kind: 'contains', value: '재즈' }])
+    expect(planRequest('OdsnBuildingInfo', ['경로당'], MIXED)).toBeUndefined()
   })
 
   it('값이 온 자리가 규칙의 자리 수를 넘으면 답하지 않는다', () => {
@@ -145,9 +161,9 @@ describe('answerFrom', () => {
   it('일치는 문자열로 바꾸고 앞뒤 공백을 자른 뒤 비교한다', () => {
     const rows = [{ ADDR: '강남구 1', PKLT_CD: 1033125, PRK_NOW_INFO_PVSN_YN: ' 1 ' }, { ADDR: '강남구 2', PKLT_CD: '10331250', PRK_NOW_INFO_PVSN_YN: '2' }]
     const s = snapshot('GetParkInfo', rows)
-    const a = answerFrom(s, planRequest('GetParkInfo', [B, '1033125', '1'])!, 1, 10, NOW)!
+    const a = answerFrom(s, planRequest('GetParkInfo', [B, '1033125', '1'], MIXED)!, 1, 10, NOW)!
     expect(a.value.rows).toEqual([rows[0]])
-    expect(answerFrom(s, planRequest('GetParkInfo', [B, '103312'])!, 1, 10, NOW)!.value.rows).toEqual([])
+    expect(answerFrom(s, planRequest('GetParkInfo', [B, '103312'], MIXED)!, 1, 10, NOW)!.value.rows).toEqual([])
   })
 
   it('0건이면 note에 서울 API와 같은 문구만 넣는다', () => {
