@@ -16,11 +16,13 @@ const snap = (service: string, partition: string[], r: any[], over: Partial<Snap
 function memoryStore() {
   const objects = new Map<string, StoredObject>()
   const gets: Array<{ key: string; ifNoneMatch?: string }> = []
-  const state = { fail: undefined as Error | undefined, delayMs: 0, version: 0 }
+  const state = { fail: undefined as Error | undefined, delayMs: 0, version: 0, held: undefined as { key?: string; until: Promise<void> } | undefined }
   const store: SnapshotStore = {
     async get(key, opts) {
       gets.push({ key, ifNoneMatch: opts?.ifNoneMatch })
       if (state.delayMs > 0) await new Promise(r => setTimeout(r, state.delayMs))
+      const held = state.held
+      if (held && (held.key === undefined || held.key === key)) await held.until
       if (state.fail) throw state.fail
       const o = objects.get(key)
       if (!o) return undefined
@@ -30,8 +32,17 @@ function memoryStore() {
     async list() { return [] },
   }
   const seed = (s: Snapshot) => store.put(snapshotKey(s.service, s.partition), encodeSnapshot(s))
-  return { store, objects, gets, state, seed }
+  /** 이후의 get(key를 주면 그 키만)을 멈춰 둔다. 돌려받은 함수를 부르면 멈춘 get이 이어서 객체를 읽는다 */
+  const hold = (key?: string): (() => void) => {
+    let release!: () => void
+    state.held = { key, until: new Promise<void>(r => { release = r }) }
+    return () => { state.held = undefined; release() }
+  }
+  return { store, objects, gets, state, seed, hold }
 }
+
+/** 멈춘 읽기를 풀어 준 뒤 그 읽기가 끝나 메모리에 반영될 때까지 기다린다 */
+const settle = () => new Promise(r => setTimeout(r, 5))
 
 function setup(opts: { maxBytes?: number; timeoutMs?: number } = {}) {
   const m = memoryStore()
@@ -173,6 +184,72 @@ describe('SnapshotReader', () => {
     s.state.delayMs = 0
     expect((await s.reader.lookup(PHARMACY, 1, 10, []))!.value.totalCount).toBe(2)
     expect(s.gets).toHaveLength(1)
+  })
+
+  it('재확인이 시간 제한을 넘으면 가진 스냅샷으로 답하고, 늦게 끝난 읽기의 새 내용은 다음 요청부터 쓴다', async () => {
+    const s = setup({ timeoutMs: 20 })
+    await s.seed(snap(PHARMACY, [], rows))
+    const first = await s.reader.lookup(PHARMACY, 1, 10, [])
+    s.clock.t += REVALIDATE_MS
+    const release = s.hold()
+    const slow = await s.reader.lookup(PHARMACY, 1, 10, [])
+    expect(slow).toEqual(first)
+    expect(s.logs.find(l => l.includes('초과'))).toMatch(/^\[store\] 읽기 20ms 초과 TbPharmacyOperateInfo\/_all\.json\.gz — 가진 스냅샷으로 답함$/)
+    // 멈춘 읽기가 끝나기 전에 다시 수집되어 새 본문을 받는다
+    await s.seed(snap(PHARMACY, [], [rows[0]]))
+    release()
+    await settle()
+    expect((await s.reader.lookup(PHARMACY, 1, 10, []))!.value.rows).toEqual([rows[0]])
+    expect(s.gets).toHaveLength(2)
+  })
+
+  it('가진 스냅샷을 재확인하는 중에 온 요청은 기다리지 않고 가진 것으로 답한다', async () => {
+    const s = setup({ timeoutMs: 1_000 })
+    await s.seed(snap(PHARMACY, [], rows))
+    await s.reader.lookup(PHARMACY, 1, 10, [])
+    s.clock.t += REVALIDATE_MS
+    const release = s.hold()
+    const revalidating = s.reader.lookup(PHARMACY, 1, 10, [])
+    const waited = new Promise(r => setTimeout(() => r('기다림'), 50))
+    const second = await Promise.race([s.reader.lookup(PHARMACY, 1, 10, [' ', '역삼']), waited])
+    expect(second).toEqual({ value: { rows: [rows[1]], totalCount: 1 }, collectedAt: NOW - 3_600_000, expired: false })
+    expect(s.gets).toEqual([
+      { key: 'TbPharmacyOperateInfo/_all.json.gz', ifNoneMatch: undefined },
+      { key: 'TbPharmacyOperateInfo/_all.json.gz', ifNoneMatch: '"v1"' },
+    ])
+    release()
+    expect((await revalidating)!.value.totalCount).toBe(2)
+    expect(s.gets).toHaveLength(2)
+  })
+
+  it('재확인하는 동안 메모리에서 밀려난 스냅샷이 바뀌지 않았다고 돌아오면 크기를 다시 세어 상한을 지킨다', async () => {
+    const pad = 'x'.repeat(1000)
+    const days = ['20261101', '20261102', '20261103']
+    const one = Buffer.byteLength(JSON.stringify(snap(STATS, [days[0]], [{ USE_YMD: days[0], pad }])))
+    const s = setup({ maxBytes: one * 2 + 10 })
+    for (const d of days) await s.seed(snap(STATS, [d], [{ USE_YMD: d, pad }]))
+    const key = (d: string) => `${STATS}/${d}.json.gz`
+    await s.reader.lookup(STATS, 1, 10, [days[0]])
+    s.clock.t += REVALIDATE_MS // 0은 재확인 대상이 된다
+    const release = s.hold(key(days[0]))
+    const revalidating = s.reader.lookup(STATS, 1, 10, [days[0]])
+    await s.reader.lookup(STATS, 1, 10, [days[1]])
+    await s.reader.lookup(STATS, 1, 10, [days[2]]) // 상한 초과: 재확인 중인 0이 밀려난다
+    release()
+    expect((await revalidating)!.value.totalCount).toBe(1) // 바뀌지 않았다는 답으로 0을 다시 넣고, 상한을 넘어 1을 버린다
+    const reads = () => s.gets.filter(g => g.key !== key(days[0]) || g.ifNoneMatch === undefined).length
+    expect(reads()).toBe(3)
+    await s.reader.lookup(STATS, 1, 10, [days[2]])
+    await s.reader.lookup(STATS, 1, 10, [days[0]])
+    expect(reads()).toBe(3) // 0과 2만 메모리에 있다
+    await s.reader.lookup(STATS, 1, 10, [days[1]]) // 1은 다시 읽고, 상한을 넘어 가장 오래 안 쓴 2를 버린다
+    expect(reads()).toBe(4)
+    await s.reader.lookup(STATS, 1, 10, [days[0]])
+    await s.reader.lookup(STATS, 1, 10, [days[1]])
+    expect(reads()).toBe(4)
+    await s.reader.lookup(STATS, 1, 10, [days[2]])
+    expect(reads()).toBe(5)
+    expect(s.gets.filter(g => g.ifNoneMatch !== undefined)).toEqual([{ key: key(days[0]), ifNoneMatch: '"v1"' }])
   })
 
   it('메모리 상한을 넘으면 오래 안 쓴 스냅샷부터 버린다', async () => {

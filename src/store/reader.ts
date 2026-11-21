@@ -51,8 +51,10 @@ export class SnapshotReader implements SnapshotSource {
       if (!plan) return undefined
       const held = await this.withTimeout(this.resolve(plan.key))
       if (held === TIMED_OUT) {
-        this.log(`[store] 읽기 ${this.timeoutMs}ms 초과 ${plan.key} — 지금 경로로 넘김`)
-        return undefined
+        // 재확인이 늦어도 가진 스냅샷이 있으면 그것으로 답한다. 읽기는 계속 진행된다
+        const stale = this.held.get(plan.key)
+        this.log(`[store] 읽기 ${this.timeoutMs}ms 초과 ${plan.key} — ${stale ? '가진 스냅샷으로 답함' : '지금 경로로 넘김'}`)
+        return stale ? answerFrom(stale.snapshot, plan, start, end, this.now(), opts) : undefined
       }
       if (!held) return undefined
       return answerFrom(held.snapshot, plan, start, end, this.now(), opts)
@@ -83,7 +85,12 @@ export class SnapshotReader implements SnapshotSource {
     }
     // 같은 키를 동시에 찾는 요청은 읽기 한 번을 함께 기다린다
     const running = this.loading.get(key)
-    if (running) return running
+    // 가진 스냅샷을 재확인하는 중이면 기다리지 않고 가진 것으로 답한다. 처음 읽는 중이면 함께 기다린다
+    if (running) {
+      if (!cur) return running
+      this.touch(key, cur)
+      return Promise.resolve(cur)
+    }
     const p = this.load(key, cur).finally(() => this.loading.delete(key))
     this.loading.set(key, p)
     return p
@@ -95,7 +102,9 @@ export class SnapshotReader implements SnapshotSource {
       const got = await this.store.get(key, cur?.etag ? { ifNoneMatch: cur.etag } : undefined)
       if (got === 'not-modified' && cur) {
         cur.checkedAt = this.now()
-        this.touch(key, cur)
+        // 재확인하는 동안 밀려났으면 바이트 합계와 함께 다시 넣는다
+        if (this.held.get(key) === cur) this.touch(key, cur)
+        else this.keep(key, cur)
         return cur
       }
       if (got === undefined || got === 'not-modified') {

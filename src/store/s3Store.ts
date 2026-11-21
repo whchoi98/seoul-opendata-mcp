@@ -49,6 +49,11 @@ export class S3Store implements SnapshotStore {
   }
 }
 
+/** S3 연결을 맺는 시간 제한. SDK 기본값 0은 제한이 없어 멈춘 연결이 끝나지 않는다 */
+const CONNECTION_TIMEOUT_MS = 2_000
+/** S3 요청 하나의 시간 제한. 응답이 멈춘 소켓의 유휴 제한과 본문까지 읽는 읽기 전체에도 같은 값을 쓴다 */
+const REQUEST_TIMEOUT_MS = 10_000
+
 /** s3://<버킷>/<접두사>. 접두사 끝의 빗금은 뗀다 */
 export function parseS3Uri(uri: string): { bucket: string; prefix: string } | undefined {
   const m = /^s3:\/\/([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(?:\/(.*))?$/.exec(uri)
@@ -61,10 +66,20 @@ export async function createS3Store(uri: string, region?: string): Promise<S3Sto
   const parsed = parseS3Uri(uri)
   if (!parsed) throw new Error('저장소 주소는 s3://<버킷>/<접두사> 형식이어야 합니다')
   const { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command } = await import('@aws-sdk/client-s3')
-  const client = new S3Client(region ? { region } : {})
+  const client = new S3Client({
+    ...(region ? { region } : {}),
+    // throwOnRequestTimeout이 없으면 requestTimeout을 넘어도 경고만 남기고 요청은 계속 기다린다
+    requestHandler: {
+      connectionTimeout: CONNECTION_TIMEOUT_MS,
+      requestTimeout: REQUEST_TIMEOUT_MS,
+      throwOnRequestTimeout: true,
+      socketTimeout: REQUEST_TIMEOUT_MS,
+    },
+  })
   const s3: S3Like = {
     async getObject(p) {
-      const r = await client.send(new GetObjectCommand(p))
+      // 위의 시간 제한은 응답 헤더를 받으면 풀린다. 본문을 받다 멈춰도 끝나도록 읽기 전체에 같은 제한을 건다
+      const r = await client.send(new GetObjectCommand(p), { abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
       if (!r.Body) throw new Error('S3 응답에 본문이 없습니다')
       return { body: Buffer.from(await r.Body.transformToByteArray()), etag: r.ETag }
     },
