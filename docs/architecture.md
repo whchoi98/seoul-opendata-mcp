@@ -17,6 +17,8 @@ It wraps two upstream HTTP APIs — the general Seoul Open Data Plaza (`openapi.
 
 The same server runs in three ways: as a local stdio process, as a container on AgentCore Runtime called with IAM credentials, and, for workshops, behind an AgentCore Gateway that admits requests carrying a shared workshop code (`infra/`, see the Access and Deployment Layer below).
 
+With `STORE_URI` set, the server answers 37 slow-changing datasets from pre-collected snapshots before it looks at the cache or calls the Seoul API. In the workshop stack the snapshots live in S3. An optional EventBridge Scheduler schedule runs a collector Lambda once a day for the 35 datasets that change daily, and the two timetable datasets are collected with a local command.
+
 ## Components
 
 ### Ingestion Layer
@@ -55,7 +57,8 @@ The same server runs in three ways: as a local stdio process, as a container on 
 - **stdio** (`src/index.ts`) -- Started by a local MCP client (`npx -y seoul-opendata-mcp`). No AWS dependency is loaded on this path.
 - **`src/http.ts`, `Dockerfile`** -- The same `buildServer()` behind stateless Streamable HTTP (`POST /mcp` and `GET /ping` on `:8000`), packaged as a `linux/arm64` image for AgentCore Runtime. At startup `maybeAttachL2` connects the shared DynamoDB cache and quota ledger when `CACHE_TABLE_NAME` is set.
 - **Workshop gateway** (`infra/seoul-workshop.yaml`) -- An AgentCore Gateway with one target, `seoul`, that points at a dedicated runtime, `seoul_workshop_mcp`. Callers see the tools as `seoul___<tool>`. The gateway calls the runtime with its own IAM role, so the workshop code alone does not reach the runtime.
-- **`scripts/workshop-deploy.ts`, `scripts/workshop-code.ts`** -- Create or update the stack in two passes, push the image, synchronize the gateway target, and issue or revoke the workshop code.
+- **Snapshot collection** (`infra/lambda/collect.ts`, `scripts/workshop-collect.ts`) -- The workshop bucket holds the snapshots under `store/v1/`, and the workshop runtime reads them through `STORE_URI`. When a collection schedule is set, an EventBridge Scheduler schedule in Asia/Seoul invokes the collector Lambda, which collects the daily bundle (35 datasets; the first run made 98 upstream calls) and counts every call on the quota ledger. A failed run is not retried. `npm run workshop:collect -- daily|static|status|verify` runs the same collector from a terminal; the static bundle (subway timetables, about 1,850 calls) runs only this way because it does not fit in the Lambda's 15-minute limit.
+- **`scripts/workshop-deploy.ts`, `scripts/workshop-code.ts`, `scripts/workshop-bundle.ts`** -- Create or update the stack in two passes, push the image, bundle and upload the Lambda code, synchronize the gateway target, turn the collection schedule on or off (`--collect-schedule`), and issue or revoke the workshop code.
 
 ## Full Architecture Diagram
 
@@ -66,12 +69,13 @@ flowchart TB
     LOADENV --> KEYSEL["Key selection + masking (SeoulApiClient ctor)"]
   end
   subgraph ingestion[Ingestion Layer]
-    KEYSEL --> CLIENT["SeoulApiClient<br/>key pool · 2-tier cache · quota ledger"]
+    KEYSEL --> CLIENT["SeoulApiClient<br/>snapshot store, 2-tier cache, key pool, quota ledger"]
     CLIENT -->|"JSON/XML"| OPENAPI(["openapi.seoul.go.kr:8088"])
     CLIENT -->|"JSON"| SUBWAYAPI(["swopenapi.seoul.go.kr"])
     CLIENT --> CACHE[("L1 InMemoryCache + optional L2 DynamoDbCache")]
     CLIENT -.->|"STORE_URI set, asked first"| STORE[("Snapshot store<br/>S3 store/v1 or a directory")]
-    COLLECTOR["workshop:collect<br/>local command or scheduled Lambda"] -->|"gzip JSON snapshots"| STORE
+    COLLECTOR["Collector<br/>workshop:collect or the collect Lambda"] -->|"gzip JSON snapshots"| STORE
+    COLLECTOR -->|"daily bundle, counted on the ledger"| OPENAPI
   end
   subgraph processing[Processing Layer]
     UNWRAP["unwrap() - 8 envelope shapes"]
@@ -93,6 +97,7 @@ flowchart TB
     GATEWAY["AgentCore Gateway<br/>target seoul"]
     INTERCEPTOR["code-check Lambda<br/>code, expiry, per-minute limit"]
     RUNTIME["AgentCore Runtime<br/>src/http.ts, POST /mcp"]
+    SCHEDULE["EventBridge Scheduler<br/>daily in Asia/Seoul, optional"]
     GATEWAY -->|"REQUEST interceptor"| INTERCEPTOR
     GATEWAY -->|"gateway IAM role"| RUNTIME
   end
@@ -103,6 +108,7 @@ flowchart TB
   RUNTIME --> TOOLS
   CACHE -.->|"L2 and quota ledger"| TABLE
   INTERCEPTOR -.->|"rate counter"| TABLE
+  SCHEDULE -->|"invokes the collect Lambda"| COLLECTOR
   ENVELOPE --> AGENT
 ```
 
@@ -112,6 +118,8 @@ flowchart TB
 flowchart LR
   Agent(["LLM Agent"]) --> Tool["MCP Tool"] --> Client["SeoulApiClient<br/>2-tier cache"] --> API(["Seoul Open Data API"])
   Client -.->|"slow data, if STORE_URI"| Store[("Snapshot store")] -.-> Normalize
+  Scheduler(["EventBridge Scheduler"]) -.->|"daily"| Collector["Collector Lambda"] -.->|"snapshots"| Store
+  Collector -.->|"about 100 calls a run"| API
   API --> Cache[("L1+L2 cache")]
   Cache --> Unwrap["unwrap()"]
   Unwrap --> Normalize["normalize/*"]
@@ -127,11 +135,13 @@ The workshop stack `seoul-workshop` is declared in one CloudFormation template, 
 | Resource | Type | Purpose |
 |---|---|---|
 | `WorkshopTable` | `AWS::DynamoDB::Table` | L2 cache entries, daily quota counters and per-minute rate counters, with TTL on `expireAt` |
-| `WorkshopBucket` | `AWS::S3::Bucket` | Interceptor zip under `code/` |
+| `WorkshopBucket` | `AWS::S3::Bucket` | Lambda zips under `code/` and the pre-collected snapshots under `store/v1/` (deleted after 90 days) |
 | `WorkshopRuntime` | `AWS::BedrockAgentCore::Runtime` | `seoul_workshop_mcp`, platform version V2, image referenced by digest |
 | `CodeCheckFunction`, `CodeCheckLogGroup` | `AWS::Lambda::Function`, `AWS::Logs::LogGroup` | REQUEST interceptor and its 14-day log group |
 | `WorkshopGateway`, `SeoulTarget` | `AWS::BedrockAgentCore::Gateway`, `AWS::BedrockAgentCore::GatewayTarget` | MCP endpoint for participants and its single target |
-| `RuntimeRole`, `CodeCheckRole`, `GatewayRole` | `AWS::IAM::Role` | One role per component, limited to this stack's resources |
+| `CollectFunction`, `CollectLogGroup`, `CollectInvokeConfig` | `AWS::Lambda::Function`, `AWS::Logs::LogGroup`, `AWS::Lambda::EventInvokeConfig` | Daily snapshot collector (`nodejs22.x`, arm64, 1024 MB, 15-minute timeout), its 14-day log group, and no retry of a failed run. Created only when a collection schedule is set |
+| `CollectDailySchedule` | `AWS::Scheduler::Schedule` | Invokes the collector on the `CollectSchedule` expression in Asia/Seoul. Created only when a collection schedule is set |
+| `RuntimeRole`, `CodeCheckRole`, `GatewayRole`, `CollectRole`, `CollectScheduleRole` | `AWS::IAM::Role` | One role per component, limited to this stack's resources |
 
 A runtime outside this stack is deployed by hand with [`docs/runbooks/agentcore-deploy.md`](runbooks/agentcore-deploy.md).
 
@@ -150,14 +160,14 @@ A runtime outside this stack is deployed by hand with [`docs/runbooks/agentcore-
 ## Operations
 
 - [`docs/runbooks/agentcore-deploy.md`](runbooks/agentcore-deploy.md) -- deploy (ECR push -> `create-agent-runtime`), verify (`/ping`, `tools/list`), rollback (pin an endpoint to the previous version), and incident response (L2 cache errors falling back to L1, quota-exhaustion stale-only mode) for the AgentCore Runtime container (`src/http.ts` / `Dockerfile`).
-- [`docs/workshop.md`](workshop.md) -- the workshop stack: participant registration, facilitator steps (first deploy, issuing and revoking the code, raising the per-minute limit during an event), and the verification record of the first deploy.
+- [`docs/workshop.md`](workshop.md) -- the workshop stack: participant registration, facilitator steps (first deploy, issuing and revoking the code, raising the per-minute limit during an event, collecting snapshots and turning on the daily schedule), and the verification records of the first deploy and of the snapshot store.
 
 The next most likely runbooks, still unwritten -- see [`docs/runbooks/.template.md`](runbooks/.template.md) for the format to use when adding one:
 
 - A **key rotation / sample-mode diagnosis** runbook (Security Layer) -- what to check when a tool response unexpectedly carries the sample-mode note or an `INFO-100`/key-related `SeoulApiError`.
 - An **MCPB bundle-and-release** runbook -- the `npm run build` -> `npm run bundle` -> `npm run prepublishOnly` sequence used to produce `seoul-opendata-mcp.mcpb` and the npm package.
 
-Related architectural decisions are recorded under `docs/decisions/` -- see [ADR-001](decisions/ADR-001-fixtures-as-source-of-truth.md), [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md), [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md), [ADR-004](decisions/ADR-004-session-scaling-two-tier-cache.md), [ADR-005](decisions/ADR-005-workshop-shared-code-at-the-gateway.md), and [ADR-006](decisions/ADR-006-key-pool-with-key-independent-cache-keys.md); use [`docs/decisions/.template.md`](decisions/.template.md) to add a new one.
+Related architectural decisions are recorded under `docs/decisions/` -- see [ADR-001](decisions/ADR-001-fixtures-as-source-of-truth.md), [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md), [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md), [ADR-004](decisions/ADR-004-session-scaling-two-tier-cache.md), [ADR-005](decisions/ADR-005-workshop-shared-code-at-the-gateway.md), [ADR-006](decisions/ADR-006-key-pool-with-key-independent-cache-keys.md), and [ADR-007](decisions/ADR-007-snapshot-store-with-server-side-filters.md); use [`docs/decisions/.template.md`](decisions/.template.md) to add a new one.
 
 ---
 
@@ -172,6 +182,8 @@ Related architectural decisions are recorded under `docs/decisions/` -- see [ADR
 이 서버는 서울 열린데이터광장 일반 API(`openapi.seoul.go.kr:8088`)와 지하철 실시간 도착 전용 API(`swopenapi.seoul.go.kr`), 두 개의 업스트림 HTTP API를 `SeoulApiClient`라는 단일 HTTP 클라이언트로 감쌉니다. 이 클라이언트는 키 풀과 폴백, 2단 캐시, 페이지네이션, 일시적 오류 시 1회 재시도, 그리고 XML 폴백 JSON 파서(업스트림이 JSON 요청에도 XML 형태의 에러 본문을 돌려주는 경우가 있음)를 제공합니다. 업스트림 원본 응답은 8가지 서로 다른 봉투(envelope) 형태로 도착하는데, 정규화 계층(`src/normalize`)이 이를 언랩하여 안정적인 도메인 형태로 매핑한 뒤, 23개 MCP tool(`src/tools`)이 이를 호출 에이전트에게 `{data, asOf, source, notes}`라는 하나의 통일된 봉투로 전달합니다. 두 종류의 API 키(`SEOUL_API_KEY`, `SEOUL_SUBWAY_API_KEY`)는 프로세스 환경변수 또는 로컬 `.env` 파일에서 로드되며, 로그나 에러 메시지에 노출되기 전에 항상 마스킹되고, 미설정 시에는 범위가 제한된 내장 샘플 키로 폴백되므로 별도 설정 없이도 서버를 바로 사용할 수 있습니다.
 
 같은 서버가 세 가지 방식으로 실행됩니다. 로컬 stdio 프로세스로, IAM 자격 증명으로 호출하는 AgentCore Runtime 컨테이너로, 그리고 워크숍에서는 공용 워크숍 코드가 있는 요청만 받는 AgentCore Gateway 뒤에서 실행됩니다(`infra/`, 아래 접근과 배포 계층 참조).
+
+`STORE_URI`를 설정하면 서버는 느린 데이터 37종을 미리 받아 둔 스냅샷으로 답합니다. 캐시를 보거나 서울 API를 부르기 전에 스냅샷을 먼저 확인합니다. 워크숍 스택에서는 스냅샷이 S3에 있습니다. 스케줄을 켜면 EventBridge Scheduler가 하루에 한 번 수집 Lambda를 실행해 매일 바뀌는 35종을 받습니다. 시간표 2종은 로컬 명령으로 받습니다.
 
 ## 구성요소
 
@@ -211,7 +223,8 @@ Related architectural decisions are recorded under `docs/decisions/` -- see [ADR
 - **stdio** (`src/index.ts`) -- 로컬 MCP 클라이언트가 시작합니다(`npx -y seoul-opendata-mcp`). 이 경로에서는 AWS 의존성을 불러오지 않습니다.
 - **`src/http.ts`, `Dockerfile`** -- 같은 `buildServer()`를 상태 없는 Streamable HTTP(`:8000`의 `POST /mcp`와 `GET /ping`)로 제공하고, AgentCore Runtime용 `linux/arm64` 이미지로 묶습니다. 시작할 때 `CACHE_TABLE_NAME`이 있으면 `maybeAttachL2`가 공유 DynamoDB 캐시와 쿼터 장부를 연결합니다.
 - **워크숍 Gateway** (`infra/seoul-workshop.yaml`) -- 대상 `seoul` 하나를 가진 AgentCore Gateway이고, 대상은 전용 런타임 `seoul_workshop_mcp`를 가리킵니다. 호출하는 쪽에는 tool이 `seoul___<tool>`로 보입니다. Gateway는 자기 IAM 역할로 런타임을 호출하므로 워크숍 코드만으로는 런타임에 닿지 못합니다.
-- **`scripts/workshop-deploy.ts`, `scripts/workshop-code.ts`** -- 스택을 두 단계로 만들거나 갱신하고, 이미지를 올리고, Gateway 대상을 동기화하고, 워크숍 코드를 발급하거나 폐기합니다.
+- **스냅샷 수집** (`infra/lambda/collect.ts`, `scripts/workshop-collect.ts`) -- 스냅샷은 워크숍 버킷의 `store/v1/` 아래에 있고 워크숍 런타임이 `STORE_URI`로 읽습니다. 수집 스케줄을 켜면 EventBridge Scheduler 스케줄(Asia/Seoul)이 수집 Lambda를 실행합니다. 수집 Lambda는 매일 묶음(35종, 첫 실행에서 서울 API를 98회 호출)을 받고 모든 호출을 쿼터 장부에 기록합니다. 실패한 실행은 다시 시도하지 않습니다. `npm run workshop:collect -- daily|static|status|verify`는 같은 수집기를 터미널에서 실행합니다. 정적 묶음(지하철 시간표, 약 1,850회)은 Lambda의 15분 제한을 넘으므로 이 명령으로만 받습니다.
+- **`scripts/workshop-deploy.ts`, `scripts/workshop-code.ts`, `scripts/workshop-bundle.ts`** -- 스택을 두 단계로 만들거나 갱신합니다. 이미지를 올리고 Lambda 코드를 묶어 올린 뒤 Gateway 대상을 동기화합니다. 수집 스케줄을 켜거나 끄고(`--collect-schedule`) 워크숍 코드를 발급하거나 폐기합니다.
 
 ## 전체 아키텍처 다이어그램
 
@@ -222,12 +235,13 @@ flowchart TB
     LOADENV --> KEYSEL["Key selection + masking (SeoulApiClient ctor)"]
   end
   subgraph ingestion[Ingestion Layer]
-    KEYSEL --> CLIENT["SeoulApiClient<br/>key pool · 2-tier cache · quota ledger"]
+    KEYSEL --> CLIENT["SeoulApiClient<br/>snapshot store, 2-tier cache, key pool, quota ledger"]
     CLIENT -->|"JSON/XML"| OPENAPI(["openapi.seoul.go.kr:8088"])
     CLIENT -->|"JSON"| SUBWAYAPI(["swopenapi.seoul.go.kr"])
     CLIENT --> CACHE[("L1 InMemoryCache + optional L2 DynamoDbCache")]
     CLIENT -.->|"STORE_URI set, asked first"| STORE[("Snapshot store<br/>S3 store/v1 or a directory")]
-    COLLECTOR["workshop:collect<br/>local command or scheduled Lambda"] -->|"gzip JSON snapshots"| STORE
+    COLLECTOR["Collector<br/>workshop:collect or the collect Lambda"] -->|"gzip JSON snapshots"| STORE
+    COLLECTOR -->|"daily bundle, counted on the ledger"| OPENAPI
   end
   subgraph processing[Processing Layer]
     UNWRAP["unwrap() - 8 envelope shapes"]
@@ -249,6 +263,7 @@ flowchart TB
     GATEWAY["AgentCore Gateway<br/>target seoul"]
     INTERCEPTOR["code-check Lambda<br/>code, expiry, per-minute limit"]
     RUNTIME["AgentCore Runtime<br/>src/http.ts, POST /mcp"]
+    SCHEDULE["EventBridge Scheduler<br/>daily in Asia/Seoul, optional"]
     GATEWAY -->|"REQUEST interceptor"| INTERCEPTOR
     GATEWAY -->|"gateway IAM role"| RUNTIME
   end
@@ -259,6 +274,7 @@ flowchart TB
   RUNTIME --> TOOLS
   CACHE -.->|"L2 and quota ledger"| TABLE
   INTERCEPTOR -.->|"rate counter"| TABLE
+  SCHEDULE -->|"invokes the collect Lambda"| COLLECTOR
   ENVELOPE --> AGENT
 ```
 
@@ -268,6 +284,8 @@ flowchart TB
 flowchart LR
   Agent(["LLM Agent"]) --> Tool["MCP Tool"] --> Client["SeoulApiClient<br/>2-tier cache"] --> API(["Seoul Open Data API"])
   Client -.->|"slow data, if STORE_URI"| Store[("Snapshot store")] -.-> Normalize
+  Scheduler(["EventBridge Scheduler"]) -.->|"daily"| Collector["Collector Lambda"] -.->|"snapshots"| Store
+  Collector -.->|"about 100 calls a run"| API
   API --> Cache[("L1+L2 cache")]
   Cache --> Unwrap["unwrap()"]
   Unwrap --> Normalize["normalize/*"]
@@ -283,11 +301,13 @@ flowchart LR
 | 리소스 | 유형 | 목적 |
 |---|---|---|
 | `WorkshopTable` | `AWS::DynamoDB::Table` | L2 캐시 항목, 하루 쿼터 카운터, 분당 호출 카운터. `expireAt`으로 TTL 적용 |
-| `WorkshopBucket` | `AWS::S3::Bucket` | `code/` 아래의 인터셉터 zip |
+| `WorkshopBucket` | `AWS::S3::Bucket` | `code/` 아래의 Lambda zip과 `store/v1/` 아래의 사전 적재 스냅샷(90일 뒤 삭제) |
 | `WorkshopRuntime` | `AWS::BedrockAgentCore::Runtime` | `seoul_workshop_mcp`, 플랫폼 버전 V2, digest로 참조하는 이미지 |
 | `CodeCheckFunction`, `CodeCheckLogGroup` | `AWS::Lambda::Function`, `AWS::Logs::LogGroup` | REQUEST 인터셉터와 14일 보관 로그 그룹 |
 | `WorkshopGateway`, `SeoulTarget` | `AWS::BedrockAgentCore::Gateway`, `AWS::BedrockAgentCore::GatewayTarget` | 참가자용 MCP 엔드포인트와 대상 하나 |
-| `RuntimeRole`, `CodeCheckRole`, `GatewayRole` | `AWS::IAM::Role` | 구성요소마다 역할 하나, 이 스택의 리소스로 범위 제한 |
+| `CollectFunction`, `CollectLogGroup`, `CollectInvokeConfig` | `AWS::Lambda::Function`, `AWS::Logs::LogGroup`, `AWS::Lambda::EventInvokeConfig` | 매일 스냅샷을 받는 수집 함수(`nodejs22.x`, arm64, 1024MB, 제한 시간 15분), 14일 보관 로그 그룹, 실패한 실행을 다시 시도하지 않는 설정. 수집 스케줄을 켰을 때만 만듭니다 |
+| `CollectDailySchedule` | `AWS::Scheduler::Schedule` | `CollectSchedule` 표현식(Asia/Seoul)에 따라 수집 함수를 실행합니다. 수집 스케줄을 켰을 때만 만듭니다 |
+| `RuntimeRole`, `CodeCheckRole`, `GatewayRole`, `CollectRole`, `CollectScheduleRole` | `AWS::IAM::Role` | 구성요소마다 역할 하나, 이 스택의 리소스로 범위 제한 |
 
 이 스택 밖의 런타임은 [`docs/runbooks/agentcore-deploy.md`](runbooks/agentcore-deploy.md)를 따라 손으로 배포합니다.
 
@@ -306,11 +326,11 @@ flowchart LR
 ## 운영
 
 - [`docs/runbooks/agentcore-deploy.md`](runbooks/agentcore-deploy.md) -- AgentCore Runtime 컨테이너(`src/http.ts` / `Dockerfile`)의 배포(ECR push → `create-agent-runtime`), 검증(`/ping`, `tools/list`), 롤백(이전 버전으로 엔드포인트 핀), 장애 대응(L2 캐시 오류의 L1 폴백, 쿼터 소진 stale-only 모드)을 다룹니다.
-- [`docs/workshop.md`](workshop.md) -- 워크숍 스택을 다룹니다. 참가자 등록 방법, 진행자 절차(첫 배포, 코드 발급과 폐기, 행사 중 분당 한도 올리기), 첫 배포의 검증 기록이 있습니다.
+- [`docs/workshop.md`](workshop.md) -- 워크숍 스택을 다룹니다. 참가자 등록 방법, 진행자 절차(첫 배포, 코드 발급과 폐기, 행사 중 분당 한도 올리기, 스냅샷 수집과 매일 수집 스케줄 켜기), 첫 배포와 사전 적재 저장소의 검증 기록이 있습니다.
 
 아직 작성되지 않은, 다음으로 필요해질 가능성이 높은 런북들 -- 추가할 때 사용할 형식은 [`docs/runbooks/.template.md`](runbooks/.template.md)를 참고하세요.
 
 - **키 회전 / 샘플 모드 진단** 런북(보안 계층) -- tool 응답에 예기치 않게 샘플 모드 안내나 `INFO-100` 등 키 관련 `SeoulApiError`가 나타날 때 확인할 사항.
 - **MCPB 번들·릴리스** 런북 -- `seoul-opendata-mcp.mcpb`와 npm 패키지를 만드는 `npm run build` → `npm run bundle` → `npm run prepublishOnly` 절차.
 
-관련 아키텍처 결정은 `docs/decisions/` 아래에 기록되어 있습니다 -- [ADR-001](decisions/ADR-001-fixtures-as-source-of-truth.md), [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md), [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md), [ADR-004](decisions/ADR-004-session-scaling-two-tier-cache.md), [ADR-005](decisions/ADR-005-workshop-shared-code-at-the-gateway.md), [ADR-006](decisions/ADR-006-key-pool-with-key-independent-cache-keys.md)을 참고하세요. 새 결정을 추가할 때는 [`docs/decisions/.template.md`](decisions/.template.md)를 사용합니다.
+관련 아키텍처 결정은 `docs/decisions/` 아래에 기록되어 있습니다 -- [ADR-001](decisions/ADR-001-fixtures-as-source-of-truth.md), [ADR-002](decisions/ADR-002-hybrid-tool-exposure.md), [ADR-003](decisions/ADR-003-single-http-path-and-env-keys.md), [ADR-004](decisions/ADR-004-session-scaling-two-tier-cache.md), [ADR-005](decisions/ADR-005-workshop-shared-code-at-the-gateway.md), [ADR-006](decisions/ADR-006-key-pool-with-key-independent-cache-keys.md), [ADR-007](decisions/ADR-007-snapshot-store-with-server-side-filters.md)을 참고하세요. 새 결정을 추가할 때는 [`docs/decisions/.template.md`](decisions/.template.md)를 사용합니다.

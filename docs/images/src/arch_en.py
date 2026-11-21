@@ -3,7 +3,7 @@ from arch_page import render
 
 T = dict(
     title="Seoul OpenData MCP Architecture",
-    sub_en="Access Paths, Request Pipeline, Quota Protection",
+    sub_en="Access Paths, Request Pipeline, Snapshot Store, Quota Protection",
     sub_ko="as of v0.8.0",
     s1=("Three Access Paths", "Same server code, different authentication"),
     lanes=[
@@ -17,15 +17,24 @@ T = dict(
              run=("Dedicated Runtime", "called with the gateway role")),
     ],
     server=("MCP server", "23 tools", "121 hotspots", "52-dataset catalog"),
-    s2=("Request Pipeline", "Every upstream call takes one path"),
+    s2=("Request Pipeline and Snapshot Store", "One upstream path, snapshots first for slow data"),
     steps=[
         ("MCP tool", "23 tools, zod input checks", "blue", False),
-        ("SeoulApiClient", "store, key pool, cache, retry", "purple", False),
+        ("SeoulApiClient", "store, cache, then key pool", "purple", False),
         ("Seoul Open Data Plaza API", "openapi, swopenapi", None, False),
         ("unwrap", "8 envelope shapes", "blue", False),
         ("normalize", "per-domain field mapping", "blue", False),
         ("ok() envelope", "{data, asOf, source, notes}", "green", True),
     ],
+    store=dict(
+        s3=("S3 snapshot store", "store/v1, gzip JSON snapshots"),
+        tags=["37 datasets", "90-day expiry"],
+        fn=("Collector Lambda", "35 datasets, ledger-counted"),
+        sched=("EventBridge Scheduler", "e.g. daily 05:00 KST, optional"),
+        read="asked first",
+        call="about 100 calls per run",
+    ),
+    insight=("37 slow-changing datasets from snapshots", "No upstream call. Other requests keep the cache and API path"),
     s3=("Quota Protection in Three Layers", "Guards the default 1,000 calls per key per day"),
     cards=[
         ("Key pool", "purple", "budget = keys × limit",
@@ -37,7 +46,6 @@ T = dict(
         ("Quota ledger", "orange", "per KST day",
          ["Call count per key", "Usage note at 80%", "Cache-only answers at 100%"]),
     ],
-    insight=("Snapshot store first", "37 slow-changing datasets are answered from S3 snapshots with no upstream call"),
     s4=("Workshop Gateway Checks", "Code, expiry, then per-minute limit"),
     head=("Check", "On failure"),
     rows=[
@@ -46,8 +54,8 @@ T = dict(
         ("Rate limit", "120 tools/call per minute by default", "isError result"),
     ],
     **{"pass": "On pass, the gateway calls the dedicated Runtime with its IAM role"},
-    ddb=("One DynamoDB table", "Cache, quota ledger and per-minute counters"),
-    note="As of v0.8.0. Numbers are default settings",
+    ddb=("One DynamoDB table", "Cache, quota ledger, rate counters"),
+    note="As of v0.8.0. Numbers are default settings; calls per run measured on the first run, 2026-11-22 (98)",
 )
 
 

@@ -35,7 +35,7 @@ Seoul OpenData MCP is a stdio [MCP](https://modelcontextprotocol.io) server, wri
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-en-dark.png">
-  <img src="docs/images/architecture-en-light.png" alt="Seoul OpenData MCP architecture: three access paths, the request pipeline, quota protection in three layers, and the workshop gateway checks" width="100%">
+  <img src="docs/images/architecture-en-light.png" alt="Seoul OpenData MCP architecture: three access paths, the request pipeline with the snapshot store and its daily collection, quota protection in three layers, and the workshop gateway checks" width="100%">
 </picture>
 
 Inside the server, a request passes through these layers:
@@ -48,6 +48,7 @@ flowchart TD
     Normalize --> Client["SeoulApiClient<br/>TTL cache · retry · key masking · sample clamp"]
     Client --> APIs[("Seoul Open Data Plaza<br/>openapi.seoul.go.kr")]
     Client --> Subway[("swopenapi<br/>realtime arrivals")]
+    Client -.->|"STORE_URI set, asked first"| Store[("Snapshot store<br/>S3 or a directory, optional")]
     ENV[".env / env keys"] -.-> Client
 ```
 
@@ -55,6 +56,7 @@ flowchart TD
 - Every tool returns the same `{data, asOf, source, notes}` envelope, regardless of which of the 8 raw upstream shapes it started from.
 - Per-service cache TTLs (5 min citydata/bike/parking/air, 6h cultural events, 15s subway arrivals) protect the ~1,000-call/day free quota.
 - API keys are masked before they can ever appear in a log line or an error message.
+- With `STORE_URI` set, slow-changing datasets are answered from pre-collected snapshots with no upstream call, and the response `notes` carry the collection date (recorded as [ADR-007](docs/decisions/ADR-007-snapshot-store-with-server-side-filters.md)).
 
 ## Prerequisites
 
@@ -289,7 +291,6 @@ cp .env.example .env
 - Bike stations, parking lots, air quality, cultural events, subway arrivals and timetables, public reservations, pharmacies, and the batch statistics tools are **not** limited to the 121 hotspots — they cover their respective full Seoul-wide datasets (e.g. all 25 districts for air quality, ~3,000 bike stations).
 - **Real-estate filters** — year, district, legal dong (when given with `district`), building name, and building type are applied by the upstream API. `rentType`, and a `dong` given without `district`, are applied only within the latest 500 rows. `get_land_price` returns parcels in API order, not sorted by price.
 - **Catalog tools cover 52 curated datasets** — `search_dataset` / `get_dataset_spec` / `call_dataset` give raw access to datasets that don't (yet) have a dedicated normalized tool.
-- With `STORE_URI` set, slow-changing datasets are answered from pre-collected snapshots with no upstream call, and the response `notes` carry the collection date (recorded as [ADR-007](docs/decisions/ADR-007-snapshot-store-with-server-side-filters.md)).
 
 ## Project Structure
 
@@ -370,7 +371,7 @@ Seoul OpenData MCP는 TypeScript로 작성된 stdio [MCP](https://modelcontextpr
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-ko-dark.png">
-  <img src="docs/images/architecture-ko-light.png" alt="Seoul OpenData MCP 아키텍처: 접근 경로 3종, 요청 처리 흐름, 쿼터 보호 3단, 워크숍 Gateway 검사" width="100%">
+  <img src="docs/images/architecture-ko-light.png" alt="Seoul OpenData MCP 아키텍처: 접근 경로 3종, 요청 처리 흐름과 사전 적재 저장소의 매일 수집, 쿼터 보호 3단, 워크숍 Gateway 검사" width="100%">
 </picture>
 
 서버 안에서 요청은 다음 계층을 거칩니다.
@@ -383,6 +384,7 @@ flowchart TD
     Normalize --> Client["SeoulApiClient<br/>TTL cache · retry · key masking · sample clamp"]
     Client --> APIs[("Seoul Open Data Plaza<br/>openapi.seoul.go.kr")]
     Client --> Subway[("swopenapi<br/>realtime arrivals")]
+    Client -.->|"STORE_URI set, asked first"| Store[("Snapshot store<br/>S3 or a directory, optional")]
     ENV[".env / env keys"] -.-> Client
 ```
 
