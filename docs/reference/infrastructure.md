@@ -25,8 +25,8 @@ The infrastructure layer is what the server runs on outside a local stdio sessio
 | Interceptor Lambda | `infra/lambda/code-check.mjs`, `CodeCheckFunction` | `nodejs22.x`, arm64, 128 MB, 5 s timeout. Checks the shared code, its expiry and the per-minute `tools/call` limit before the gateway forwards a request |
 | Collector Lambda (optional) | `infra/lambda/collect.ts`, `CollectFunction`, `CollectDailySchedule` | Created only when `CollectSchedule` is set. `nodejs22.x`, arm64, 1024 MB, 15-minute timeout. An EventBridge Scheduler schedule in Asia/Seoul runs the daily collection; failed runs are not retried |
 | Workshop gateway | `infra/seoul-workshop.yaml` (`WorkshopGateway`, `SeoulTarget`) | AgentCore Gateway with `AuthorizerType: NONE` and one REQUEST interceptor. Target `seoul` points at the workshop runtime, so tools appear as `seoul___<tool>` |
-| IAM roles | `infra/seoul-workshop.yaml` (`RuntimeRole`, `CodeCheckRole`, `GatewayRole`) | Runtime: pull from the one repository, write its own log groups, get/put/update on the table, read `store/*` in the bucket. Lambda: write its log group, `UpdateItem` on the table. Gateway: invoke the interceptor and the workshop runtime |
-| Log groups | CloudWatch Logs | `/aws/lambda/<stack>-code-check` (14-day retention) and `/aws/bedrock-agentcore/runtimes/seoul_workshop_mcp-<id>-DEFAULT` |
+| IAM roles | `infra/seoul-workshop.yaml` (`RuntimeRole`, `CodeCheckRole`, `GatewayRole`, and with a schedule `CollectRole`, `CollectScheduleRole`) | Runtime: pull from the one repository, write its own log groups, get/put/update on the table, read `store/*` in the bucket. Interceptor Lambda: write its log group, `UpdateItem` on the table. Gateway: invoke the interceptor and the workshop runtime. Collector Lambda: write its log group, read and write `store/*` in the bucket, `GetItem` and `UpdateItem` on the table. Schedule role: invoke the collector function only |
+| Log groups | CloudWatch Logs | `/aws/lambda/<stack>-code-check` (14-day retention), `/aws/bedrock-agentcore/runtimes/seoul_workshop_mcp-<id>-DEFAULT`, and with a schedule `/aws/lambda/<stack>-collect` (14-day retention) |
 
 ### 3. Key Decisions
 
@@ -76,8 +76,8 @@ The infrastructure layer is what the server runs on outside a local stdio sessio
 | 인터셉터 Lambda | `infra/lambda/code-check.mjs`, `CodeCheckFunction` | `nodejs22.x`, arm64, 128MB, 제한 시간 5초입니다. Gateway가 요청을 넘기기 전에 공용 코드, 만료, 분당 `tools/call` 한도를 확인합니다 |
 | 수집 Lambda(선택) | `infra/lambda/collect.ts`, `CollectFunction`, `CollectDailySchedule` | `CollectSchedule`을 넣었을 때만 만듭니다. `nodejs22.x`, arm64, 1024MB, 제한 시간 15분. EventBridge Scheduler 스케줄(Asia/Seoul)이 매일 수집을 실행하고, 실패한 실행은 다시 시도하지 않습니다 |
 | 워크숍 Gateway | `infra/seoul-workshop.yaml`(`WorkshopGateway`, `SeoulTarget`) | `AuthorizerType: NONE`에 REQUEST 인터셉터 하나를 둔 AgentCore Gateway입니다. 대상 `seoul`이 워크숍 런타임을 가리키므로 tool 이름은 `seoul___<tool>`로 보입니다 |
-| IAM 역할 | `infra/seoul-workshop.yaml`(`RuntimeRole`, `CodeCheckRole`, `GatewayRole`) | 런타임은 저장소 하나에서 이미지를 받고, 자기 로그 그룹에 쓰고, 테이블에 get, put, update를 합니다, 버킷의 `store/*` 읽기. Lambda는 자기 로그 그룹에 쓰고 테이블에 `UpdateItem`만 합니다. Gateway는 인터셉터와 워크숍 런타임만 호출합니다 |
-| 로그 그룹 | CloudWatch Logs | `/aws/lambda/<스택>-code-check`(14일 보관)와 `/aws/bedrock-agentcore/runtimes/seoul_workshop_mcp-<id>-DEFAULT`입니다 |
+| IAM 역할 | `infra/seoul-workshop.yaml`(`RuntimeRole`, `CodeCheckRole`, `GatewayRole`, 스케줄을 켜면 `CollectRole`, `CollectScheduleRole`) | 런타임은 저장소 하나에서 이미지를 받고, 자기 로그 그룹에 쓰고, 테이블에 get, put, update를 하고, 버킷의 `store/*`를 읽습니다. 인터셉터 Lambda는 자기 로그 그룹에 쓰고 테이블에 `UpdateItem`만 합니다. Gateway는 인터셉터와 워크숍 런타임만 호출합니다. 수집 Lambda는 자기 로그 그룹에 쓰고, 버킷의 `store/*`를 읽고 쓰고, 테이블에 `GetItem`과 `UpdateItem`을 합니다. 스케줄 역할은 수집 함수만 호출합니다 |
+| 로그 그룹 | CloudWatch Logs | `/aws/lambda/<스택>-code-check`(14일 보관)와 `/aws/bedrock-agentcore/runtimes/seoul_workshop_mcp-<id>-DEFAULT`입니다. 스케줄을 켜면 `/aws/lambda/<스택>-collect`(14일 보관)가 더해집니다 |
 
 ### 3. 주요 결정
 
