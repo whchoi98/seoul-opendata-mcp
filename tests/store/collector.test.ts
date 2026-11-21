@@ -279,7 +279,7 @@ describe('collect', () => {
     expect(quiet).toEqual([])
   })
 
-  it('실제 호출 수가 예상 상한의 2배에 10회를 더한 값에 닿으면 실행을 끝내고, 그 데이터셋은 쓰지 않는다', async () => {
+  it('실제 호출 수가 예상 상한의 2배에 10회를 더한 값에 닿으면 실행을 끝낸다. 그 데이터셋은 쓰지 않는다', async () => {
     const m = memoryStore()
     const fullPage = Array.from({ length: PAGE }, (_, i) => ({ i }))
     // 공영주차장 안내의 전체 건수가 규칙 표의 가정(3페이지)보다 훨씬 크다

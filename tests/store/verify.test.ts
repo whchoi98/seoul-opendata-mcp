@@ -66,7 +66,7 @@ describe('casesFor', () => {
     ])
   })
 
-  it('일치 자리도 앞부분으로 시험하고, 한 글자 값은 앞부분이 같아 만들지 않는다', () => {
+  it('일치 자리도 앞부분으로 시험한다. 한 글자 값은 앞부분이 같아 만들지 않는다', () => {
     expect(casesFor(PARK, STORE_RULES[PARK], []).map(c => [c.label, c.path])).toEqual([
       ['인자 없음', []],
       ['ADDR만', ['강남']],
@@ -378,7 +378,7 @@ describe('runVerify', () => {
     expect(report.aborted).toContain('소진되어')
   })
 
-  it('요청이 실패하면 거기서 끝내고 그때까지의 결과를 남기며, 도중에 끊긴 서비스는 판정하지 않는다', async () => {
+  it('요청이 실패하면 거기서 끝내고 그때까지의 결과를 남긴다. 도중에 끊긴 서비스는 판정하지 않는다', async () => {
     const events = [{ CODENAME: '콘서트', TITLE: '서울 재즈 페스티벌' }, { CODENAME: '클래식', TITLE: '부산 실내악' }]
     const m = memoryStore()
     m.seed('culturalEventInfo', [], events)

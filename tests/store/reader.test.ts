@@ -186,7 +186,7 @@ describe('SnapshotReader', () => {
     expect(s.gets).toHaveLength(1)
   })
 
-  it('재확인이 시간 제한을 넘으면 가진 스냅샷으로 답하고, 늦게 끝난 읽기의 새 내용은 다음 요청부터 쓴다', async () => {
+  it('재확인이 시간 제한을 넘으면 가진 스냅샷으로 답한다. 늦게 끝난 읽기의 새 내용은 다음 요청부터 쓴다', async () => {
     const s = setup({ timeoutMs: 20 })
     await s.seed(snap(PHARMACY, [], rows))
     const first = await s.reader.lookup(PHARMACY, 1, 10, [])
@@ -236,13 +236,13 @@ describe('SnapshotReader', () => {
     await s.reader.lookup(STATS, 1, 10, [days[1]])
     await s.reader.lookup(STATS, 1, 10, [days[2]]) // 상한 초과: 재확인 중인 0이 밀려난다
     release()
-    expect((await revalidating)!.value.totalCount).toBe(1) // 바뀌지 않았다는 답으로 0을 다시 넣고, 상한을 넘어 1을 버린다
+    expect((await revalidating)!.value.totalCount).toBe(1) // 바뀌지 않았다는 답으로 0을 다시 넣는다. 상한을 넘으므로 1을 버린다
     const reads = () => s.gets.filter(g => g.key !== key(days[0]) || g.ifNoneMatch === undefined).length
     expect(reads()).toBe(3)
     await s.reader.lookup(STATS, 1, 10, [days[2]])
     await s.reader.lookup(STATS, 1, 10, [days[0]])
     expect(reads()).toBe(3) // 0과 2만 메모리에 있다
-    await s.reader.lookup(STATS, 1, 10, [days[1]]) // 1은 다시 읽고, 상한을 넘어 가장 오래 안 쓴 2를 버린다
+    await s.reader.lookup(STATS, 1, 10, [days[1]]) // 1은 다시 읽는다. 상한을 넘으므로 가장 오래 안 쓴 2를 버린다
     expect(reads()).toBe(4)
     await s.reader.lookup(STATS, 1, 10, [days[0]])
     await s.reader.lookup(STATS, 1, 10, [days[1]])
