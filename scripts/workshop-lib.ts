@@ -14,7 +14,7 @@ export const CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
 /** infra/seoul-workshop.yaml의 파라미터. 순서는 출력용으로만 의미가 있다 */
 export const PARAMETERS = [
   'McpImageUri', 'McpRepositoryName', 'CodeKey', 'SeoulApiKey', 'SeoulSubwayApiKey',
-  'CodeSha256', 'CodeValidUntil', 'RatePerMinute', 'QuotaDailyLimit',
+  'CodeSha256', 'CodeValidUntil', 'RatePerMinute', 'QuotaDailyLimit', 'CollectSchedule', 'CollectCodeKey',
 ] as const
 export type ParameterName = typeof PARAMETERS[number]
 
@@ -52,12 +52,19 @@ export function kstIso(ms: number): string {
   return `${new Date(ms + 9 * 3_600_000).toISOString().slice(0, 19)}+09:00`
 }
 
-/** create: 주지 않은 파라미터는 빼서 템플릿 기본값을 쓴다. update: 주지 않은 파라미터는 이전 값을 유지한다 */
-export function stackParameters(given: Partial<Record<ParameterName, string>>, mode: 'create' | 'update'): StackParameter[] {
+/**
+ * create: 주지 않은 파라미터는 빼서 템플릿 기본값을 쓴다. update: 주지 않은 파라미터는 이전 값을 유지한다.
+ * existing은 스택이 지금 가진 파라미터 이름이다. 거기 없는 파라미터(템플릿에 새로 생긴 것)에는
+ * UsePreviousValue를 보낼 수 없으므로 빼서 템플릿 기본값을 쓴다
+ */
+export function stackParameters(
+  given: Partial<Record<ParameterName, string>>, mode: 'create' | 'update', existing?: readonly string[],
+): StackParameter[] {
   return PARAMETERS.flatMap((key): StackParameter[] => {
     const value = given[key]
     if (value !== undefined) return [{ ParameterKey: key, ParameterValue: value }]
-    return mode === 'update' ? [{ ParameterKey: key, UsePreviousValue: true }] : []
+    if (mode === 'create') return []
+    return existing && !existing.includes(key) ? [] : [{ ParameterKey: key, UsePreviousValue: true }]
   })
 }
 
@@ -66,8 +73,8 @@ export function imageTag(version: string, commit: string): string {
 }
 
 /** zip은 만들 때마다 안의 시각이 달라지므로 원본 파일의 해시로 키를 정한다 */
-export function codeKeyOf(source: string | Buffer): string {
-  return `code/code-check-${sha256Hex(source).slice(0, 16)}.zip`
+export function codeKeyOf(source: string | Buffer, name = 'code-check'): string {
+  return `code/${name}-${sha256Hex(source).slice(0, 16)}.zip`
 }
 
 /** 스택이 지금 갱신하거나 삭제할 수 없는 상태면 그 이유를 돌려준다. 정상 상태나 스택이 없으면 undefined */

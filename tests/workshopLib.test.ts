@@ -95,3 +95,30 @@ describe('parseCollectDays', () => {
     for (const bad of ['0', '61', '1.5', 'two', '']) expect(() => parseCollectDays(bad)).toThrow('--days')
   })
 })
+
+describe('새 파라미터와 수집 코드 키', () => {
+  it('PARAMETERS에 수집 스케줄 파라미터가 있다', () => {
+    expect(PARAMETERS).toContain('CollectSchedule')
+    expect(PARAMETERS).toContain('CollectCodeKey')
+  })
+
+  it('update에서 스택에 아직 없는 파라미터는 빼서 템플릿 기본값을 쓴다', () => {
+    const existing = ['McpImageUri', 'McpRepositoryName', 'CodeKey', 'SeoulApiKey', 'SeoulSubwayApiKey', 'CodeSha256', 'CodeValidUntil', 'RatePerMinute', 'QuotaDailyLimit']
+    const params = stackParameters({ CodeKey: 'code/x.zip', CollectCodeKey: 'code/collect-1.zip' }, 'update', existing)
+    expect(params.map(p => p.ParameterKey)).not.toContain('CollectSchedule')
+    expect(params.find(p => p.ParameterKey === 'CollectCodeKey')).toEqual({ ParameterKey: 'CollectCodeKey', ParameterValue: 'code/collect-1.zip' })
+    expect(params.find(p => p.ParameterKey === 'SeoulApiKey')).toEqual({ ParameterKey: 'SeoulApiKey', UsePreviousValue: true })
+    expect(params).toHaveLength(10)
+  })
+
+  it('스택에 이미 있는 파라미터는 이전 값을 유지한다', () => {
+    const params = stackParameters({}, 'update', [...PARAMETERS])
+    expect(params).toHaveLength(PARAMETERS.length)
+    expect(params.every(p => p.UsePreviousValue === true)).toBe(true)
+  })
+
+  it('코드 키는 이름을 바꿔 쓸 수 있다', () => {
+    expect(codeKeyOf('a', 'collect')).toMatch(/^code\/collect-[0-9a-f]{16}\.zip$/)
+    expect(codeKeyOf('a')).toMatch(/^code\/code-check-[0-9a-f]{16}\.zip$/)
+  })
+})

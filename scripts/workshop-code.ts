@@ -5,7 +5,7 @@
  */
 import { parseArgs } from 'node:util'
 import { STACK, kstIso, newCode, parseDays, sha256Hex, stackBlocker, stackParameters } from './workshop-lib.js'
-import { describeStack, stackParameterValue, updateStack } from './workshop-aws.js'
+import { describeStack, stackParameterKeys, stackParameterValue, updateStack } from './workshop-aws.js'
 
 const USAGE = `사용법:
   npm run workshop:code -- new [--days N]   새 코드 발급(기본 1일, 최대 14일)
@@ -32,13 +32,13 @@ function main(): void {
   if (command === 'new') {
     const code = newCode()
     const until = kstIso(Date.now() + days * 86_400_000)
-    updateStack(stackParameters({ CodeSha256: sha256Hex(code), CodeValidUntil: until }, 'update'))
+    updateStack(stackParameters({ CodeSha256: sha256Hex(code), CodeValidUntil: until }, 'update', stackParameterKeys(stack)))
     console.log(`새 워크숍 코드: ${code}\n만료: ${until}\n이 코드는 다시 출력되지 않습니다.`)
     return
   }
   if (command === 'revoke') {
     const now = kstIso(Date.now())
-    updateStack(stackParameters({ CodeValidUntil: now }, 'update'))
+    updateStack(stackParameters({ CodeValidUntil: now }, 'update', stackParameterKeys(stack)))
     console.log(`코드를 폐기했습니다(만료 시각 ${now})`)
     return
   }

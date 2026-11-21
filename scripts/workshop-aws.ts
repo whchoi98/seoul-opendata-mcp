@@ -47,6 +47,11 @@ export function stackParameterValue(stack: any, key: string): string | undefined
   return (stack?.Parameters ?? []).find((p: any) => p.ParameterKey === key)?.ParameterValue
 }
 
+/** 스택이 지금 가진 파라미터 이름. 템플릿에 새로 생긴 파라미터를 가려내는 데 쓴다 */
+export function stackParameterKeys(stack: any): string[] {
+  return (stack?.Parameters ?? []).map((p: any) => p.ParameterKey)
+}
+
 /** 실패한 리소스와 이유. 배포가 실패했을 때 원인을 바로 보여 준다 */
 function failureReasons(): string {
   try {

@@ -14,13 +14,15 @@ import { parseDotEnv } from '../src/client/env.js'
 import {
   REGION, REPOSITORY, STACK, codeKeyOf, imageTag, registrationCommand, stackBlocker, stackParameters, type ParameterName,
 } from './workshop-lib.js'
-import { aws, awsJson, createStack, deleteStack, describeStack, run, sleep, stackOutputs, updateStack } from './workshop-aws.js'
+import { aws, awsJson, createStack, deleteStack, describeStack, run, sleep, stackOutputs, stackParameterKeys, updateStack } from './workshop-aws.js'
+import { bundleCollectLambda } from './workshop-bundle.js'
 
 const USAGE = `사용법:
   npm run workshop:deploy -- --env-file .env        처음 배포(키 필수). 이후에 주면 키를 바꾼다
   npm run workshop:deploy                           키는 그대로 두고 이미지와 인터셉터 코드를 갱신
   npm run workshop:deploy -- --skip-image           이미지는 그대로 두고 템플릿과 파라미터만 반영
   npm run workshop:deploy -- --skip-image --rate-per-minute 3 --quota-daily-limit 2   검증용 값
+  npm run workshop:deploy -- --skip-image --collect-schedule "cron(0 5 * * ? *)"   매일 05:00(KST)에 스냅샷 수집. ""를 주면 끈다
   npm run workshop:deploy -- --delete [--yes]       버킷을 비우고 스택 삭제(--yes가 없으면 계획만 출력)
 스모크 테스트에서 코드 있는 호출까지 하려면 SEOUL_WORKSHOP_CODE 환경 변수에 코드를 넣는다.`
 
@@ -34,6 +36,7 @@ const { values } = parseArgs({
     'skip-image': { type: 'boolean', default: false },
     'rate-per-minute': { type: 'string' },
     'quota-daily-limit': { type: 'string' },
+    'collect-schedule': { type: 'string' },
     delete: { type: 'boolean', default: false },
     yes: { type: 'boolean', default: false },
     help: { type: 'boolean', default: false },
@@ -99,6 +102,30 @@ function uploadCode(bucket: string): string {
     rmSync(dir, { recursive: true, force: true })
   }
   return key
+}
+
+/** 수집 Lambda를 묶어 올린다. 스케줄을 켜지 않아도 올려 두어, 나중에 파라미터만 바꿔 켤 수 있게 한다 */
+async function uploadCollector(bucket: string): Promise<string> {
+  const dir = mkdtempSync(join(tmpdir(), 'seoul-collect-'))
+  try {
+    const bundle = join(dir, 'collect.mjs')
+    await bundleCollectLambda(bundle)
+    const key = codeKeyOf(readFileSync(bundle), 'collect')
+    try {
+      aws(['s3api', 'head-object', '--bucket', bucket, '--key', key])
+      console.log(`수집 코드 ${key}가 이미 있습니다`)
+      return key
+    } catch {
+      // 없으면 아래에서 올린다
+    }
+    const zip = join(dir, 'collect.zip')
+    run('zip', ['-q', '-X', zip, 'collect.mjs'], { cwd: dir })
+    aws(['s3api', 'put-object', '--bucket', bucket, '--key', key, '--body', zip])
+    console.log(`수집 코드 ${key}를 올렸습니다`)
+    return key
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 function checkRuntime(runtimeId: string): void {
@@ -224,12 +251,16 @@ async function main(): Promise<void> {
   if (values['skip-image'] && !created.RuntimeId) throw new Error('아직 런타임이 없어 --skip-image를 쓸 수 없습니다')
   const image = values['skip-image'] ? undefined : pushImage()
   const codeKey = uploadCode(created.BucketName)
+  const collectKey = await uploadCollector(created.BucketName)
 
-  const given: Partial<Record<ParameterName, string>> = { CodeKey: codeKey, ...(keys ?? {}) }
+  const given: Partial<Record<ParameterName, string>> = { CodeKey: codeKey, CollectCodeKey: collectKey, ...(keys ?? {}) }
   if (image) given.McpImageUri = image
   if (values['rate-per-minute']) given.RatePerMinute = values['rate-per-minute']
   if (values['quota-daily-limit']) given.QuotaDailyLimit = values['quota-daily-limit']
-  console.log(updateStack(stackParameters(given, 'update'), TEMPLATE) ? '스택을 갱신했습니다' : '스택에 바뀐 것이 없습니다')
+  // 빈 문자열도 값이다: 스케줄을 끈다
+  if (values['collect-schedule'] !== undefined) given.CollectSchedule = values['collect-schedule']
+  const parameters = stackParameters(given, 'update', stackParameterKeys(stack))
+  console.log(updateStack(parameters, TEMPLATE) ? '스택을 갱신했습니다' : '스택에 바뀐 것이 없습니다')
 
   const out = stackOutputs(describeStack())
   checkRuntime(out.RuntimeId)

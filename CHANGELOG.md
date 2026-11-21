@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Snapshot store (`src/store/`): with `STORE_URI` set (`s3://<bucket>/store/v1` or a directory), the server answers 37 slow-changing datasets from pre-collected gzip JSON snapshots before it touches the cache, the key pool, or the quota ledger. A request answered from the store makes no upstream call, and stored data keeps answering after every key has reached its daily limit. Such responses carry a `사전 적재 데이터(M월 D일 수집)` note. Requests the store cannot answer take the existing path unchanged, and without `STORE_URI` nothing changes.
 - `npm run workshop:collect -- daily|static|status|verify`: collects snapshots with the workshop keys, records its calls in the quota ledger, skips what was collected recently, and compares snapshots with the live API.
 - Workshop stack: the runtime reads `store/` in the workshop bucket through `STORE_URI`, and snapshots expire after 90 days.
+- Optional schedule: `npm run workshop:deploy -- --skip-image --collect-schedule "cron(0 5 * * ? *)"` sets the `CollectSchedule` stack parameter, and an EventBridge Scheduler schedule then runs the daily collection in a Lambda function (`infra/lambda/collect.ts`, bundled with esbuild). Empty by default, in which case the stack creates none of these resources.
 
 ### Changed
 
@@ -183,6 +184,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 사전 적재 저장소(`src/store/`): `STORE_URI`(`s3://<버킷>/store/v1` 또는 디렉터리)를 설정하면 하루 단위 이상으로 바뀌는 데이터셋 37종을 미리 받아 둔 gzip JSON 스냅샷으로 답함. 캐시, 키 풀, 쿼터 장부보다 먼저 조회하므로 저장소가 답한 요청은 서울 API 호출이 0회이고, 모든 키가 하루 한도에 닿아도 저장된 데이터는 계속 나감. 응답에 `사전 적재 데이터(M월 D일 수집)` 안내 추가. 저장소가 답하지 못하는 요청은 기존 경로 그대로이고, `STORE_URI`가 없으면 동작 변화 없음
 - `npm run workshop:collect -- daily|static|status|verify`: 워크숍 키로 스냅샷 수집, 수집 호출의 쿼터 장부 기록, 최근에 받은 스냅샷 건너뛰기, 실제 API 대비 검사
 - 워크숍 스택: 런타임이 `STORE_URI`로 워크숍 버킷의 `store/`를 읽음. 스냅샷은 90일 뒤 삭제
+- 선택적 스케줄: `npm run workshop:deploy -- --skip-image --collect-schedule "cron(0 5 * * ? *)"`로 스택 파라미터 `CollectSchedule`을 넣으면 EventBridge Scheduler 스케줄이 Lambda(`infra/lambda/collect.ts`, esbuild로 묶음)로 매일 수집 실행. 기본값은 빈 문자열이고 이때는 관련 리소스를 만들지 않음
 
 ### Changed
 

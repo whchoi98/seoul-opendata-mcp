@@ -55,11 +55,20 @@ Parameters:
     Default: 1000
     MinValue: 1
     Description: Daily upstream calls per Seoul API key (QUOTA_DAILY_LIMIT of the server).
+  CollectSchedule:
+    Type: String
+    Default: ""
+    Description: EventBridge Scheduler expression in Asia/Seoul for the daily snapshot collection, for example cron(0 5 * * ? *). Empty disables the schedule.
+  CollectCodeKey:
+    Type: String
+    Default: ""
+    Description: S3 key of the collector zip in WorkshopBucket. Empty disables the schedule.
 
 Conditions:
   HasImage: !Not [!Equals [!Ref McpImageUri, ""]]
   HasCode: !Not [!Equals [!Ref CodeKey, ""]]
   HasAll: !And [!Condition HasImage, !Condition HasCode]
+  HasSchedule: !And [!Not [!Equals [!Ref CollectSchedule, ""]], !Not [!Equals [!Ref CollectCodeKey, ""]]]
 
 Resources:
   WorkshopTable:
@@ -225,6 +234,120 @@ Resources:
           VALID_UNTIL: !Ref CodeValidUntil
           RATE_PER_MINUTE: !Ref RatePerMinute
           TABLE_NAME: !Ref WorkshopTable
+
+  CollectLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: HasSchedule
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-collect"
+      RetentionInDays: 14
+
+  CollectRole:
+    Type: AWS::IAM::Role
+    Condition: HasSchedule
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: collect
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Logs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-collect:*"
+              - Sid: StoreReadWrite
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub "${WorkshopBucket.Arn}/store/*"
+              - Sid: StoreList
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt WorkshopBucket.Arn
+                Condition:
+                  StringLike: {"s3:prefix": "store/*"}
+              - Sid: QuotaLedger
+                Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+                Resource: !GetAtt WorkshopTable.Arn
+
+  CollectFunction:
+    # Runs the daily bundle only. The static bundle (about 1,850 calls) exceeds the 15 minute limit and is run locally.
+    Type: AWS::Lambda::Function
+    Condition: HasSchedule
+    DependsOn: CollectLogGroup
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-collect"
+      Description: Collects the daily snapshot bundle into store/v1 of the workshop bucket.
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      Handler: collect.handler
+      MemorySize: 1024
+      Timeout: 900
+      Role: !GetAtt CollectRole.Arn
+      Code:
+        S3Bucket: !Ref WorkshopBucket
+        S3Key: !Ref CollectCodeKey
+      Environment:
+        Variables:
+          SEOUL_API_KEY: !Ref SeoulApiKey
+          STORE_URI: !Sub "s3://${WorkshopBucket}/store/v1"
+          TABLE_NAME: !Ref WorkshopTable
+          QUOTA_DAILY_LIMIT: !Ref QuotaDailyLimit
+
+  CollectInvokeConfig:
+    # A failed run is not retried: a retry would spend quota again. The next scheduled run picks up where it stopped.
+    Type: AWS::Lambda::EventInvokeConfig
+    Condition: HasSchedule
+    Properties:
+      FunctionName: !Ref CollectFunction
+      Qualifier: $LATEST
+      MaximumRetryAttempts: 0
+
+  CollectScheduleRole:
+    Type: AWS::IAM::Role
+    Condition: HasSchedule
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: scheduler.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: {"aws:SourceAccount": !Ref "AWS::AccountId"}
+      Policies:
+        - PolicyName: invoke-collect
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Invoke
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt CollectFunction.Arn
+
+  CollectDailySchedule:
+    Type: AWS::Scheduler::Schedule
+    Condition: HasSchedule
+    Properties:
+      Name: !Sub "${AWS::StackName}-collect-daily"
+      Description: Runs the daily snapshot collection.
+      ScheduleExpression: !Ref CollectSchedule
+      ScheduleExpressionTimezone: Asia/Seoul
+      FlexibleTimeWindow: {Mode: "OFF"}
+      State: ENABLED
+      Target:
+        Arn: !GetAtt CollectFunction.Arn
+        RoleArn: !GetAtt CollectScheduleRole.Arn
+        Input: "{}"
+        RetryPolicy: {MaximumRetryAttempts: 0}
 
   GatewayRole:
     # Name patterns instead of GetAtt: the role exists before the conditional resources do.

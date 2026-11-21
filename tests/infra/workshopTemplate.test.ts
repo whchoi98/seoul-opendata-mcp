@@ -137,4 +137,56 @@ describe('infra/seoul-workshop.yaml', () => {
       ['BucketName', 'GatewayId', 'GatewayUrl', 'RuntimeArn', 'RuntimeId', 'TableName', 'TargetId'],
     )
   })
+
+  it('스케줄 리소스는 CollectSchedule과 CollectCodeKey가 모두 있을 때만 만든다', () => {
+    expect(T.Parameters.CollectSchedule).toMatchObject({ Type: 'String', Default: '' })
+    expect(T.Parameters.CollectCodeKey).toMatchObject({ Type: 'String', Default: '' })
+    expect(T.Conditions.HasSchedule).toEqual({
+      And: [{ Not: [{ Equals: [{ Ref: 'CollectSchedule' }, ''] }] }, { Not: [{ Equals: [{ Ref: 'CollectCodeKey' }, ''] }] }],
+    })
+    for (const name of ['CollectLogGroup', 'CollectRole', 'CollectFunction', 'CollectInvokeConfig', 'CollectScheduleRole', 'CollectDailySchedule']) {
+      expect(R[name].Condition, name).toBe('HasSchedule')
+    }
+  })
+
+  it('수집 Lambda는 Node.js 22 arm64, 15분이고 store/와 쿼터 장부만 쓴다', () => {
+    const fn = R.CollectFunction.Properties
+    expect(fn).toMatchObject({ Runtime: 'nodejs22.x', Architectures: ['arm64'], Handler: 'collect.handler', Timeout: 900 })
+    expect(fn.FunctionName).toEqual({ Sub: '${AWS::StackName}-collect' })
+    expect(fn.Code).toEqual({ S3Bucket: { Ref: 'WorkshopBucket' }, S3Key: { Ref: 'CollectCodeKey' } })
+    expect(fn.Environment.Variables).toEqual({
+      SEOUL_API_KEY: { Ref: 'SeoulApiKey' },
+      STORE_URI: { Sub: 's3://${WorkshopBucket}/store/v1' },
+      TABLE_NAME: { Ref: 'WorkshopTable' },
+      QUOTA_DAILY_LIMIT: { Ref: 'QuotaDailyLimit' },
+    })
+    const st = statements('CollectRole')
+    expect(st.flatMap(s => asList(s.Action)).sort()).toEqual([
+      'dynamodb:GetItem', 'dynamodb:UpdateItem', 'logs:CreateLogStream', 'logs:PutLogEvents', 's3:GetObject', 's3:ListBucket', 's3:PutObject',
+    ])
+    expect(st.find(s => s.Sid === 'StoreReadWrite').Resource).toEqual({ Sub: '${WorkshopBucket.Arn}/store/*' })
+    expect(st.find(s => s.Sid === 'StoreList').Condition).toEqual({ StringLike: { 's3:prefix': 'store/*' } })
+    expect(R.CollectLogGroup.Properties).toEqual({ LogGroupName: { Sub: '/aws/lambda/${AWS::StackName}-collect' }, RetentionInDays: 14 })
+    expect(R.CollectInvokeConfig.Properties).toEqual({ FunctionName: { Ref: 'CollectFunction' }, Qualifier: '$LATEST', MaximumRetryAttempts: 0 })
+  })
+
+  it('스케줄은 서울 시간으로 수집 Lambda만 부른다', () => {
+    const s = R.CollectDailySchedule
+    expect(s.Type).toBe('AWS::Scheduler::Schedule')
+    expect(s.Properties.ScheduleExpression).toEqual({ Ref: 'CollectSchedule' })
+    expect(s.Properties.ScheduleExpressionTimezone).toBe('Asia/Seoul')
+    expect(s.Properties.FlexibleTimeWindow).toEqual({ Mode: 'OFF' })
+    expect(s.Properties.Target).toEqual({
+      Arn: { GetAtt: 'CollectFunction.Arn' }, RoleArn: { GetAtt: 'CollectScheduleRole.Arn' }, Input: '{}', RetryPolicy: { MaximumRetryAttempts: 0 },
+    })
+    expect(statements('CollectScheduleRole')).toEqual([
+      { Sid: 'Invoke', Effect: 'Allow', Action: 'lambda:InvokeFunction', Resource: { GetAtt: 'CollectFunction.Arn' } },
+    ])
+    expect(R.CollectScheduleRole.Properties.AssumeRolePolicyDocument.Statement[0].Principal).toEqual({ Service: 'scheduler.amazonaws.com' })
+  })
+
+  it('스크립트의 PARAMETERS 목록이 템플릿의 파라미터와 같다', async () => {
+    const { PARAMETERS } = await import('../../scripts/workshop-lib.js')
+    expect([...PARAMETERS].sort()).toEqual(Object.keys(T.Parameters).sort())
+  })
 })

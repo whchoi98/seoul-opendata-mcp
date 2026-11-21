@@ -33,3 +33,11 @@ describe('workshop-aws', () => {
     expect(stackParameterValue(stack, 'Missing')).toBeUndefined()
   })
 })
+
+describe('stackParameterKeys', () => {
+  it('스택이 가진 파라미터 이름을 돌려준다', async () => {
+    const { stackParameterKeys } = await import('../scripts/workshop-aws.js')
+    expect(stackParameterKeys({ Parameters: [{ ParameterKey: 'CodeKey', ParameterValue: 'x' }, { ParameterKey: 'SeoulApiKey' }] })).toEqual(['CodeKey', 'SeoulApiKey'])
+    expect(stackParameterKeys(undefined)).toEqual([])
+  })
+})
