@@ -8,7 +8,7 @@
 - `engine.ts` - 순수 함수 `planRequest()`(읽을 스냅샷과 필터 결정)와 `answerFrom()`(필터, 범위, 기한 적용).
 - `snapshot.ts` - 스냅샷 형식, gzip 직렬화, 객체 키(`<서비스>/<파티션 키>.json.gz`), 접두사 `store/v1`.
 - `snapshotStore.ts` - `SnapshotStore` 인터페이스(`get`, `put`, `list`)와 디렉터리 구현 `DirectoryStore`(테스트와 로컬 개발용).
-- `s3Store.ts` - S3 구현 `S3Store`. `createS3Store()` 안에서만 `@aws-sdk/client-s3`를 lazy import합니다. 없는 객체(404)는 `undefined`, 그 밖의 오류는 던집니다. 클라이언트의 시간 제한은 연결 2초, 요청 10초이며 본문 읽기까지 포함합니다.
+- `s3Store.ts` - S3 구현 `S3Store`. `createS3Store()` 안에서만 `@aws-sdk/client-s3`를 lazy import합니다. 없는 객체(404)는 `undefined`, 그 밖의 오류는 던집니다. 시간 제한은 연결 2초, 읽기와 목록 조회 10초(본문 읽기 포함), 쓰기 2분입니다.
 - `reader.ts` - `SnapshotReader`. 메모리 보관(96MB, 오래 안 쓴 것부터 버림), 10분 뒤 ETag 재확인, 없는 객체와 오류 5분 기억, 동시 읽기 합치기, 3초 시간 제한. 재확인이 3초를 넘거나 이미 진행 중이면 가진 스냅샷으로 답합니다.
 - `attach.ts` - `openStore()`(주소가 `s3://`면 S3, 아니면 디렉터리)와 `maybeAttachStore()`(`STORE_URI`가 있을 때만 `SeoulApiClient.attachStore()` 호출, 실패해도 서버는 계속 동작).
 - `collector.ts` - 수집 계획(`planCollection`), 실행(`collect`), 증분 건너뛰기, 예산 검사, 상태(`statusOf`), 출력 문자열. `scripts/workshop-collect.ts`와 수집 Lambda가 함께 씁니다.

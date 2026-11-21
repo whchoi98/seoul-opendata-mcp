@@ -31,7 +31,7 @@ The cache is read-through and keyed by the request URL. Two kinds of request the
 ## Decision
 Slow-changing datasets (37 of the 52 in the catalog) are collected ahead of time into gzip JSON snapshots under `store/v1/` in the workshop bucket. `SeoulApiClient.fetchUnwrapped` asks the store after the sample clamp and before the cache and the key pool, so a request the store answers makes no upstream call and stored data keeps answering when every key is exhausted.
 
-The store answers only what an allowlist permits (`src/store/rules.ts`): a service with a rule, positions marked equal or contains, and partition values that pass a format check. Everything else falls through to the existing path, so a missing rule costs one extra call and never a wrong answer. `npm run workshop:collect -- verify` compares the store with the live API and decides the positions whose meaning the documentation does not state.
+The store answers only what an allowlist permits (`src/store/rules.ts`): a service with a rule, positions marked equal or contains, and partition values that pass a format check. A request with a zero-length position before a value is not answered from the store, because the live API ignores every filter after an empty string. Everything else falls through to the existing path, so a missing rule costs one extra call and never a wrong answer. `npm run workshop:collect -- verify` compares the store with the live API and decides the positions whose meaning the documentation does not state.
 
 The feature is off unless `STORE_URI` is set. Collection is a local command; a scheduled Lambda is optional and off by default.
 
@@ -69,7 +69,7 @@ The feature is off unless `STORE_URI` is set. Collection is a local command; a s
 ## 결정
 하루 단위 이상으로 바뀌는 데이터셋(카탈로그 52종 중 37종)을 미리 받아 워크숍 버킷의 `store/v1/` 아래에 gzip JSON 스냅샷으로 둡니다. `SeoulApiClient.fetchUnwrapped`는 샘플 범위 제한 다음, 캐시와 키 풀보다 앞에서 저장소를 조회합니다. 저장소가 답한 요청은 서울 API 호출이 0회이고, 모든 키가 소진돼도 저장된 데이터는 계속 답합니다.
 
-저장소는 허용 목록(`src/store/rules.ts`)이 허용한 것만 답합니다. 규칙이 있는 서비스, 일치나 부분일치로 표시한 자리, 형식 검사를 통과한 파티션 값입니다. 나머지는 기존 경로로 넘어가므로 규칙이 모자라면 호출이 한 번 더 나갈 뿐 틀린 답은 나가지 않습니다. `npm run workshop:collect -- verify`가 저장소와 실제 API를 비교하고, 문서에 의미가 적혀 있지 않은 자리를 정합니다.
+저장소는 허용 목록(`src/store/rules.ts`)이 허용한 것만 답합니다. 규칙이 있는 서비스, 일치나 부분일치로 표시한 자리, 형식 검사를 통과한 파티션 값입니다. 길이 0인 자리 뒤에 값이 오는 요청은 저장소가 답하지 않습니다. 서울 API가 빈 문자열 뒤의 필터를 모두 무시하기 때문입니다. 나머지는 기존 경로로 넘어가므로 규칙이 모자라면 호출이 한 번 더 나갈 뿐 틀린 답은 나가지 않습니다. `npm run workshop:collect -- verify`가 저장소와 실제 API를 비교하고, 문서에 의미가 적혀 있지 않은 자리를 정합니다.
 
 `STORE_URI`를 설정하지 않으면 꺼져 있습니다. 수집은 로컬 명령으로 하고, 스케줄 Lambda는 선택 사항이며 기본값은 꺼짐입니다.
 
