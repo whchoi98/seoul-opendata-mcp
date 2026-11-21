@@ -18,6 +18,8 @@ The IaC layer declares the workshop stack `seoul-workshop` in one CloudFormation
 | Conditions | `infra/seoul-workshop.yaml` (`HasImage`, `HasCode`, `HasAll`, `HasSchedule`) | Let the stack exist before the image and the interceptor zip do. The runtime needs `HasImage`, the Lambda and its log group need `HasCode`, the gateway and target need both. The collector resources need `HasSchedule`, which holds when both `CollectSchedule` and `CollectCodeKey` are set |
 | Deploy script | `scripts/workshop-deploy.ts` | `npm run workshop:deploy`. Creates the stack in two passes or updates it, builds and pushes the image, uploads the interceptor zip, checks the runtime, synchronizes the gateway target and runs a smoke test. `--delete --yes` empties the bucket and deletes the stack |
 | Code script | `scripts/workshop-code.ts` | `npm run workshop:code -- new|revoke|show`. Changes only `CodeSha256` and `CodeValidUntil`, keeping every other parameter at its previous value |
+| Collect script | `scripts/workshop-collect.ts` | `npm run workshop:collect`. Reads the bucket, table and daily limit from the stack and runs the collector and `verify` |
+| Bundle script | `scripts/workshop-bundle.ts` | Packs `infra/lambda/collect.ts` into one file with esbuild |
 | Pure helpers | `scripts/workshop-lib.ts` | Region, stack name, parameter list, `stackParameters` (`UsePreviousValue` on update), `imageTag`, `codeKeyOf`, `stackBlocker`, `withSecretFile` |
 | CLI wrappers | `scripts/workshop-aws.ts` | `createStack`, `updateStack` and `deleteStack` call the `aws` CLI with `CAPABILITY_IAM` and wait for completion. `updateStack` returns `false` when CloudFormation reports no changes |
 | Template tests | `tests/infra/workshopTemplate.test.ts` | Parses the YAML and checks the runtime, gateway, target, IAM scope, `NoEcho` parameters, outputs, and that no account id, ARN literal or foreign resource name appears |
@@ -41,6 +43,8 @@ The IaC layer declares the workshop stack `seoul-workshop` in one CloudFormation
 - `infra/seoul-workshop.yaml` - parameters, conditions, resources, outputs
 - `scripts/workshop-deploy.ts` - `main()` (order of steps), `pushImage`, `uploadCode`, `checkRuntime`, `syncTarget`, `smoke`, `remove`
 - `scripts/workshop-code.ts` - `new`, `revoke`, `show`
+- `scripts/workshop-collect.ts` - `readStack` (bucket, table and daily limit from the stack), `main()` (`daily`, `static`, `status`, `verify`)
+- `scripts/workshop-bundle.ts` - `bundleCollectLambda`
 - `scripts/workshop-lib.ts` - `stackParameters`, `imageTag`, `codeKeyOf`, `stackBlocker`, `withSecretFile`
 - `scripts/workshop-aws.ts` - `createStack`, `updateStack`, `deleteStack`, `run`
 - `tests/infra/workshopTemplate.test.ts` - the template's invariants
@@ -67,6 +71,8 @@ IaC 계층은 워크숍 스택 `seoul-workshop`을 CloudFormation 템플릿 하�
 | 조건 | `infra/seoul-workshop.yaml`(`HasImage`, `HasCode`, `HasAll`, `HasSchedule`) | 이미지와 인터셉터 zip이 생기기 전에도 스택이 존재할 수 있게 합니다. 런타임은 `HasImage`, Lambda와 로그 그룹은 `HasCode`, Gateway와 대상은 둘 다 필요합니다. 수집 리소스는 `CollectSchedule`과 `CollectCodeKey`가 모두 있을 때 참인 `HasSchedule`이 필요합니다 |
 | 배포 스크립트 | `scripts/workshop-deploy.ts` | `npm run workshop:deploy`입니다. 스택을 두 단계로 만들거나 갱신하고, 이미지를 빌드해 올리고, 인터셉터 zip을 올리고, 런타임을 확인하고, Gateway 대상을 동기화한 뒤 스모크 테스트를 합니다. `--delete --yes`는 버킷을 비우고 스택을 지웁니다 |
 | 코드 스크립트 | `scripts/workshop-code.ts` | `npm run workshop:code -- new|revoke|show`입니다. `CodeSha256`과 `CodeValidUntil`만 바꾸고 나머지 파라미터는 이전 값을 유지합니다 |
+| 수집 스크립트 | `scripts/workshop-collect.ts` | `npm run workshop:collect`입니다. 스택에서 버킷, 테이블, 하루 한도를 읽고 수집기와 `verify`를 실행합니다 |
+| 묶음 스크립트 | `scripts/workshop-bundle.ts` | `infra/lambda/collect.ts`를 esbuild로 한 파일로 묶습니다 |
 | 순수 함수 | `scripts/workshop-lib.ts` | 리전, 스택 이름, 파라미터 목록, `stackParameters`(갱신 때 `UsePreviousValue`), `imageTag`, `codeKeyOf`, `stackBlocker`, `withSecretFile`입니다 |
 | CLI 래퍼 | `scripts/workshop-aws.ts` | `createStack`, `updateStack`, `deleteStack`이 `CAPABILITY_IAM`으로 `aws` CLI를 부르고 완료를 기다립니다. CloudFormation이 바뀐 것이 없다고 하면 `updateStack`은 `false`를 돌려줍니다 |
 | 템플릿 테스트 | `tests/infra/workshopTemplate.test.ts` | YAML을 읽어 런타임, Gateway, 대상, IAM 범위, `NoEcho` 파라미터, 출력을 검사합니다. 계정 ID, ARN 리터럴, 다른 리소스 이름이 없는지도 봅니다 |
@@ -90,6 +96,8 @@ IaC 계층은 워크숍 스택 `seoul-workshop`을 CloudFormation 템플릿 하�
 - `infra/seoul-workshop.yaml` - 파라미터, 조건, 리소스, 출력
 - `scripts/workshop-deploy.ts` - `main()`(단계 순서), `pushImage`, `uploadCode`, `checkRuntime`, `syncTarget`, `smoke`, `remove`
 - `scripts/workshop-code.ts` - `new`, `revoke`, `show`
+- `scripts/workshop-collect.ts` - `readStack`(스택에서 버킷, 테이블, 하루 한도를 읽음), `main()`(`daily`, `static`, `status`, `verify`)
+- `scripts/workshop-bundle.ts` - `bundleCollectLambda`
 - `scripts/workshop-lib.ts` - `stackParameters`, `imageTag`, `codeKeyOf`, `stackBlocker`, `withSecretFile`
 - `scripts/workshop-aws.ts` - `createStack`, `updateStack`, `deleteStack`, `run`
 - `tests/infra/workshopTemplate.test.ts` - 템플릿의 불변 조건

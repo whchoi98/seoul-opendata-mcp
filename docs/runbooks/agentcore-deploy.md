@@ -21,7 +21,7 @@ How to build, push, deploy, verify, and roll back the `seoul-opendata-mcp` conta
 
 ## Prerequisites
 - AWS CLI configured with credentials that can call `bedrock-agentcore-control:CreateAgentRuntime`/`UpdateAgentRuntime`/`GetAgentRuntime`/`ListAgentRuntimeVersions`/`*AgentRuntimeEndpoint`, plus `ecr:*` on the target repository.
-- An IAM execution role that trusts `bedrock-agentcore.amazonaws.com` and can pull the ECR image, write CloudWatch Logs, and (if `CACHE_TABLE_NAME` is used) `dynamodb:GetItem`/`PutItem`/`UpdateItem` on that table.
+- An IAM execution role that trusts `bedrock-agentcore.amazonaws.com` and can pull the ECR image, write CloudWatch Logs, and (if `CACHE_TABLE_NAME` is used) `dynamodb:GetItem`/`PutItem`/`UpdateItem` on that table. If `STORE_URI` points at S3, the role also needs `s3:GetObject` on the snapshot prefix and `s3:ListBucket` limited to that prefix.
 - Docker with `linux/arm64` build support (AgentCore Runtime requires ARM64 images — see the `Dockerfile`'s `--platform=linux/arm64`).
 - `npm test && npm run build` passing locally (this runbook does not rebuild TypeScript for you — the `Dockerfile`'s build stage runs `npm run build` inside the image).
 
@@ -60,7 +60,7 @@ aws bedrock-agentcore-control create-agent-runtime \
   --region "$AWS_REGION"
 ```
 
-This provisions Version 1 and an automatic `DEFAULT` endpoint, and returns `agentRuntimeId`/`agentRuntimeArn` — record both; every later step needs one of them. (Environment variables — `SEOUL_API_KEY`, `SEOUL_SUBWAY_API_KEY`, `CACHE_TABLE_NAME`, `QUOTA_DAILY_LIMIT` — are supplied to the running container per the AgentCore Runtime environment-variable configuration for your chosen deploy path; see the README's [Deploy to AgentCore Runtime](../../README.md#deploy-to-agentcore-runtime) table for what each one does.)
+This provisions Version 1 and an automatic `DEFAULT` endpoint, and returns `agentRuntimeId`/`agentRuntimeArn` — record both; every later step needs one of them. (Environment variables — `SEOUL_API_KEY`, `SEOUL_SUBWAY_API_KEY`, `CACHE_TABLE_NAME`, `QUOTA_DAILY_LIMIT`, `STORE_URI` — are supplied to the running container per the AgentCore Runtime environment-variable configuration for your chosen deploy path; see the README's [Deploy to AgentCore Runtime](../../README.md#deploy-to-agentcore-runtime) table for what each one does.)
 
 ### 3. Ship a new version (subsequent deploys)
 
@@ -143,7 +143,7 @@ This creates a new immutable version; the `DEFAULT` endpoint moves to it automat
 
 ## 사전 요구 사항
 - `bedrock-agentcore-control:CreateAgentRuntime`/`UpdateAgentRuntime`/`GetAgentRuntime`/`ListAgentRuntimeVersions`/`*AgentRuntimeEndpoint`를 호출할 수 있고, 대상 ECR 리포지토리에 대해 `ecr:*` 권한이 있는 AWS CLI 자격 증명.
-- `bedrock-agentcore.amazonaws.com`을 신뢰하고 ECR 이미지를 pull하고 CloudWatch Logs에 쓸 수 있으며, `CACHE_TABLE_NAME`을 사용한다면 해당 테이블에 대해 `dynamodb:GetItem`/`PutItem`/`UpdateItem` 권한이 있는 IAM 실행 역할.
+- `bedrock-agentcore.amazonaws.com`을 신뢰하고 ECR 이미지를 pull하고 CloudWatch Logs에 쓸 수 있으며, `CACHE_TABLE_NAME`을 사용한다면 해당 테이블에 대해 `dynamodb:GetItem`/`PutItem`/`UpdateItem` 권한이 있는 IAM 실행 역할. `STORE_URI`가 S3를 가리키면 이 역할에 스냅샷 접두사의 `s3:GetObject`와 그 접두사로 제한한 `s3:ListBucket`도 필요합니다.
 - `linux/arm64` 빌드를 지원하는 Docker (AgentCore Runtime은 ARM64 이미지를 요구합니다 — `Dockerfile`의 `--platform=linux/arm64` 참조).
 - 로컬에서 통과하는 `npm test && npm run build` (이 런북은 TypeScript를 대신 빌드해주지 않습니다 — `Dockerfile`의 빌드 스테이지가 이미지 내부에서 `npm run build`를 실행합니다).
 
@@ -182,7 +182,7 @@ aws bedrock-agentcore-control create-agent-runtime \
   --region "$AWS_REGION"
 ```
 
-이 명령은 버전 1과 자동 `DEFAULT` 엔드포인트를 생성하며 `agentRuntimeId`/`agentRuntimeArn`을 반환합니다 — 이후 모든 단계에서 필요하므로 둘 다 기록해 두세요. (`SEOUL_API_KEY`, `SEOUL_SUBWAY_API_KEY`, `CACHE_TABLE_NAME`, `QUOTA_DAILY_LIMIT` 등 환경 변수는 선택한 배포 경로의 AgentCore Runtime 환경변수 설정을 통해 실행 중인 컨테이너에 전달됩니다. 각 변수의 의미는 README의 [AgentCore Runtime에 배포](../../README.md#agentcore-runtime에-배포) 표를 참고하세요.)
+이 명령은 버전 1과 자동 `DEFAULT` 엔드포인트를 생성하며 `agentRuntimeId`/`agentRuntimeArn`을 반환합니다 — 이후 모든 단계에서 필요하므로 둘 다 기록해 두세요. (`SEOUL_API_KEY`, `SEOUL_SUBWAY_API_KEY`, `CACHE_TABLE_NAME`, `QUOTA_DAILY_LIMIT`, `STORE_URI` 등 환경 변수는 선택한 배포 경로의 AgentCore Runtime 환경변수 설정을 통해 실행 중인 컨테이너에 전달됩니다. 각 변수의 의미는 README의 [AgentCore Runtime에 배포](../../README.md#agentcore-runtime에-배포) 표를 참고하세요.)
 
 ### 3. 새 버전 배포(이후 배포)
 
