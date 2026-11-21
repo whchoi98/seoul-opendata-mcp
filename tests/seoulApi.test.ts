@@ -454,3 +454,147 @@ describe('SeoulApiClient 키 풀', () => {
     expect(fetchFn).toHaveBeenCalledTimes(calls)
   })
 })
+
+describe('SeoulApiClient 사전 적재 저장소', () => {
+  const NOW = Date.parse('2026-11-21T03:00:00.000Z')
+  const COLLECTED = Date.parse('2026-11-20T16:30:00.000Z') // KST 11월 21일 01:30
+  const OLD = Date.parse('2026-11-18T01:00:00.000Z')
+  const PHARMACY = 'TbPharmacyOperateInfo'
+  type Opts = { allowExpired?: boolean } | undefined
+  const hit = (rows: any[], over: object = {}) => ({ value: { rows, totalCount: rows.length }, collectedAt: COLLECTED, expired: false, ...over })
+  const fakeStore = (answer: (service: string, opts: Opts) => unknown) => ({
+    lookup: vi.fn(async (service: string, _start: number, _end: number, _path: string[], opts?: { allowExpired?: boolean }) => answer(service, opts) as any),
+  })
+  const xml337 = () => new Response('<RESULT><CODE>ERROR-337</CODE><MESSAGE>호출 제한</MESSAGE></RESULT>', { status: 200 })
+
+  it('저장소가 답하면 업스트림과 쿼터 장부를 건드리지 않고 수집 날짜를 안내한다', async () => {
+    const fetchFn = vi.fn()
+    const ledger = new InMemoryLedger(10)
+    const status = vi.spyOn(ledger, 'status')
+    const increment = vi.spyOn(ledger, 'increment')
+    const store = fakeStore(() => hit([{ a: 1 }]))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any, ledger, now: () => NOW })
+    c.attachStore(store)
+    const u = await c.getJson(PHARMACY, 1, 1000, ['강남구'])
+    expect(u).toEqual({ rows: [{ a: 1 }], totalCount: 1, note: '사전 적재 데이터(11월 21일 수집)' })
+    expect(store.lookup).toHaveBeenCalledWith(PHARMACY, 1, 1000, ['강남구'], { allowExpired: false })
+    expect(fetchFn).not.toHaveBeenCalled()
+    expect(status).not.toHaveBeenCalled()
+    expect(increment).not.toHaveBeenCalled()
+  })
+
+  it('저장소가 답하지 않으면 지금 경로로 가고 안내 문구를 붙이지 않는다', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(standardPage([{ a: 1 }], 1))
+    const store = fakeStore(() => undefined)
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any })
+    c.attachStore(store)
+    const u = await c.getJson('bikeList', 1, 5)
+    expect(u).toEqual({ rows: [{ a: 1 }], totalCount: 1, note: undefined })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(store.lookup).toHaveBeenCalledTimes(1)
+  })
+
+  it('0건 응답에는 서울 API와 같은 문구만 있다', async () => {
+    const { isNoData } = await import('../src/client/response.js')
+    const empty = { value: { rows: [], totalCount: 0, note: `해당하는 데이터가 없습니다 (${PHARMACY})` }, collectedAt: COLLECTED, expired: false }
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: vi.fn() as any, now: () => NOW })
+    c.attachStore(fakeStore(() => empty))
+    const u = await c.getJson(PHARMACY, 1, 1000, [' ', '없는약국'])
+    expect(u).toEqual({ rows: [], totalCount: 0, note: `해당하는 데이터가 없습니다 (${PHARMACY})` })
+    expect(isNoData(u)).toBe(true)
+  })
+
+  it('모든 키가 소진돼도 저장소에 있는 데이터는 답한다', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(standardPage([{ a: 1 }], 1))
+    const store = fakeStore(service => (service === PHARMACY ? hit([{ p: 1 }]) : undefined))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any, ledger: new InMemoryLedger(1), now: () => NOW })
+    c.attachStore(store)
+    await c.getJson('bikeList', 1, 5) // 1/1 소진
+    const u = await c.getJson(PHARMACY, 1, 1000)
+    expect(u.rows).toEqual([{ p: 1 }])
+    expect(u.note).toBe('사전 적재 데이터(11월 21일 수집)')
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('키가 소진되고 캐시도 없으면 기한 지난 스냅샷을 쿼터 소진 문구와 함께 돌려준다', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(standardPage([{ a: 1 }], 1))
+    const store = fakeStore((service, opts) =>
+      service === PHARMACY && opts?.allowExpired ? hit([{ p: 1 }], { collectedAt: OLD, expired: true }) : undefined)
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any, ledger: new InMemoryLedger(1), now: () => NOW })
+    c.attachStore(store)
+    await c.getJson('bikeList', 1, 5) // 1/1 소진
+    const u = await c.getJson(PHARMACY, 1, 1000)
+    expect(u.rows).toEqual([{ p: 1 }])
+    expect(u.note).toBe('일일 API 쿼터 소진. 기한이 지난 사전 적재 데이터(11월 18일 수집, 약 3일 경과)로 응답합니다')
+    expect(store.lookup.mock.calls.filter(a => a[0] === PHARMACY).map(a => a[4])).toEqual([{ allowExpired: false }, { allowExpired: true }])
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    // 기한 지난 스냅샷도 없으면 지금처럼 빈 결과와 쿼터 안내가 나간다
+    const miss = await c.getJson('GetParkInfo', 1, 5)
+    expect(miss.rows).toEqual([])
+    expect(miss.note).toContain('소진되어')
+  })
+
+  it('키가 모두 쿨다운 중이고 캐시도 없으면 호출 제한 문구를 쓴다', async () => {
+    const fetchFn = vi.fn(async () => xml337())
+    const store = fakeStore((service, opts) =>
+      service === PHARMACY && opts?.allowExpired ? hit([{ p: 1 }], { collectedAt: OLD, expired: true }) : undefined)
+    const c = new SeoulApiClient({ apiKey: 'K1,K2', fetchFn: fetchFn as any, now: () => NOW })
+    c.attachStore(store)
+    await expect(c.getJson('bikeList', 1, 5)).rejects.toMatchObject({ code: 'ERROR-337' })
+    const u = await c.getJson(PHARMACY, 1, 1000)
+    expect(u.note).toBe('서울 API 호출 제한. 기한이 지난 사전 적재 데이터(11월 18일 수집, 약 3일 경과)로 응답합니다')
+  })
+
+  it('소진 상태에서 캐시가 있으면 기한 지난 스냅샷보다 캐시가 먼저다', async () => {
+    let t = NOW
+    const fetchFn = vi.fn().mockResolvedValue(standardPage([{ a: 1 }], 1))
+    const store = fakeStore((_service, opts) => (opts?.allowExpired ? hit([{ old: 1 }], { collectedAt: OLD, expired: true }) : undefined))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any, ledger: new InMemoryLedger(1), now: () => t })
+    c.attachStore(store)
+    await c.getJson('bikeList', 1, 5) // 캐시에 넣고 1/1 소진
+    t += 300_001
+    const u = await c.getJson('bikeList', 1, 5)
+    expect(u.rows).toEqual([{ a: 1 }])
+    expect(u.note).toContain('캐시된 데이터')
+    expect(store.lookup.mock.calls.every(a => a[4]?.allowExpired === false)).toBe(true)
+  })
+
+  it('샘플 모드에서는 5행 범위로 저장소를 조회한다', async () => {
+    const store = fakeStore(() => hit([{ a: 1 }]))
+    const c = new SeoulApiClient({ apiKey: '', fetchFn: vi.fn() as any, now: () => NOW })
+    c.attachStore(store)
+    await c.getJson(PHARMACY, 1, 1000)
+    expect(store.lookup).toHaveBeenCalledWith(PHARMACY, 1, 5, [], { allowExpired: false })
+  })
+
+  it('지하철 실시간과 XML 요청은 저장소를 조회하지 않는다', async () => {
+    const fetchFn = vi.fn(async (url: string) => (url.includes('/xml/')
+      ? new Response('<AccInfo><list_total_count>1</list_total_count><RESULT><CODE>INFO-000</CODE><MESSAGE>ok</MESSAGE></RESULT><row><a>1</a></row></AccInfo>', { status: 200 })
+      : jsonResponse({ errorMessage: { status: 200, code: 'INFO-000', message: 'ok', total: 1 }, realtimeArrivalList: [{ a: 1 }] })))
+    const store = fakeStore(() => hit([{ wrong: 1 }]))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any })
+    c.attachStore(store)
+    expect((await c.getSubway('realtimeStationArrival', 0, 5, ['강남'])).rows).toEqual([{ a: 1 }])
+    expect((await c.getXml('AccInfo', 1, 5)).rows).toEqual([{ a: 1 }])
+    expect(store.lookup).not.toHaveBeenCalled()
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('저장소가 던져도 요청은 지금 경로로 계속된다', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const fetchFn = vi.fn().mockResolvedValue(standardPage([{ a: 1 }], 1))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any })
+    c.attachStore({ lookup: async () => { throw new Error('boom') } })
+    expect((await c.getJson('bikeList', 1, 5)).rows).toEqual([{ a: 1 }])
+    expect(err.mock.calls.flat().join(' ')).toContain('[store]')
+    err.mockRestore()
+  })
+
+  it('저장소가 답한 응답에는 쿼터 80% 안내를 붙이지 않는다', async () => {
+    const ledger = new InMemoryLedger(10)
+    for (let i = 0; i < 9; i++) await ledger.increment(keyIdOf('K'))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: vi.fn() as any, ledger, now: () => NOW })
+    c.attachStore(fakeStore(() => hit([{ a: 1 }])))
+    expect((await c.getJson(PHARMACY, 1, 10)).note).toBe('사전 적재 데이터(11월 21일 수집)')
+  })
+})

@@ -64,5 +64,7 @@ if (isCli) {
   }
   const { maybeAttachL2 } = await import('./client/dynamo.js')
   await maybeAttachL2(client)
+  const { maybeAttachStore } = await import('./store/attach.js')
+  await maybeAttachStore(client)
   await buildServer(client).connect(new StdioServerTransport())
 }

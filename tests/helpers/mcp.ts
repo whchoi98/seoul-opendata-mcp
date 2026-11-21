@@ -5,6 +5,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { SeoulApiClient } from '../../src/client/seoulApi.js'
 import type { QuotaLedger } from '../../src/client/quota.js'
+import type { SnapshotSource } from '../../src/client/snapshotSource.js'
 import { buildServer } from '../../src/index.js'
 
 export type Call = { svc: string; start: number; end: number; path: string[] }
@@ -46,9 +47,10 @@ export function rowsUpstream(handler: (c: Call) => { rows: any[]; total?: number
 }
 
 export async function callTool(
-  fetchFn: unknown, name: string, args: Record<string, unknown>, opts: { ledger?: QuotaLedger } = {},
+  fetchFn: unknown, name: string, args: Record<string, unknown>, opts: { ledger?: QuotaLedger; store?: SnapshotSource } = {},
 ) {
   const client = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as typeof fetch, retryDelayMs: 0, ledger: opts.ledger })
+  if (opts.store) client.attachStore(opts.store)
   const server = buildServer(client)
   const [ct, st] = InMemoryTransport.createLinkedPair()
   const mcp = new Client({ name: 'tool-test', version: '0' })

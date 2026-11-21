@@ -9,6 +9,8 @@ loadDotEnv()
 const client = new SeoulApiClient() // 프로세스 전역 1개 — L1 캐시·원장 공유
 const { maybeAttachL2 } = await import('./client/dynamo.js')
 await maybeAttachL2(client)
+const { maybeAttachStore } = await import('./store/attach.js')
+await maybeAttachStore(client)
 
 const MAX_BODY_BYTES = 1_000_000 // 1MB — 무제한 버퍼링 방지
 

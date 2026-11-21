@@ -3,6 +3,7 @@ import { CompositeCache, InMemoryCache, type CacheBackend } from './cache.js'
 import { unwrap, SeoulApiError, type Unwrapped } from './response.js'
 import { InMemoryLedger, type QuotaLedger, type QuotaStatus } from './quota.js'
 import { KeyPool, SAMPLE_KEY, maskKey, parseKeys, type PickedKey } from './keyPool.js'
+import { storeNote, type SnapshotHit, type SnapshotSource } from './snapshotSource.js'
 
 const OPEN_BASE = 'http://openapi.seoul.go.kr:8088'
 const SUBWAY_BASE = 'http://swopenapi.seoul.go.kr/api/subway'
@@ -73,6 +74,7 @@ export class SeoulApiClient {
   private inflight = new Map<string, Promise<Unwrapped>>()
   private nowFn: () => number
   private ledger: QuotaLedger
+  private store: SnapshotSource | undefined
 
   constructor(opts: ClientOptions = {}) {
     this.nowFn = opts.now ?? Date.now
@@ -96,6 +98,28 @@ export class SeoulApiClient {
   /** L2 캐시(DynamoDB 등) 연결용 — 캐시의 private 필드를 우회하기 위한 위임 */
   attachL2(l2: CacheBackend): void {
     this.cache.setL2(l2)
+  }
+
+  /** 사전 적재 저장소 연결용. 저장소가 답한 요청은 캐시, 키 풀, 쿼터 장부를 건드리지 않는다 */
+  attachStore(source: SnapshotSource): void {
+    this.store = source
+  }
+
+  /** 저장소 조회 실패는 요청을 실패시키지 않는다 */
+  private async safeLookup(service: string, start: number, end: number, path: string[], allowExpired: boolean): Promise<SnapshotHit | undefined> {
+    if (!this.store) return undefined
+    try {
+      return await this.store.lookup(service, start, end, path, { allowExpired })
+    } catch (e) {
+      console.error(`[store] 조회 실패 — 지금 경로로 넘김: ${(e as Error).message}`)
+      return undefined
+    }
+  }
+
+  /** 0건이면 저장소가 넣은 "데이터 없음" 문구만 남기고, 1건 이상이면 수집 날짜 안내를 붙인다 */
+  private fromStore(hit: SnapshotHit, reason?: 'quota' | 'rate'): Unwrapped {
+    const note = storeNote(hit, this.nowFn(), reason)
+    return note ? withNote(hit.value, note) : hit.value
   }
 
   private async safeStatus(keyId: string): Promise<QuotaStatus> {
@@ -172,6 +196,12 @@ export class SeoulApiClient {
     const pool = base === SUBWAY_BASE ? this.subwayPool : this.pool
     // 샘플 키는 요청당 최대 5건 제한(ERROR-335) — 범위를 클램프해 맛보기 모드로 동작시킨다
     if (pool.isSample) end = Math.min(end, start + 4)
+    // 사전 적재 저장소는 일반 API의 JSON 요청만 답한다. 캐시와 키 선택보다 앞이라, 모든 키가 소진돼도 저장소에 있는 데이터는 나간다
+    const storable = base === OPEN_BASE && type === 'json'
+    if (storable) {
+      const hit = await this.safeLookup(service, start, end, path, false)
+      if (hit) return this.fromStore(hit)
+    }
     // 캐시 키에는 원문 키 대신 자리 표시를 넣는다. 키가 바뀌어도 같은 요청은 같은 캐시 항목을 쓴다.
     // 샘플 응답(5건 제한)이 실제 키 응답 자리에 섞이지 않도록 샘플 모드는 별도 표시를 쓴다
     const cacheKey = this.buildUrl(base, pool.isSample ? SAMPLE_KEY : '{key}', type, service, start, end, path)
@@ -184,6 +214,11 @@ export class SeoulApiClient {
     const budget = picked.pool
 
     if (picked.exhausted) {
+      if (!cached && storable) {
+        // 서울 API를 쓸 수 없고 캐시에도 없으면 기한이 지난 스냅샷으로라도 답한다. 캐시가 쿼터 소진 때 오래된 값을 주는 것과 같은 원칙
+        const hit = await this.safeLookup(service, start, end, path, true)
+        if (hit) return this.fromStore(hit, picked.coolingUntil !== undefined ? 'rate' : 'quota')
+      }
       if (picked.coolingUntil !== undefined) {
         // 한도가 남은 키가 모두 ERROR-337 쿨다운 중 — 쿼터 소진이 아니라 호출 제한이다
         if (cached) {
