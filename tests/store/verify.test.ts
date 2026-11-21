@@ -138,6 +138,26 @@ describe('runVerify', () => {
     expect(report.decisions).toEqual([{ service: SENIOR, field: 'SISUL_NM', verdict: '부분일치' }])
   })
 
+  it('전체 값으로는 두 가정이 모두 맞고 앞부분에서만 갈릴 때, 앞부분까지 통과한 가정만 인정한다', async () => {
+    const one = [{ SISUL_NM: NAME }]
+    const m = memoryStore()
+    m.seed(SENIOR, [], one)
+    const partial = await runVerify(fakeClient(liveSenior('contains', one)).client, m.store, { only: [SENIOR], now: () => NOW, delayMs: 0 })
+    expect(partial.results.map(r => [r.label, r.status])).toEqual([
+      ['인자 없음', 'ok'],
+      ['SISUL_NM 가정: 일치(전체 값)', 'ok'], ['SISUL_NM 가정: 부분일치(전체 값)', 'ok'],
+      ['SISUL_NM 가정: 일치(앞부분)', 'fail'], ['SISUL_NM 가정: 부분일치(앞부분)', 'ok'],
+    ])
+    expect(partial.decisions).toEqual([{ service: SENIOR, field: 'SISUL_NM', verdict: '부분일치' }])
+    const exact = await runVerify(fakeClient(liveSenior('eq', one)).client, m.store, { only: [SENIOR], now: () => NOW, delayMs: 0 })
+    expect(exact.results.map(r => [r.label, r.status])).toEqual([
+      ['인자 없음', 'ok'],
+      ['SISUL_NM 가정: 일치(전체 값)', 'ok'], ['SISUL_NM 가정: 부분일치(전체 값)', 'ok'],
+      ['SISUL_NM 가정: 일치(앞부분)', 'ok'], ['SISUL_NM 가정: 부분일치(앞부분)', 'fail'],
+    ])
+    expect(exact.decisions).toEqual([{ service: SENIOR, field: 'SISUL_NM', verdict: '일치' }])
+  })
+
   it('예시 값에 맞는 행이 없으면 구분하지 못하고, 어느 가정도 맞지 않으면 재현 못 함이다', async () => {
     const m = memoryStore()
     const others = [{ SISUL_NM: '다른경로당' }]
