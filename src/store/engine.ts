@@ -20,8 +20,12 @@ export function planRequest(
 ): RequestPlan | undefined {
   const rule = Object.hasOwn(rules, service) ? rules[service] : undefined
   if (!rule) return undefined
+  // 서울 API는 길이 0인 자리 뒤의 필터를 모두 무시한다(src/tools/path.ts). 그런 요청은 답을 추측하지 않고 넘긴다
+  const raw = path.map(v => String(v))
+  const firstEmpty = raw.findIndex(v => v.length === 0)
+  if (firstEmpty !== -1 && raw.slice(firstEmpty + 1).some(v => v.trim() !== '')) return undefined
   // tool은 건너뛰는 자리를 공백 한 칸으로 채워 보낸다. 공백뿐인 값은 없는 값이다
-  const values = path.map(v => String(v).trim())
+  const values = raw.map(v => v.trim())
   if (values.some((v, i) => v !== '' && i >= rule.slots.length)) return undefined
   const partition: string[] = []
   const filters: Filter[] = []

@@ -56,6 +56,17 @@ describe('planRequest', () => {
     expect(planRequest('culturalEventInfo', [B, B, B])!.filters).toEqual([])
   })
 
+  it('길이 0인 자리 뒤에 값이 있으면 답하지 않는다. 서울 API는 빈 문자열 뒤의 필터를 모두 무시한다', () => {
+    expect(planRequest('TbPharmacyOperateInfo', ['', '온누리'])).toBeUndefined()
+    expect(planRequest('CardSubwayTime', ['202610', '', '강남'])).toBeUndefined()
+    // 공백 한 칸은 지금처럼 값이 없는 자리다
+    expect(planRequest('TbPharmacyOperateInfo', [B, '온누리'])!.filters).toEqual([{ field: 'DUTYNAME', kind: 'contains', value: '온누리' }])
+    // 끝의 빈 문자열, 뒤에 공백뿐인 빈 문자열은 그대로 답한다
+    expect(planRequest('TbPharmacyOperateInfo', ['강남구', ''])!.filters).toEqual([{ field: 'DUTYADDR', kind: 'contains', value: '강남구' }])
+    expect(planRequest('TbPharmacyOperateInfo', [''])!.filters).toEqual([])
+    expect(planRequest('TbPharmacyOperateInfo', ['', B])!.filters).toEqual([])
+  })
+
   it('미지원 자리에 값이 오면 답하지 않는다', () => {
     expect(planRequest('culturalEventInfo', ['콘서트', B, B])).toBeUndefined()
     expect(planRequest('culturalEventInfo', [B, '재즈', '2026-12-24'])).toBeUndefined()
