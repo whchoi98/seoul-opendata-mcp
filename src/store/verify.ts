@@ -19,16 +19,23 @@ export interface VerifyCase {
   label: string
   /** 미지원 자리를 이 규칙으로 가정하고 비교한다 */
   assume?: { slot: number; field: string; kind: 'eq' | 'contains' }
+  /** 있으면 서울 API를 부르지 않고 이 설명으로 건너뛴다 */
+  skip?: string
 }
 
 const examplesOf = (service: string, rule: StoreRule): string[] =>
   rule.examples ?? CATALOG.find(e => e.id === service)?.pathParams.map(p => p.example) ?? []
 
+const fieldText = (row: any, field: string): string => String(row?.[field] ?? '').trim()
+
+const NO_VALUE = '스냅샷에 이 필드 값이 없어 검사하지 못함'
+
 /**
  * 서비스 하나의 검사 요청: 인자 없음, 자리 하나씩, 지원 자리 전부, 결정할 자리의 두 가정.
- * 결정할 자리는 예시 값 전체와 그 앞부분 두 값으로 시험한다. 전체 값만으로는 일치와 부분일치가 같은 행을 고르기 때문이다
+ * 지원 자리와 결정할 자리는 값 전체와 그 앞부분 두 값으로 시험한다. 전체 값만으로는 일치와 부분일치가 같은 행을 고르기 때문이다.
+ * 값은 예시 값을 포함한 행이 스냅샷(rows)에 있으면 예시 값, 없으면 스냅샷에서 그 필드의 첫 값이다. rows를 주지 않으면 예시 값을 그대로 쓴다
  */
-export function casesFor(service: string, rule: StoreRule, partition: string[]): VerifyCase[] {
+export function casesFor(service: string, rule: StoreRule, partition: string[], rows?: any[]): VerifyCase[] {
   const examples = examplesOf(service, rule)
   /** values: 자리 번호 → 넣을 값. 파티션 자리에는 저장된 파티션 값이 들어간다 */
   const pathWith = (values: Record<number, string>): string[] => {
@@ -36,16 +43,48 @@ export function casesFor(service: string, rule: StoreRule, partition: string[]):
     while (path.length > 0 && path[path.length - 1] === BLANK) path.pop()
     return path
   }
-  const example = (indexes: number[]): Record<number, string> => Object.fromEntries(indexes.map(i => [i, examples[i]]))
+  /** 자리 번호 → 시험할 값. 스냅샷에 그 필드 값이 없으면 undefined */
+  const probes = rule.slots.map((s, i): string | undefined => {
+    if (!rows) return examples[i]
+    const example = (examples[i] ?? '').trim()
+    if (example !== '' && rows.some(r => fieldText(r, s.field).includes(example))) return example
+    return rows.map(r => fieldText(r, s.field)).find(v => v !== '')
+  })
+  const frontOf = (value: string): string => value.slice(0, Math.max(1, Math.ceil(value.length / 2)))
   const supported = rule.slots.flatMap((s, i) => (s.kind === 'eq' || s.kind === 'contains' ? [i] : []))
   const cases: VerifyCase[] = [{ service, path: pathWith({}), label: '인자 없음' }]
-  for (const i of supported) cases.push({ service, path: pathWith(example([i])), label: `${rule.slots[i].field}만` })
-  if (supported.length > 1) cases.push({ service, path: pathWith(example(supported)), label: '지원 자리 전부' })
+  for (const i of supported) {
+    const field = rule.slots[i].field
+    const value = probes[i]
+    if (value === undefined) {
+      cases.push({ service, path: [], label: `${field}만`, skip: NO_VALUE })
+      continue
+    }
+    cases.push({ service, path: pathWith({ [i]: value }), label: `${field}만` })
+    const front = frontOf(value)
+    if (front !== value) cases.push({ service, path: pathWith({ [i]: front }), label: `${field}만(앞부분)` })
+  }
+  const probed = supported.filter(i => probes[i] !== undefined)
+  if (probed.length > 1) {
+    cases.push({ service, path: pathWith(Object.fromEntries(probed.map(i => [i, probes[i]!]))), label: '지원 자리 전부' })
+  }
   rule.slots.forEach((s, i) => {
     if (s.kind !== 'unsupported' || !s.decide) return
-    const full = examples[i]
-    const front = full.slice(0, Math.max(1, Math.ceil(full.length / 2)))
-    for (const [value, which] of [[full, '전체 값'], [front, '앞부분']] as const) {
+    const full = probes[i]
+    if (full === undefined) {
+      // decide()가 이 자리를 "근거 없음"으로 보고하도록 두 가정 모두 건너뛴 결과를 남긴다
+      for (const kind of ['eq', 'contains'] as const) {
+        cases.push({
+          service, path: [], label: `${s.field} 가정: ${kind === 'eq' ? '일치' : '부분일치'}`,
+          assume: { slot: i, field: s.field, kind }, skip: NO_VALUE,
+        })
+      }
+      return
+    }
+    const front = frontOf(full)
+    // 한 글자 값은 앞부분이 같아 전체 값으로만 시험한다
+    const values: Array<[string, string]> = front === full ? [[full, '전체 값']] : [[full, '전체 값'], [front, '앞부분']]
+    for (const [value, which] of values) {
       for (const kind of ['eq', 'contains'] as const) {
         cases.push({
           service, path: pathWith({ [i]: value }), label: `${s.field} 가정: ${kind === 'eq' ? '일치' : '부분일치'}(${which})`,
@@ -66,7 +105,7 @@ export interface CaseResult {
   assume?: VerifyCase['assume']
 }
 
-export interface Decision { service: string; field: string; verdict: '일치' | '부분일치' | '둘 다 맞음' | '재현 못 함' }
+export interface Decision { service: string; field: string; verdict: '일치' | '부분일치' | '둘 다 맞음' | '근거 없음' | '재현 못 함' }
 
 export interface VerifyReport {
   results: CaseResult[]
@@ -85,6 +124,13 @@ function compare(c: VerifyCase, snapshot: Snapshot, rule: StoreRule, live: Unwra
   if (!plan) return { ...base, status: 'skip', detail: '규칙으로 답할 수 없는 요청' }
   const mine = answerFrom(snapshot, plan, 1, PAGE, now, { allowExpired: true })?.value
   if (!mine) return { ...base, status: 'skip', detail: '머리 스냅샷이라 이 요청에 답할 수 없음' }
+  if (mine.totalCount === 0 && live.totalCount === 0 && plan.filters.length > 0) {
+    // 양쪽 모두 0건이면 어떤 규칙이든 맞는다. 이 값을 포함한 행이 있는데도 서울 API가 0건이었을 때만 근거가 된다
+    const contained = snapshot.rows.some(row => plan.filters.every(f => fieldText(row, f.field).includes(f.value)))
+    return contained
+      ? { ...base, status: 'ok', detail: '0건 일치(이 값을 포함한 행이 있는데 양쪽 모두 0건)' }
+      : { ...base, status: 'skip', detail: '양쪽 모두 0건이고 스냅샷에 이 값을 가진 행이 없어 근거가 되지 않음' }
+  }
   if (mine.totalCount !== live.totalCount) {
     return { ...base, status: 'fail', detail: `전체 건수 다름: 저장소 ${mine.totalCount}, 서울 API ${live.totalCount}` }
   }
@@ -95,20 +141,30 @@ function compare(c: VerifyCase, snapshot: Snapshot, rule: StoreRule, live: Unwra
   return { ...base, status: 'fail', detail: `행 집합 다름: 저장소 ${a.length}행, 서울 API ${b.length}행(전체 ${live.totalCount}건)` }
 }
 
-/** 가정은 그 가정으로 비교한 요청(전체 값과 앞부분)이 모두 맞아야 맞는 것으로 본다 */
+/**
+ * 가정은 그 가정으로 비교한 요청(전체 값과 앞부분)에 실패가 없고 통과가 하나 이상이어야 맞는 것으로 본다.
+ * 건너뛴 요청은 어느 쪽의 근거도 아니다
+ */
 function decide(results: CaseResult[]): Decision[] {
-  const groups = new Map<string, { service: string; field: string; eq: boolean; contains: boolean }>()
+  type Tally = { pass: number; fail: number }
+  const groups = new Map<string, { service: string; field: string; eq: Tally; contains: Tally }>()
   for (const r of results) {
     if (!r.assume) continue
     const key = `${r.service}.${r.assume.field}`
-    const g = groups.get(key) ?? { service: r.service, field: r.assume.field, eq: true, contains: true }
-    if (r.status !== 'ok' && r.status !== 'order') g[r.assume.kind] = false
+    const g = groups.get(key) ?? { service: r.service, field: r.assume.field, eq: { pass: 0, fail: 0 }, contains: { pass: 0, fail: 0 } }
     groups.set(key, g)
+    if (r.status === 'ok' || r.status === 'order') g[r.assume.kind].pass++
+    else if (r.status === 'fail') g[r.assume.kind].fail++
   }
-  return [...groups.values()].map(g => ({
-    service: g.service, field: g.field,
-    verdict: g.eq && g.contains ? '둘 다 맞음' : g.eq ? '일치' : g.contains ? '부분일치' : '재현 못 함',
-  }))
+  const holds = (t: Tally): boolean => t.fail === 0 && t.pass > 0
+  const counted = (t: Tally): number => t.pass + t.fail
+  return [...groups.values()].map(g => {
+    const eq = holds(g.eq)
+    const contains = holds(g.contains)
+    const verdict: Decision['verdict'] = eq && contains ? '둘 다 맞음' : eq ? '일치' : contains ? '부분일치'
+      : counted(g.eq) + counted(g.contains) === 0 ? '근거 없음' : '재현 못 함'
+    return { service: g.service, field: g.field, verdict }
+  })
 }
 
 export async function runVerify(
@@ -119,6 +175,8 @@ export async function runVerify(
   const delayMs = opts.delayMs ?? CALL_DELAY_MS
   const existing = indexExisting(await store.list(''))
   const results: CaseResult[] = []
+  /** 검사 요청을 끝까지 돈 서비스. 도중에 끊긴 서비스의 결과로는 판정하지 않는다 */
+  const completed = new Set<string>()
   let calls = 0
   let aborted: string | undefined
 
@@ -128,19 +186,35 @@ export async function runVerify(
     const keys = [...(existing.get(service)?.keys() ?? [])].sort()
     const partitionKey = rule.partitions ? keys.at(-1) : keys.find(k => k === ALL)
     const partition = rule.partitions && partitionKey ? partitionKey.split('_') : []
-    const got = partitionKey ? await store.get(snapshotKey(service, partition)) : undefined
-    if (!got || got === 'not-modified') {
+    let snapshot: Snapshot | undefined
+    try {
+      const got = partitionKey ? await store.get(snapshotKey(service, partition)) : undefined
+      if (got && got !== 'not-modified') snapshot = decodeSnapshot(got.body).snapshot
+    } catch (e) {
+      results.push({ service, label: '전체', path: [], status: 'fail', detail: `스냅샷을 읽지 못함: ${(e as Error).message}` })
+      continue
+    }
+    if (!snapshot) {
       results.push({ service, label: '전체', path: [], status: 'skip', detail: '스냅샷 없음' })
       continue
     }
-    const { snapshot } = decodeSnapshot(got.body)
     const live = new Map<string, Unwrapped>()
-    for (const c of casesFor(service, rule, partition)) {
+    for (const c of casesFor(service, rule, partition, snapshot.rows)) {
+      if (c.skip !== undefined) {
+        results.push({ service, label: c.label, path: c.path, status: 'skip', detail: c.skip, ...(c.assume ? { assume: c.assume } : {}) })
+        continue
+      }
       const key = c.path.join('\u0000')
       if (!live.has(key)) {
         if (calls > 0 && delayMs > 0) await new Promise(r => setTimeout(r, delayMs))
         calls++
-        const u = await client.getJson(service, 1, PAGE, c.path)
+        let u: Unwrapped
+        try {
+          u = await client.getJson(service, 1, PAGE, c.path)
+        } catch (e) {
+          aborted = `요청 실패(${service} ${c.label}): ${(e as Error).message}`
+          break services
+        }
         if (u.rows.length === 0 && !isNoData(u)) {
           aborted = u.note ?? '서울 API가 이유 없이 빈 응답을 돌려줬습니다'
           break services
@@ -149,10 +223,11 @@ export async function runVerify(
       }
       results.push(compare(c, snapshot, rule, live.get(key)!, now()))
     }
+    completed.add(service)
   }
   // 가정을 시험한 요청의 실패는 "그 가정이 틀렸다"는 결과이지 검사 실패가 아니다
   const ok = aborted === undefined && results.every(r => r.status !== 'fail' || r.assume !== undefined)
-  return { results, decisions: decide(results), calls, aborted, ok }
+  return { results, decisions: decide(results.filter(r => completed.has(r.service))), calls, aborted, ok }
 }
 
 const STATUS_LABEL = { ok: '통과', order: '순서', fail: '실패', skip: '건너뜀' } as const
