@@ -7,6 +7,9 @@
 - `rules.ts` - 규칙 표 `STORE_RULES`. 서비스별 자리 규칙(일치, 부분일치, 파티션, 미지원), 묶음, 범위, 기한, 스냅샷당 호출 수.
 - `engine.ts` - 순수 함수 `planRequest()`(읽을 스냅샷과 필터 결정)와 `answerFrom()`(필터, 범위, 기한 적용).
 - `snapshot.ts` - 스냅샷 형식, gzip 직렬화, 객체 키(`<서비스>/<파티션 키>.json.gz`), 접두사 `store/v1`.
+- `snapshotStore.ts` - `SnapshotStore` 인터페이스(`get`, `put`, `list`)와 디렉터리 구현 `DirectoryStore`(테스트와 로컬 개발용).
+- `s3Store.ts` - S3 구현 `S3Store`. `createS3Store()` 안에서만 `@aws-sdk/client-s3`를 lazy import합니다. 없는 객체(404)는 `undefined`, 그 밖의 오류는 던집니다.
+- `reader.ts` - `SnapshotReader`. 메모리 보관(96MB, 오래 안 쓴 것부터 버림), 10분 뒤 ETag 재확인, 없는 객체와 오류 5분 기억, 동시 읽기 합치기, 3초 시간 제한.
 
 ## Rules
 - 허용 목록 방식입니다. 규칙 표에 없는 서비스, 미지원 자리, 형식에 맞지 않는 파티션 값은 답하지 않고 지금 경로(캐시와 서울 API)로 넘깁니다. 추측으로 답하지 않습니다.
