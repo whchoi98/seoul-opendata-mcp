@@ -18,6 +18,8 @@ export const DATE_EXTRA = 10
 export const MONTH_EXTRA = 2
 /** 역 코드 스냅샷이 아직 없을 때 시간표 예상에 쓰는 역 수 */
 export const STATION_ESTIMATE = 300
+/** 실제 호출이 예상 합계의 2배에 이 값을 더한 수에 닿으면 실행을 끝낸다. 원천의 전체 건수가 크게 늘었을 때 쿼터를 다 쓰지 않게 한다 */
+export const CALL_CAP_EXTRA = 10
 
 const STATION_SERVICE = 'SearchInfoBySubwayNameService'
 const NUMBERED_LINE = /^0?[1-9]호선$/
@@ -205,7 +207,11 @@ export async function collect(client: CollectClient, store: SnapshotStore, opts:
     return { ...report, ok: false, reason: `예상 호출 ${estimated}회가 남은 한도 ${opts.remaining}회를 넘어 시작하지 않았습니다. --force를 붙이면 그래도 시작합니다` }
   }
   report.started = true
+  log(formatPlan(report))
 
+  /** 실행 전체에서 부른 수. 상한에 닿으면 남은 데이터셋도 같은 가정으로 계산했으므로 실행을 끝낸다 */
+  let made = 0
+  const cap = 2 * estimated + CALL_CAP_EXTRA
   let first = true
   const pace = async (): Promise<void> => {
     if (!first && delayMs > 0) await new Promise(r => setTimeout(r, delayMs))
@@ -217,7 +223,10 @@ export async function collect(client: CollectClient, store: SnapshotStore, opts:
     const rows: any[] = []
     let totalCount = 0
     for (let start = 1; ; start += PAGE) {
+      // SeoulApiError가 아니므로 아래의 처리에서 실행 전체를 끝낸다
+      if (made >= cap) throw new Error(`호출 ${made}회가 예상 상한 ${estimated}회의 2배를 넘어 중단했습니다. 규칙 표의 스냅샷당 호출 수를 확인하세요`)
       await pace()
+      made++
       result.calls++
       const u = await client.getJson(service, start, start + PAGE - 1, partition)
       if (u.rows.length === 0) {

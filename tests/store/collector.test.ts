@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { SeoulApiError, type Unwrapped } from '../../src/client/response.js'
 import { InMemoryLedger, keyIdOf } from '../../src/client/quota.js'
 import {
-  CALL_DELAY_MS, DAILY_SKIP_MS, PAGE, STATIC_SKIP_MS, collect, formatPlan, formatQuota, formatReport, formatStatus,
+  CALL_CAP_EXTRA, CALL_DELAY_MS, DAILY_SKIP_MS, PAGE, STATIC_SKIP_MS, collect, formatPlan, formatQuota, formatReport, formatStatus,
   indexExisting, planCollection, recentDates, recentMonths, remainingQuota, stationCodes, statusOf, type CollectClient,
 } from '../../src/store/collector.js'
 import { decodeSnapshot, encodeSnapshot, isHead, snapshotKey, type Snapshot } from '../../src/store/snapshot.js'
@@ -262,6 +262,40 @@ describe('collect', () => {
     expect(isHead(m.read(PHARMACY, []))).toBe(true)
     expect(report.results[0].warnings[0]).toContain('2500행 중 1000행')
     expect(report.ok).toBe(true)
+  })
+
+  it('수집을 시작하면 먼저 데이터셋별 예상 호출 수를 보여 준다. 시작하지 않으면 로그를 남기지 않는다', async () => {
+    const m = memoryStore()
+    const { client } = fakeClient(r => page(r, 3))
+    const lines: string[] = []
+    const report = await run(client, m.store, { only: [PHARMACY], remaining: 100, log: l => lines.push(l) })
+    expect(lines).toEqual([formatPlan(report), `${PHARMACY}: 저장 1, 건너뜀 0, 데이터 없음 0, 호출 1`])
+    expect(lines[0]).toContain(`${PHARMACY}: 받을 스냅샷 1개, 건너뜀 0개, 예상 6회`)
+    expect(lines[0]).toContain('남은 한도 합계: 100회')
+    const quiet: string[] = []
+    const empty = memoryStore()
+    expect(await run(client, empty.store, { only: [PHARMACY], dryRun: true, log: l => quiet.push(l) })).toMatchObject({ started: false })
+    expect(await run(client, empty.store, { only: [PHARMACY], remaining: 5, log: l => quiet.push(l) })).toMatchObject({ started: false })
+    expect(quiet).toEqual([])
+  })
+
+  it('실제 호출 수가 예상 상한의 2배에 10회를 더한 값에 닿으면 실행을 끝내고, 그 데이터셋은 쓰지 않는다', async () => {
+    const m = memoryStore()
+    const fullPage = Array.from({ length: PAGE }, (_, i) => ({ i }))
+    // 공영주차장 안내의 전체 건수가 규칙 표의 가정(3페이지)보다 훨씬 크다
+    const { client, calls } = fakeClient(r => (r.service === 'GetParkInfo' ? { rows: fullPage, totalCount: 900_000_000 } : page(r, 3)))
+    const report = await run(client, m.store, { only: [PHARMACY, 'GetParkInfo'] })
+    expect(report.estimated).toBe(9)
+    const cap = 2 * 9 + 10
+    expect(report.calls).toBe(cap)
+    expect(CALL_CAP_EXTRA).toBe(10)
+    expect(calls).toHaveLength(cap)
+    expect(report.aborted).toBe(`호출 ${cap}회가 예상 상한 9회의 2배를 넘어 중단했습니다. 규칙 표의 스냅샷당 호출 수를 확인하세요`)
+    expect(report.ok).toBe(false)
+    // 호출 수는 실행 전체로 센다: 약국 1회 + 공영주차장 27회
+    expect(report.results).toMatchObject([{ service: PHARMACY, saved: 1, calls: 1 }, { service: 'GetParkInfo', saved: 0, calls: cap - 1 }])
+    expect(m.objects.has(`GetParkInfo/_all.json.gz`)).toBe(false)
+    expect(m.objects.has(`${PHARMACY}/_all.json.gz`)).toBe(true)
   })
 
   it('예상 호출 수가 남은 한도를 넘으면 --force 없이는 시작하지 않는다', async () => {
