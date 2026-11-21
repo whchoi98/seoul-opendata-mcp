@@ -66,7 +66,12 @@ export function casesFor(service: string, rule: StoreRule, partition: string[], 
   }
   const probed = supported.filter(i => probes[i] !== undefined)
   if (probed.length > 1) {
-    cases.push({ service, path: pathWith(Object.fromEntries(probed.map(i => [i, probes[i]!]))), label: '지원 자리 전부' })
+    const fieldOf = (i: number): string => rule.slots[i].field
+    // 따로 고른 값을 모두 가진 행이 없으면 이 요청만은 모든 자리의 필드가 비지 않은 첫 행에서 값을 모은다
+    const together = rows?.some(r => probed.every(i => fieldText(r, fieldOf(i)).includes(probes[i]!)))
+    const one = rows && !together ? rows.find(r => probed.every(i => fieldText(r, fieldOf(i)) !== '')) : undefined
+    const values = Object.fromEntries(probed.map(i => [i, one ? fieldText(one, fieldOf(i)) : probes[i]!]))
+    cases.push({ service, path: pathWith(values), label: '지원 자리 전부' })
   }
   rule.slots.forEach((s, i) => {
     if (s.kind !== 'unsupported' || !s.decide) return

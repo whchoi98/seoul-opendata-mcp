@@ -201,10 +201,10 @@ describe('runVerify', () => {
   })
 
   it('필터가 있는 요청에서 양쪽 모두 0건이면, 이 값을 가진 행이 스냅샷에 없을 때 건너뛴다', async () => {
-    // 강남구 약국과 온누리약국이 따로 있어 두 값을 모두 가진 행이 없다
+    // 강남구 행과 온누리 행이 따로 있어 두 값을 모두 가진 행이 없다. 두 필드가 모두 찬 행도 없어 한 행에서 값을 모을 수 없다
     const apart = [
-      { DUTYNAME: '역삼약국', DUTYADDR: '서울특별시 강남구 역삼로 2' },
-      { DUTYNAME: '서초온누리약국', DUTYADDR: '서울특별시 서초구 서초대로 3' },
+      { DUTYNAME: '', DUTYADDR: '서울특별시 강남구 역삼로 2' },
+      { DUTYNAME: '서초온누리약국', DUTYADDR: '' },
     ]
     const m = memoryStore()
     m.seed(PHARMACY, [], apart)
@@ -214,6 +214,24 @@ describe('runVerify', () => {
       detail: '양쪽 모두 0건이고 스냅샷에 이 값을 가진 행이 없어 근거가 되지 않음',
     })
     expect(report.results.slice(0, -1).every(r => r.status === 'ok')).toBe(true)
+    expect(report.ok).toBe(true)
+  })
+
+  it('따로 고른 값을 함께 가진 행이 없으면 지원 자리 전부는 한 행에서 값을 모아 실제로 비교한다', async () => {
+    // 카탈로그 예시 값(강남구, 온누리)이 없고, 필드마다 첫 값이 서로 다른 행에서 나온다
+    const scattered = [
+      { DUTYADDR: '마포구 망원로 1', DUTYNAME: '' },
+      { DUTYADDR: '', DUTYNAME: '망원약국' },
+      { DUTYADDR: '종로구 종로 2', DUTYNAME: '종로약국' },
+    ]
+    const m = memoryStore()
+    m.seed(PHARMACY, [], scattered)
+    const report = await verifyOnly(fakeClient(livePharmacyOf(scattered)).client, m.store, [PHARMACY])
+    const by = (label: string) => report.results.find(r => r.label === label)!
+    // 자리 하나씩 요청은 따로 고른 값을 그대로 쓴다
+    expect(by('DUTYADDR만').path).toEqual(['마포구 망원로 1'])
+    expect(by('DUTYNAME만').path).toEqual([B, '망원약국'])
+    expect(by('지원 자리 전부')).toMatchObject({ path: ['종로구 종로 2', '종로약국'], status: 'ok', detail: '1건 일치' })
     expect(report.ok).toBe(true)
   })
 
