@@ -1,7 +1,7 @@
 # Project Context
 
 ## Overview
-seoul-opendata-mcp(v0.7.0, MIT)는 서울 열린데이터광장(Seoul Open Data Plaza) 실시간 도시데이터를 23개 MCP tool로 제공하는 MCP 서버입니다. 로컬 클라이언트는 stdio(`src/index.ts`)로, Amazon Bedrock AgentCore Runtime은 Streamable HTTP(`src/http.ts`, `:8000`)로 연결합니다. GitHub: https://github.com/whchoi98/seoul-opendata-mcp.
+seoul-opendata-mcp(v0.8.0, MIT)는 서울 열린데이터광장(Seoul Open Data Plaza) 실시간 도시데이터를 23개 MCP tool로 제공하는 MCP 서버입니다. 로컬 클라이언트는 stdio(`src/index.ts`)로, Amazon Bedrock AgentCore Runtime은 Streamable HTTP(`src/http.ts`, `:8000`)로 연결합니다. GitHub: https://github.com/whchoi98/seoul-opendata-mcp.
 
 ## Tech Stack
 - TypeScript(strict, ESM), Node.js >=18

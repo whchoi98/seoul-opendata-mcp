@@ -1,6 +1,6 @@
 # API Reference
 
-23 [MCP](https://modelcontextprotocol.io) tools exposed by `seoul-opendata-mcp` v0.7.0, grouped as they are registered in `src/index.ts` / `src/tools/*.ts`. Input schemas below are transcribed from each tool's `zod` `inputSchema` in source; output summaries list the fields of the `data` payload before it is wrapped in the common response envelope.
+23 [MCP](https://modelcontextprotocol.io) tools exposed by `seoul-opendata-mcp` v0.8.0, grouped as they are registered in `src/index.ts` / `src/tools/*.ts`. Input schemas below are transcribed from each tool's `zod` `inputSchema` in source; output summaries list the fields of the `data` payload before it is wrapped in the common response envelope.
 
 ## Protocol
 

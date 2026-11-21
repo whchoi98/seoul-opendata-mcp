@@ -9,6 +9,7 @@ Description: >-
 # The second pass passes both and creates the runtime, the interceptor, the
 # gateway and its target.
 # Design: docs/superpowers/specs/2026-11-19-workshop-gateway-design.md
+# Snapshot store: docs/superpowers/specs/2026-11-21-snapshot-store-design.md
 
 Parameters:
   McpImageUri:
@@ -77,7 +78,7 @@ Resources:
         Enabled: true
 
   WorkshopBucket:
-    # Holds the interceptor zip under code/.
+    # Holds the Lambda zips under code/ and the pre-collected snapshots under store/v1/.
     Type: AWS::S3::Bucket
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
@@ -93,6 +94,13 @@ Resources:
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          # Longer than the longest snapshot max age the server uses (30 days). code/ is not affected.
+          - Id: expire-store-snapshots
+            Status: Enabled
+            Prefix: store/
+            ExpirationInDays: 90
 
   RuntimeRole:
     Type: AWS::IAM::Role
@@ -129,6 +137,17 @@ Resources:
                 Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
                 Resource: !GetAtt WorkshopTable.Arn
+              - Sid: StoreRead
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "${WorkshopBucket.Arn}/store/*"
+              - Sid: StoreList
+                # With list permission a read of a missing snapshot returns 404 instead of 403.
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt WorkshopBucket.Arn
+                Condition:
+                  StringLike: {"s3:prefix": "store/*"}
 
   WorkshopRuntime:
     Type: AWS::BedrockAgentCore::Runtime
@@ -150,6 +169,7 @@ Resources:
         SEOUL_SUBWAY_API_KEY: !Ref SeoulSubwayApiKey
         CACHE_TABLE_NAME: !Ref WorkshopTable
         QUOTA_DAILY_LIMIT: !Ref QuotaDailyLimit
+        STORE_URI: !Sub "s3://${WorkshopBucket}/store/v1"
 
   CodeCheckLogGroup:
     Type: AWS::Logs::LogGroup

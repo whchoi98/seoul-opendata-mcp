@@ -33,6 +33,26 @@ describe('infra/seoul-workshop.yaml', () => {
       SEOUL_SUBWAY_API_KEY: { Ref: 'SeoulSubwayApiKey' },
       CACHE_TABLE_NAME: { Ref: 'WorkshopTable' },
       QUOTA_DAILY_LIMIT: { Ref: 'QuotaDailyLimit' },
+      STORE_URI: { Sub: 's3://${WorkshopBucket}/store/v1' },
+    })
+  })
+
+  it('런타임 역할은 store/ 아래 객체만 읽고 목록 권한은 store/ 접두사로 제한한다', () => {
+    const st = statements('RuntimeRole')
+    expect(st.find(s => s.Sid === 'StoreRead')).toEqual({
+      Sid: 'StoreRead', Effect: 'Allow', Action: 's3:GetObject', Resource: { Sub: '${WorkshopBucket.Arn}/store/*' },
+    })
+    expect(st.find(s => s.Sid === 'StoreList')).toEqual({
+      Sid: 'StoreList', Effect: 'Allow', Action: 's3:ListBucket', Resource: { GetAtt: 'WorkshopBucket.Arn' },
+      Condition: { StringLike: { 's3:prefix': 'store/*' } },
+    })
+    const s3Actions = st.flatMap(s => asList(s.Action)).filter(a => String(a).startsWith('s3:')).sort()
+    expect(s3Actions).toEqual(['s3:GetObject', 's3:ListBucket'])
+  })
+
+  it('버킷은 store/ 아래 객체만 90일 뒤에 지운다', () => {
+    expect(R.WorkshopBucket.Properties.LifecycleConfiguration).toEqual({
+      Rules: [{ Id: 'expire-store-snapshots', Status: 'Enabled', Prefix: 'store/', ExpirationInDays: 90 }],
     })
   })
 

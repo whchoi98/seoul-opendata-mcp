@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-21
+
+### Added
+
+- Snapshot store (`src/store/`): with `STORE_URI` set (`s3://<bucket>/store/v1` or a directory), the server answers 37 slow-changing datasets from pre-collected gzip JSON snapshots before it touches the cache, the key pool, or the quota ledger. A request answered from the store makes no upstream call, and stored data keeps answering after every key has reached its daily limit. Such responses carry a `사전 적재 데이터(M월 D일 수집)` note. Requests the store cannot answer take the existing path unchanged, and without `STORE_URI` nothing changes.
+- `npm run workshop:collect -- daily|static|status|verify`: collects snapshots with the workshop keys, records its calls in the quota ledger, skips what was collected recently, and compares snapshots with the live API.
+- Workshop stack: the runtime reads `store/` in the workshop bucket through `STORE_URI`, and snapshots expire after 90 days.
+
+### Changed
+
+- `@aws-sdk/client-s3` is a new dependency. It is imported only when `STORE_URI` starts with `s3://`. The mcpb bundle is 5.9 MB.
+- `src/client/dynamo.ts` exports `createDocClient()` and `src/client/response.ts` exports `noDataNote()`.
+
 ## [0.7.0] - 2026-11-19
 
 ### Added
@@ -141,7 +154,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add an XML error fallback for JSON endpoints
 - Fall back to sample mode when the API key is empty
 
-[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.3.0...v0.4.0
@@ -160,6 +175,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 따릅니다.
 
 ## [Unreleased]
+
+## [0.8.0] - 2026-11-21
+
+### Added
+
+- 사전 적재 저장소(`src/store/`): `STORE_URI`(`s3://<버킷>/store/v1` 또는 디렉터리)를 설정하면 하루 단위 이상으로 바뀌는 데이터셋 37종을 미리 받아 둔 gzip JSON 스냅샷으로 답함. 캐시, 키 풀, 쿼터 장부보다 먼저 조회하므로 저장소가 답한 요청은 서울 API 호출이 0회이고, 모든 키가 하루 한도에 닿아도 저장된 데이터는 계속 나감. 응답에 `사전 적재 데이터(M월 D일 수집)` 안내 추가. 저장소가 답하지 못하는 요청은 기존 경로 그대로이고, `STORE_URI`가 없으면 동작 변화 없음
+- `npm run workshop:collect -- daily|static|status|verify`: 워크숍 키로 스냅샷 수집, 수집 호출의 쿼터 장부 기록, 최근에 받은 스냅샷 건너뛰기, 실제 API 대비 검사
+- 워크숍 스택: 런타임이 `STORE_URI`로 워크숍 버킷의 `store/`를 읽음. 스냅샷은 90일 뒤 삭제
+
+### Changed
+
+- 새 의존성 `@aws-sdk/client-s3` 추가. `STORE_URI`가 `s3://`로 시작할 때만 불러옴. mcpb 묶음 5.9 MB
+- `src/client/dynamo.ts`가 `createDocClient()`를, `src/client/response.ts`가 `noDataNote()`를 내보냄
 
 ## [0.7.0] - 2026-11-19
 
@@ -287,7 +315,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON 엔드포인트에 대한 XML 에러 응답 폴백 처리 추가
 - API 키가 비어 있을 때 sample 모드로 폴백하도록 수정
 
-[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/whchoi98/seoul-opendata-mcp/compare/v0.3.0...v0.4.0

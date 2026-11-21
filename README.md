@@ -1,6 +1,6 @@
 # Seoul OpenData MCP
 
-[![Version](https://img.shields.io/badge/Version-0.7.0-green.svg)]()
+[![Version](https://img.shields.io/badge/Version-0.8.0-green.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/Node-%3E%3D18-brightgreen.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue.svg)]()
