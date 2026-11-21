@@ -33,7 +33,8 @@ const NO_VALUE = '스냅샷에 이 필드 값이 없어 검사하지 못함'
 /**
  * 서비스 하나의 검사 요청: 인자 없음, 자리 하나씩, 지원 자리 전부, 결정할 자리의 두 가정.
  * 지원 자리와 결정할 자리는 값 전체와 그 앞부분 두 값으로 시험한다. 전체 값만으로는 일치와 부분일치가 같은 행을 고르기 때문이다.
- * 값은 예시 값을 포함한 행이 스냅샷(rows)에 있으면 예시 값, 없으면 스냅샷에서 그 필드의 첫 값이다. rows를 주지 않으면 예시 값을 그대로 쓴다
+ * 값은 예시 값이다. 다만 일치로 비교하는 자리(일치, 결정할 자리)는 예시 값과 똑같은 값을 가진 행이, 부분일치 자리는 예시 값을 포함한 행이
+ * 스냅샷(rows)에 있어야 한다. 없으면 스냅샷에서 그 필드의 첫 값을 쓴다. rows를 주지 않으면 예시 값을 그대로 쓴다
  */
 export function casesFor(service: string, rule: StoreRule, partition: string[], rows?: any[]): VerifyCase[] {
   const examples = examplesOf(service, rule)
@@ -46,11 +47,16 @@ export function casesFor(service: string, rule: StoreRule, partition: string[], 
   /** 자리 번호 → 시험할 값. 스냅샷에 그 필드 값이 없으면 undefined */
   const probes = rule.slots.map((s, i): string | undefined => {
     if (!rows) return examples[i]
+    const stored = rows.map(r => fieldText(r, s.field)).filter(v => v !== '')
     const example = (examples[i] ?? '').trim()
-    if (example !== '' && rows.some(r => fieldText(r, s.field).includes(example))) return example
-    return rows.map(r => fieldText(r, s.field)).find(v => v !== '')
+    // 일치로 비교하는 자리에 행 값의 일부를 넣으면 맞는 규칙에서도 양쪽이 0건이라 아무것도 확인하지 못한다
+    const byEquality = s.kind === 'eq' || (s.kind === 'unsupported' && s.decide === true)
+    if (example !== '' && stored.some(v => (byEquality ? v === example : v.includes(example)))) return example
+    // '/'는 경로에서 %2F가 되고 서울 API가 이를 어떻게 다루는지 모른다. 거부되면 검사 전체가 끝나므로 다른 값이 있으면 피한다
+    return stored.find(v => !v.includes('/')) ?? stored[0]
   })
-  const frontOf = (value: string): string => value.slice(0, Math.max(1, Math.ceil(value.length / 2)))
+  // 끝의 공백은 저장소가 잘라 내지만 서울 API에는 그대로 간다. 앞부분이 공백으로 끝나지 않게 한다
+  const frontOf = (value: string): string => value.slice(0, Math.max(1, Math.ceil(value.length / 2))).trimEnd()
   const supported = rule.slots.flatMap((s, i) => (s.kind === 'eq' || s.kind === 'contains' ? [i] : []))
   const cases: VerifyCase[] = [{ service, path: pathWith({}), label: '인자 없음' }]
   for (const i of supported) {
@@ -237,10 +243,13 @@ export async function runVerify(
 
 const STATUS_LABEL = { ok: '통과', order: '순서', fail: '실패', skip: '건너뜀' } as const
 
+/** 보낸 경로. 값은 스냅샷에서 올 수 있어 출력에 함께 적는다. 건너뛴 자리는 _, 경로가 없으면 빈 문자열 */
+const sentPath = (path: string[]): string => (path.length > 0 ? ` [${path.map(v => (v.trim() === '' ? '_' : v)).join(', ')}]` : '')
+
 export function formatVerify(report: VerifyReport): string {
   return [
     '[verify] 실제 API 대비 검사',
-    ...report.results.map(r => `  ${STATUS_LABEL[r.status]} ${r.service} ${r.label}: ${r.detail}`),
+    ...report.results.map(r => `  ${STATUS_LABEL[r.status]} ${r.service} ${r.label}${sentPath(r.path)}: ${r.detail}`),
     ...(report.decisions.length > 0 ? ['검증으로 결정할 자리:', ...report.decisions.map(d => `  ${d.service}.${d.field}: ${d.verdict}`)] : []),
     `호출 합계: ${report.calls}회`,
     ...(report.aborted ? [`중단: ${report.aborted}`] : []),

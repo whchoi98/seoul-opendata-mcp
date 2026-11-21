@@ -14,6 +14,8 @@ const STATION = 'SearchInfoBySubwayNameService'
 const FIRST_LAST = 'SearchFirstAndLastTrainbyLineServiceNew'
 const B = ' '
 const NO_VALUE = '스냅샷에 이 필드 값이 없어 검사하지 못함'
+const NAME = '더샵둔촌포레(둔촌현대1차A)'
+const seniors = [{ SISUL_NM: NAME }, { SISUL_NM: `${NAME} 별관` }]
 
 function memoryStore() {
   const objects = new Map<string, Buffer>()
@@ -115,6 +117,32 @@ describe('casesFor', () => {
       ['OTSD_CD만(앞부분)', [...p, B, '90']],
       ['지원 자리 전부', [...p, '4101', '901']],
     ])
+  })
+
+  it('일치로 비교하는 자리는 예시 값과 똑같은 행이, 부분일치 자리는 예시 값을 포함한 행이 있어야 예시 값을 쓴다', () => {
+    const valueOf = (service: string, rows: any[], label: string, partition: string[] = []) =>
+      casesFor(service, STORE_RULES[service], partition, rows).find(c => c.label === label)!.path.at(-1)
+    // 일치 자리: 예시 값(강남)과 똑같은 행이 있으면 쓴다. 포함하기만 하면 그 필드의 첫 값으로 바꾼다
+    expect(valueOf(STATION, [{ STATION_NM: '강남구청' }, { STATION_NM: '강남' }], 'STATION_NM만')).toBe('강남')
+    expect(valueOf(STATION, [{ STATION_NM: '강남구청' }, { STATION_NM: '역삼' }], 'STATION_NM만')).toBe('강남구청')
+    // 검증으로 결정할 자리도 일치로 비교하므로 같은 규칙이다
+    expect(valueOf(SENIOR, [{ SISUL_NM: `${NAME} 별관` }], 'SISUL_NM 가정: 일치(전체 값)')).toBe(`${NAME} 별관`)
+    expect(valueOf(SENIOR, [{ SISUL_NM: `${NAME} 별관` }, { SISUL_NM: NAME }], 'SISUL_NM 가정: 일치(전체 값)')).toBe(NAME)
+    // 부분일치 자리: 예시 값(솔밭)을 포함한 행이 있으면 쓴다
+    expect(valueOf('tnFcltySttusInfo1011', [{ FCLTY_NM: '솔밭공원' }], 'FCLTY_NM만')).toBe('솔밭')
+    // 대체 값은 '/'가 든 값을 건너뛴다. 모든 값에 '/'가 있으면 첫 값을 쓴다
+    expect(valueOf(STATION, [{ STATION_NM: '서울역/1호선' }, { STATION_NM: '시청' }], 'STATION_NM만')).toBe('시청')
+    expect(valueOf(STATION, [{ STATION_NM: '서울역/1호선' }, { STATION_NM: '시청/2호선' }], 'STATION_NM만')).toBe('서울역/1호선')
+  })
+
+  it('앞부분은 끝의 공백을 뗀다', () => {
+    const cases = casesFor('tnFcltySttusInfo1011', STORE_RULES.tnFcltySttusInfo1011, [], [{ FCLTY_NM: '서울특별시 강남구 1' }])
+    // 앞 6글자는 '서울특별시 '이다. 서울 API가 끝 공백을 받지 않도록 '서울특별시'로 보낸다
+    expect(cases.map(c => [c.label, c.path])).toEqual([
+      ['인자 없음', []], ['FCLTY_NM만', ['서울특별시 강남구 1']], ['FCLTY_NM만(앞부분)', ['서울특별시']],
+    ])
+    const senior = casesFor(SENIOR, STORE_RULES[SENIOR], [], [{ SISUL_NM: '서울특별시 강남구 1' }])
+    expect(senior.filter(c => c.label.includes('앞부분')).map(c => c.path)).toEqual([['서울특별시'], ['서울특별시']])
   })
 
   it('스냅샷에 그 필드 값이 하나도 없으면 서울 API를 부르지 않고 건너뛸 자리 표시만 만든다', () => {
@@ -252,6 +280,40 @@ describe('runVerify', () => {
     expect(report.ok).toBe(true)
   })
 
+  it('일치 자리의 예시 값이 행 값의 일부일 뿐이면 행 값으로 시험해 서울 API의 0건을 실패로 드러낸다', async () => {
+    // 예시 값 강남은 강남구청의 일부일 뿐이다. 서울 API는 값을 주면 늘 0건이다
+    const stations = [{ STATION_NM: '강남구청' }, { STATION_NM: '역삼' }]
+    const m = memoryStore()
+    m.seed(STATION, [], stations)
+    const { client } = fakeClient(r => (r.path.some(v => v.trim() !== '') ? noData(r.service) : answer(r.service, stations)))
+    const report = await verifyOnly(client, m.store, [STATION])
+    expect(report.results.find(r => r.label === 'STATION_NM만')).toMatchObject({
+      path: ['강남구청'], status: 'fail', detail: '전체 건수 다름: 저장소 1, 서울 API 0',
+    })
+    expect(report.ok).toBe(false)
+  })
+
+  it('결정할 자리의 예시 값이 행 값의 일부일 뿐이면 행 값으로 시험해 0건끼리의 비교로 일치라고 하지 않는다', async () => {
+    // 예시 값 초등학교는 '초등학교 3~6학년'의 일부일 뿐이다. 서울 API는 USETGTINFO 자리에 값이 오면 늘 0건이다
+    const edu = [
+      { MINCLASSNM: '역사', SVCNM: '한양도성 탐방', USETGTINFO: '초등학교 3~6학년', AREANM: '종로구' },
+      { MINCLASSNM: '과학', SVCNM: '별자리 교실', USETGTINFO: '제한없음', AREANM: '중구' },
+    ]
+    const service = 'ListPublicReservationEducation'
+    const m = memoryStore()
+    m.seed(service, [], edu)
+    const { client } = fakeClient(r => {
+      const [min = '', svc = '', use = '', area = ''] = r.path.map(v => v.trim())
+      if (use !== '') return noData(r.service)
+      return answer(r.service, edu.filter(x => x.MINCLASSNM.includes(min) && x.SVCNM.includes(svc) && (area === '' || x.AREANM === area)))
+    })
+    const report = await verifyOnly(client, m.store, [service])
+    expect(report.results.find(r => r.label === 'USETGTINFO 가정: 일치(전체 값)')).toMatchObject({
+      path: [B, B, '초등학교 3~6학년'], status: 'fail', detail: '전체 건수 다름: 저장소 1, 서울 API 0',
+    })
+    expect(report.decisions.find(d => d.field === 'USETGTINFO')).toEqual({ service, field: 'USETGTINFO', verdict: '재현 못 함' })
+  })
+
   it('첫차와 막차: 가장 최근 파티션에 카탈로그 예시 값이 없으면 스냅샷의 값으로 실제로 비교한다', async () => {
     const line2 = [{ SBWY_ROUT_LN: '02호선', SUBW_CD: '0222', OTSD_CD: '222', STTN: '강남' }, { SBWY_ROUT_LN: '02호선', SUBW_CD: '0223', OTSD_CD: '223', STTN: '역삼' }]
     const line9 = [{ SBWY_ROUT_LN: '09호선', SUBW_CD: '4101', OTSD_CD: '901', STTN: '개화' }, { SBWY_ROUT_LN: '09호선', SUBW_CD: '4102', OTSD_CD: '902', STTN: '김포공항' }]
@@ -277,8 +339,6 @@ describe('runVerify', () => {
     expect(report.ok).toBe(true)
   })
 
-  const NAME = '더샵둔촌포레(둔촌현대1차A)'
-  const seniors = [{ SISUL_NM: NAME }, { SISUL_NM: `${NAME} 별관` }]
   /** 경로당 서비스가 이름을 일치로 거른다고 볼 때와 부분일치로 거른다고 볼 때의 서울 API */
   const liveSenior = (kind: 'eq' | 'contains', rows = seniors) => (r: Req): Unwrapped => {
     const v = (r.path[0] ?? '').trim()
@@ -443,9 +503,15 @@ describe('runVerify', () => {
     const m = memoryStore()
     m.seed(SENIOR, [], seniors)
     const text = formatVerify(await runVerify(fakeClient(liveSenior('eq')).client, m.store, { only: [SENIOR], now: () => NOW, delayMs: 0 }))
-    expect(text).toContain('통과 OdsnBuildingInfo 인자 없음: 2건 일치')
-    expect(text).toContain('실패 OdsnBuildingInfo SISUL_NM 가정: 부분일치(전체 값)')
+    // 보낸 값은 라벨 뒤 대괄호에 적는다. 인자 없는 요청에는 대괄호가 없다
+    expect(text.split('\n')).toContain('  통과 OdsnBuildingInfo 인자 없음: 2건 일치')
+    expect(text.split('\n')).toContain(`  실패 OdsnBuildingInfo SISUL_NM 가정: 부분일치(전체 값) [${NAME}]: 전체 건수 다름: 저장소 2, 서울 API 1`)
     expect(text).toContain('OdsnBuildingInfo.SISUL_NM: 일치')
     expect(text).toContain('호출 합계: 3회')
+    // 건너뛰는 자리(공백 한 칸)는 _로 적는다
+    m.seed(PHARMACY, [], pharmacies)
+    const lines = formatVerify(await verifyOnly(fakeClient(livePharmacy).client, m.store, [PHARMACY])).split('\n')
+    expect(lines).toContain('  통과 TbPharmacyOperateInfo DUTYNAME만(앞부분) [_, 온누]: 2건 일치')
+    expect(lines).toContain('  통과 TbPharmacyOperateInfo 지원 자리 전부 [강남구, 온누리]: 1건 일치')
   })
 })
