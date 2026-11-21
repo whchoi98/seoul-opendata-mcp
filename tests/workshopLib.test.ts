@@ -85,3 +85,13 @@ describe('workshop-lib', () => {
     expect(stackBlocker(undefined)).toBeUndefined()
   })
 })
+
+describe('parseCollectDays', () => {
+  it('없으면 undefined, 1~60 정수만 받는다', async () => {
+    const { parseCollectDays } = await import('../scripts/workshop-lib.js')
+    expect(parseCollectDays(undefined)).toBeUndefined()
+    expect(parseCollectDays('1')).toBe(1)
+    expect(parseCollectDays('60')).toBe(60)
+    for (const bad of ['0', '61', '1.5', 'two', '']) expect(() => parseCollectDays(bad)).toThrow('--days')
+  })
+})

@@ -39,6 +39,14 @@ export function parseDays(raw: string | undefined): number {
   return n
 }
 
+/** workshop:collect의 --days. 날짜 파티션을 며칠 치 받을지 정한다 */
+export function parseCollectDays(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined
+  const n = Number(raw)
+  if (raw.trim() === '' || !Number.isInteger(n) || n < 1 || n > 60) throw new Error(`--days는 1~60 사이 정수여야 합니다: ${raw}`)
+  return n
+}
+
 /** KST ISO 8601 시각(초 단위, +09:00). 템플릿 CodeValidUntil의 AllowedPattern과 같은 형식 */
 export function kstIso(ms: number): string {
   return `${new Date(ms + 9 * 3_600_000).toISOString().slice(0, 19)}+09:00`

@@ -62,19 +62,24 @@ export class DynamoDbLedger implements QuotaLedger {
   }
 }
 
+/** aws-sdk를 lazy 로드해 DynamoDB 문서 클라이언트를 만든다. 서버(캐시와 장부)와 수집기(장부만)가 함께 쓴다 */
+export async function createDocClient(region?: string): Promise<DocClientLike> {
+  const [{ DynamoDBClient }, { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand }] =
+    await Promise.all([import('@aws-sdk/client-dynamodb'), import('@aws-sdk/lib-dynamodb')])
+  const raw = DynamoDBDocumentClient.from(new DynamoDBClient(region ? { region } : {}))
+  return {
+    get: p => raw.send(new GetCommand(p)),
+    put: p => raw.send(new PutCommand(p)),
+    update: p => raw.send(new UpdateCommand(p)),
+  }
+}
+
 /** CACHE_TABLE_NAME 설정 시에만 aws-sdk를 lazy 로드해 L2 캐시·원장을 연결한다. 실패해도 서버는 L1으로 계속 동작 */
 export async function maybeAttachL2(client: SeoulApiClient): Promise<boolean> {
   const table = process.env.CACHE_TABLE_NAME
   if (!table) return false
   try {
-    const [{ DynamoDBClient }, { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand }] =
-      await Promise.all([import('@aws-sdk/client-dynamodb'), import('@aws-sdk/lib-dynamodb')])
-    const raw = DynamoDBDocumentClient.from(new DynamoDBClient({}))
-    const doc: DocClientLike = {
-      get: p => raw.send(new GetCommand(p)),
-      put: p => raw.send(new PutCommand(p)),
-      update: p => raw.send(new UpdateCommand(p)),
-    }
+    const doc = await createDocClient()
     client.attachL2(new DynamoDbCache(doc, table))
     client.setLedger(new DynamoDbLedger(doc, table))
     console.error(`[cache] DynamoDB L2 활성화: ${table}`)

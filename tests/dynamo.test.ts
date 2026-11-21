@@ -99,3 +99,13 @@ describe('maybeAttachL2', () => {
     }
   })
 })
+
+describe('createDocClient', () => {
+  it('get, put, update를 가진 문서 클라이언트를 만든다(네트워크 호출 없음)', async () => {
+    const { createDocClient } = await import('../src/client/dynamo.js')
+    const doc = await createDocClient('ap-northeast-2')
+    expect(typeof doc.get).toBe('function')
+    expect(typeof doc.put).toBe('function')
+    expect(typeof doc.update).toBe('function')
+  })
+})

@@ -11,6 +11,7 @@
 - `s3Store.ts` - S3 구현 `S3Store`. `createS3Store()` 안에서만 `@aws-sdk/client-s3`를 lazy import합니다. 없는 객체(404)는 `undefined`, 그 밖의 오류는 던집니다.
 - `reader.ts` - `SnapshotReader`. 메모리 보관(96MB, 오래 안 쓴 것부터 버림), 10분 뒤 ETag 재확인, 없는 객체와 오류 5분 기억, 동시 읽기 합치기, 3초 시간 제한.
 - `attach.ts` - `openStore()`(주소가 `s3://`면 S3, 아니면 디렉터리)와 `maybeAttachStore()`(`STORE_URI`가 있을 때만 `SeoulApiClient.attachStore()` 호출, 실패해도 서버는 계속 동작).
+- `collector.ts` - 수집 계획(`planCollection`), 실행(`collect`), 증분 건너뛰기, 예산 검사, 상태(`statusOf`), 출력 문자열. `scripts/workshop-collect.ts`와 수집 Lambda가 함께 씁니다.
 
 ## Rules
 - 허용 목록 방식입니다. 규칙 표에 없는 서비스, 미지원 자리, 형식에 맞지 않는 파티션 값은 답하지 않고 지금 경로(캐시와 서울 API)로 넘깁니다. 추측으로 답하지 않습니다.
@@ -19,3 +20,5 @@
 - 저장소의 실패는 요청을 실패시키지 않습니다. 로그만 남기고 답하지 않음으로 처리합니다.
 - `src/client`만 import합니다(`verify.ts`는 `src/data/catalog.ts`도). `src/tools`와 `src/normalize`는 import하지 않습니다. `src/client`는 이 디렉터리를 import하지 않습니다.
 - 규칙을 바꾸면 `tests/store/rules.test.ts`를 먼저 고치고, 배포 전에 `npm run workshop:collect -- verify`로 실제 API와 비교합니다.
+- 수집기는 `client.getJson()`만 씁니다. 빈 응답이 `isNoData()`가 아니면 쿼터 소진이나 호출 제한이므로 실행을 끝냅니다. 스냅샷은 모든 페이지를 받은 뒤에만 씁니다.
+- 수집기의 출력과 로그에 원문 키를 넣지 않습니다. 키는 `maskKey()`로만 보여 줍니다.

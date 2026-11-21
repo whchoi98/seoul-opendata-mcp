@@ -40,7 +40,8 @@
     "bundle": "npm run build && npx @anthropic-ai/mcpb pack . seoul-opendata-mcp.mcpb && npx @anthropic-ai/mcpb clean seoul-opendata-mcp.mcpb",
     "prepublishOnly": "npm run build",
     "workshop:deploy": "tsx scripts/workshop-deploy.ts",
-    "workshop:code": "tsx scripts/workshop-code.ts"
+    "workshop:code": "tsx scripts/workshop-code.ts",
+    "workshop:collect": "tsx scripts/workshop-collect.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.693.0",
