@@ -40,6 +40,7 @@ The feature is off unless `STORE_URI` is set. Collection is a local command; a s
 - Data can be up to its maximum age old. Every store answer carries the collection date in `notes`.
 - `@aws-sdk/client-s3` is a new dependency, imported lazily.
 - Real-time datasets and real-estate datasets are not covered; they belong to later sub-projects.
+- The first live check (2026-11-22) showed a limit: for filtered requests the Seoul API orders rows that share a sort key differently from the unfiltered listing. A slot whose results exceed the range a tool requests cannot be answered identically, so the cultural-event title and category and the parking real-time flag stay unsupported and go to the Seoul API.
 
 ---
 
@@ -78,3 +79,4 @@ The feature is off unless `STORE_URI` is set. Collection is a local command; a s
 - 데이터는 기한만큼 오래됐을 수 있습니다. 저장소가 답한 응답은 `notes`에 수집 날짜를 싣습니다.
 - 새 의존성 `@aws-sdk/client-s3`가 생기고 lazy import합니다.
 - 실시간 데이터셋과 부동산 데이터셋은 대상이 아닙니다. 뒤의 하위 프로젝트에서 다룹니다.
+- 첫 실제 검사(2026-11-22)에서 한계가 하나 드러났습니다. 서울 API는 걸러진 요청에서 정렬 키가 같은 행의 순서를 전체 목록과 다르게 돌려줍니다. 결과가 tool의 요청 범위를 넘는 자리는 같은 답을 낼 수 없어, 문화행사의 제목과 분류, 주차장의 실시간 제공 여부는 미지원으로 두고 서울 API로 보냅니다.

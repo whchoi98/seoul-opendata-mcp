@@ -133,3 +133,19 @@ npm run workshop:code -- revoke
 | 분당 한도 초과 시 `isError` 응답 | 한도 3에서 같은 분의 1~3번째 호출은 성공하고 4번째는 `isError`와 "1분 뒤 다시 시도하세요" 문구를 받습니다. 판정 로그는 `rate_limited`입니다. | 2026-11-19 |
 | 첫 키 한도 도달 시 다음 키 사용 | 키 3개, 키당 하루 한도 2에서 첫 키가 2회를 채운 뒤 세 번째 호출은 두 번째 키를 썼습니다. 장부의 `quota#` 항목으로 확인했습니다. | 2026-11-20 |
 | `revoke` 후 거부 | 폐기한 코드는 `initialize`에서 "워크숍 코드가 만료되었습니다" 안내로 거부되고, probe는 종료 코드 1로 끝났습니다. | 2026-11-20 |
+
+### 사전 적재 저장소 (0.8.0, 2026-11-22)
+
+| 항목 | 결과 |
+|---|---|
+| `daily` 첫 수집 | 호출 98회(예상 상한 144회), 스냅샷 49개 저장, 실패 0. 생활인구는 후보 날짜 13개가 모두 데이터 없음이라 저장하지 못했습니다(아래 행) |
+| `verify` 첫 실행 | 통과 54, 순서 4, 실패 10(가정을 시험한 요청 9, 지원 자리 1), 건너뜀 3, 호출 60회 |
+| 검증으로 결정한 자리 | `ListPublicReservationEducation.AREANM` 부분일치, `OdsnBuildingInfo.SISUL_NM` 부분일치. `culturalEventInfo.CODENAME`과 `ListPublicReservationEducation.USETGTINFO`는 재현하지 못해 미지원으로 남겼습니다 |
+| 미지원으로 내린 자리 | `GetParkInfo.PRK_NOW_INFO_PVSN_YN`과 `culturalEventInfo.TITLE`. 서울 API가 걸러진 결과에서 정렬 키가 같은 행의 순서를 전체 목록과 다르게 돌려줍니다. 결과가 요청 범위를 넘으면 같은 범위에서 다른 행이 나옵니다. `GetParkInfo.ADDR`도 순서가 다르지만(153건에서 최대 34칸) 결과가 요청 범위 1,000행 안에 들어와 그대로 둡니다 |
+| 규칙을 고친 뒤 `verify --only` | 네 서비스에서 통과 17, 순서 2, 가정이 아닌 실패 0, 호출 22회 |
+| `find_pharmacies` 두 번(약국명 다름) | 사전 적재 안내 있음, 장부 `used` 변화 없음 |
+| `search_public_reservations` | 사전 적재 안내 있음, 장부 `used` 변화 없음 |
+| 저장소에 없는 날짜의 `get_subway_ridership` | 사전 적재 안내 없음, 장부 `used` 1 증가, 런타임 로그에 `AccessDenied` 없음 |
+| 문화행사 스냅샷 읽기 | 377ms, 힙 47MB(압축 4.0MB, 원본 19.5MB, 19,781행). 세션에서 처음 읽는 스냅샷은 S3 SDK를 불러오는 시간이 더해져 약 2초가 걸렸습니다(약국, 압축 0.4MB) |
+| 생활인구(`SPOP_LOCAL_RESD_DONG`) | 수집되지 않았습니다. 서울 API의 가장 최근 날짜가 2026-07-31이라 수집 범위(최근 13일) 밖입니다. 날짜를 지정한 `get_living_population` 요청은 서울 API로 갑니다. 매일 수집은 이 데이터를 찾는 데 13회를 씁니다 |
+| `static` 수집과 `get_subway_schedule` | 아직 하지 않음. 워크숍 당일이 아닌 날 `npm run workshop:collect -- static` 뒤에 확인 |
