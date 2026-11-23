@@ -20,8 +20,9 @@ import { describeStack, stackOutputs, stackParameterValue } from './workshop-aws
 const USAGE = `사용법:
   npm run workshop:collect -- daily     매일 묶음: 전체와 머리 스냅샷, 새 날짜와 월 파티션
   npm run workshop:collect -- static    첫차와 막차, 시간표(약 1,850회, 워크숍 당일이 아닌 날)
+  npm run workshop:collect -- realestate  매매 2년, 전월세와 개별공시지가 올해(약 1,950회, 워크숍 당일이 아닌 날). 12시간 안에 다시 실행하면 이어 받는다
   npm run workshop:collect -- status    데이터셋별 스냅샷 수, 수집 시각, 기한 내 여부
-  npm run workshop:collect -- verify    수집한 스냅샷을 실제 API와 비교(약 70회, 남은 한도를 검사하지 않음). 규칙을 바꾸거나 처음 수집했을 때
+  npm run workshop:collect -- verify    수집한 스냅샷을 실제 API와 비교(약 100회, 남은 한도를 검사하지 않음). 규칙을 바꾸거나 처음 수집했을 때
 옵션:
   --env-file <경로>     키를 읽을 파일(기본 .env.workshop)
   --store <주소>        스냅샷을 둘 곳. 기본은 스택 버킷의 s3://<버킷>/${STORE_PREFIX}. 디렉터리 경로면 로컬에 저장
@@ -43,6 +44,8 @@ const { values, positionals } = parseArgs({
   },
 })
 
+const COMMANDS = ['daily', 'static', 'realestate', 'status', 'verify'] as const
+
 interface StackInfo { bucket?: string; table?: string; limit: number }
 
 /** 버킷과 테이블 이름, 키 하나의 하루 한도를 스택에서 읽는다. --store를 준 경우에만 스택 없이 진행한다 */
@@ -59,10 +62,10 @@ function readStack(): StackInfo {
 }
 
 async function main(): Promise<void> {
-  const command = positionals[0]
-  if (values.help || (command !== 'daily' && command !== 'static' && command !== 'status' && command !== 'verify')) {
+  const command = COMMANDS.find(c => c === positionals[0])
+  if (values.help || !command) {
     console.log(USAGE)
-    if (!values.help && command) process.exitCode = 1
+    if (!values.help && positionals[0]) process.exitCode = 1
     return
   }
   const days = parseCollectDays(values.days) // AWS를 부르기 전에 인자를 검사한다

@@ -2,7 +2,8 @@
 import { maskKey } from '../client/keyPool.js'
 import { keyIdOf, type QuotaLedger } from '../client/quota.js'
 import { isNoData, SeoulApiError, type Unwrapped } from '../client/response.js'
-import { STORE_RULES, type StoreRule } from './rules.js'
+import { requestPath } from './engine.js'
+import { DISTRICTS, STORE_RULES, type Bundle, type StoreRule } from './rules.js'
 import { ALL, decodeSnapshot, encodeSnapshot, snapshotKey, type Snapshot } from './snapshot.js'
 import type { ListedObject, SnapshotStore } from './snapshotStore.js'
 
@@ -11,7 +12,7 @@ export const PAGE = 1000
 export const CALL_DELAY_MS = 200
 /** 매일 묶음: 이 시간 안에 받은 스냅샷은 건너뛴다. 도중에 끊긴 실행을 이어 받기 위한 값 */
 export const DAILY_SKIP_MS = 3_600_000
-/** 정적 묶음: 이 시간 안에 받은 스냅샷은 건너뛴다 */
+/** 정적 묶음과 부동산 묶음: 이 시간 안에 받은 스냅샷은 건너뛴다. 규칙에 skipMs가 있으면 그 값을 쓴다 */
 export const STATIC_SKIP_MS = 7 * 86_400_000
 /** 날짜 탐색 범위는 개수 + 10일, 월 탐색 범위는 개수 + 2개월 */
 export const DATE_EXTRA = 10
@@ -52,6 +53,12 @@ export function recentMonths(now: number, n: number): string[] {
   })
 }
 
+/** 올해(KST)부터 거꾸로 n개 연도, YYYY */
+export function recentYears(now: number, n: number): string[] {
+  const year = new Date(now + KST).getUTCFullYear()
+  return Array.from({ length: n }, (_, i) => String(year - i))
+}
+
 /** 저장소 목록을 서비스 → (파티션 키 → 수정 시각)으로 묶는다 */
 export function indexExisting(objects: ListedObject[]): Map<string, Map<string, number>> {
   const out = new Map<string, Map<string, number>>()
@@ -62,6 +69,21 @@ export function indexExisting(objects: ListedObject[]): Map<string, Map<string, 
     out.get(m[1])!.set(m[2], o.lastModified)
   }
   return out
+}
+
+const fieldText = (row: any, field: string): string => String(row?.[field] ?? '').trim()
+
+/**
+ * 두 페이지에 걸친 정렬 값. 내림차순 목록에서 순위마다의 값은 정해져 있으므로, 앞 페이지의 마지막 값과 뒤 페이지의 첫 값이 같으면
+ * 그 값의 행이 두 페이지에 나뉜 것이다. 한 페이지 안에 다 들어간 값의 행은 순서가 달라도 빠지지 않는다
+ */
+export function straddling(pages: any[][], field: string): string[] {
+  const out = new Set<string>()
+  for (let i = 0; i + 1 < pages.length; i++) {
+    const last = fieldText(pages[i].at(-1), field)
+    if (last !== '' && last === fieldText(pages[i + 1][0], field)) out.add(last)
+  }
+  return [...out]
 }
 
 /** 파티션 값이 규칙의 형식에 맞는지. 맞지 않는 값으로 만든 스냅샷은 서버가 찾지 않는다 */
@@ -100,7 +122,7 @@ export interface DatasetPlan {
   needsStations?: boolean
 }
 
-export interface PlanOptions { bundle: 'daily' | 'static'; only?: string[]; days?: number; now: number }
+export interface PlanOptions { bundle: Bundle; only?: string[]; days?: number; now: number }
 
 async function planDataset(
   service: string, rule: StoreRule, have: Map<string, number>, store: SnapshotStore, opts: PlanOptions,
@@ -116,7 +138,7 @@ async function planDataset(
     const estimated = Math.max(1, count - stored.size) * rule.callsPerSnapshot + extra
     return { ...base, mode: 'scan', partitions: candidates.map(c => [c]), stored, count, estimated }
   }
-  const skipMs = rule.bundle === 'static' ? STATIC_SKIP_MS : DAILY_SKIP_MS
+  const skipMs = rule.skipMs ?? (rule.bundle === 'daily' ? DAILY_SKIP_MS : STATIC_SKIP_MS)
   const isFresh = (partition: string[]): boolean => {
     const at = have.get(partitionKey(partition))
     return at !== undefined && opts.now - at < skipMs
@@ -124,6 +146,8 @@ async function planDataset(
   let all: string[][] = [[]]
   let needsStations = false
   if (p?.kind === 'lineDirDay') all = cross(LINES, DIRECTIONS, DAY_TYPES)
+  if (p?.kind === 'yearDistrict') all = cross(recentYears(opts.now, p.years), [...DISTRICTS])
+  if (p?.kind === 'districtYear') all = cross([...DISTRICTS], recentYears(opts.now, p.years))
   if (p?.kind === 'stationDayDir') {
     const codes = await stationCodes(store)
     needsStations = codes === undefined
@@ -161,7 +185,7 @@ export interface DatasetResult {
 }
 
 export interface CollectReport {
-  bundle: 'daily' | 'static'
+  bundle: Bundle
   estimated: number
   remaining?: number
   /** 실제 수집을 시작했는지. dry-run이거나 예산을 넘으면 false */
@@ -176,7 +200,7 @@ export interface CollectReport {
 }
 
 export interface CollectOptions {
-  bundle: 'daily' | 'static'
+  bundle: Bundle
   only?: string[]
   days?: number
   force?: boolean
@@ -218,36 +242,64 @@ export async function collect(client: CollectClient, store: SnapshotStore, opts:
     first = false
   }
 
+  /** 서울 API를 한 번 부른다. 빈 응답인데 "데이터 없음"이 아니면 쿼터 소진이나 호출 제한이다. 남은 데이터셋도 같은 결과가 나온다 */
+  const call = async (service: string, start: number, path: string[], result: DatasetResult): Promise<Unwrapped> => {
+    // SeoulApiError가 아니므로 아래의 처리에서 실행 전체를 끝낸다
+    if (made >= cap) throw new Error(`호출 ${made}회가 예상 상한 ${estimated}회의 2배를 넘어 중단했습니다. 규칙 표의 스냅샷당 호출 수를 확인하세요`)
+    await pace()
+    made++
+    result.calls++
+    const u = await client.getJson(service, start, start + PAGE - 1, path)
+    if (u.rows.length === 0 && !isNoData(u)) throw new PoolUnavailable(u.note ?? '서울 API가 이유 없이 빈 응답을 돌려줬습니다')
+    return u
+  }
+
   /** 스냅샷 하나를 받아 저장한다. "데이터 없음"이면 저장하지 않고 false */
   const fetchAndSave = async (service: string, partition: string[], rule: StoreRule, result: DatasetResult): Promise<boolean> => {
-    const rows: any[] = []
+    const key = snapshotKey(service, partition)
+    const pages: any[][] = []
+    let received = 0
     let totalCount = 0
     for (let start = 1; ; start += PAGE) {
-      // SeoulApiError가 아니므로 아래의 처리에서 실행 전체를 끝낸다
-      if (made >= cap) throw new Error(`호출 ${made}회가 예상 상한 ${estimated}회의 2배를 넘어 중단했습니다. 규칙 표의 스냅샷당 호출 수를 확인하세요`)
-      await pace()
-      made++
-      result.calls++
-      const u = await client.getJson(service, start, start + PAGE - 1, partition)
-      if (u.rows.length === 0) {
-        // 빈 응답인데 "데이터 없음"이 아니면 쿼터 소진이나 호출 제한이다. 남은 데이터셋도 같은 결과가 나온다
-        if (!isNoData(u)) throw new PoolUnavailable(u.note ?? '서울 API가 이유 없이 빈 응답을 돌려줬습니다')
-        break
-      }
-      rows.push(...u.rows)
+      // 파티션 자리가 떨어져 있으면(매매의 연도와 자치구명) 사이를 공백으로 채운 경로를 보낸다
+      const u = await call(service, start, requestPath(rule, partition), result)
+      if (u.rows.length === 0) break
+      pages.push(u.rows)
+      received += u.rows.length
       totalCount = u.totalCount
-      if (rule.scope === 'head' || rows.length >= totalCount) break
+      if (rule.scope === 'head' || received >= totalCount) break
     }
+    let rows = pages.flat()
     if (rows.length === 0) {
       result.empty++ // 공개 전 날짜. 저장하지 않아 다음 실행이 다시 시도한다
       return false
     }
+    if (rule.order?.unstable && rule.scope === 'full') {
+      // 정렬 값이 같은 행의 순서가 요청마다 달라, 두 페이지에 걸친 값의 행은 겹치거나 빠져 있다. 그 값으로 다시 받아 바꿔 넣는다
+      const { field } = rule.order
+      const slot = rule.slots.findIndex(s => s.field === field)
+      for (const value of straddling(pages, field)) {
+        const u = await call(service, 1, requestPath(rule, partition, { [slot]: value }), result)
+        if (u.rows.length < u.totalCount) {
+          result.warnings.push(`${key}: ${field} ${value}의 행이 ${u.totalCount}건이라 한 번에 받지 못했습니다. 저장하지 않았습니다`)
+          return false
+        }
+        // 내림차순이므로 이 값보다 큰 행은 모두 앞에 있고 그대로 남는다
+        const at = rows.findIndex(r => fieldText(r, field) <= value)
+        rows = rows.filter(r => fieldText(r, field) !== value)
+        rows.splice(at === -1 ? rows.length : at, 0, ...u.rows)
+      }
+      if (rows.length !== totalCount) {
+        result.warnings.push(`${key}: 경계의 행을 다시 받은 뒤에도 ${rows.length}행으로 전체 ${totalCount}행과 다릅니다(수집 중에 자료가 바뀜). 저장하지 않았습니다`)
+        return false
+      }
+    }
     if (rule.scope === 'full' && rows.length < totalCount) {
-      result.warnings.push(`${snapshotKey(service, partition)}: 전체 ${totalCount}행 중 ${rows.length}행만 받았습니다. 머리 스냅샷으로 취급되어 필터 요청은 서울 API로 갑니다`)
+      result.warnings.push(`${key}: 전체 ${totalCount}행 중 ${rows.length}행만 받았습니다. 머리 스냅샷으로 취급되어 필터 요청은 서울 API로 갑니다`)
     }
     const snapshot: Snapshot = { v: 1, service, partition, collectedAt: new Date(now()).toISOString(), totalCount, rows }
     // 모든 페이지를 받은 뒤에만 쓴다. 중간에 실패하면 이전 스냅샷이 그대로 남는다
-    await store.put(snapshotKey(service, partition), encodeSnapshot(snapshot))
+    await store.put(key, encodeSnapshot(snapshot))
     result.saved++
     return true
   }
@@ -336,7 +388,7 @@ export function formatReport(report: CollectReport): string {
 
 export interface DatasetStatus {
   service: string
-  bundle: 'daily' | 'static'
+  bundle: Bundle
   count: number
   newest?: number
   oldest?: number

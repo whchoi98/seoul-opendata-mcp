@@ -35,6 +35,8 @@ The store answers only what an allowlist permits (`src/store/rules.ts`): a servi
 
 The feature is off unless `STORE_URI` is set. Collection is a local command; a scheduled Lambda is optional and off by default.
 
+Update (2026-11-23): the three real-estate datasets joined the rule table, split by year and district, which makes 40 datasets. They were left out at first because a year of rows does not fit in a day's quota in one piece. The store answers them only when a request names both a year and a district. See section 2.4 of the design spec.
+
 ## Consequences
 - The filter rules must be kept in step with the Seoul API. `verify` is the check, and the tools keep their own duplicate filters.
 - Data can be up to its maximum age old. Every store answer carries the collection date in `notes`.
@@ -73,6 +75,8 @@ The feature is off unless `STORE_URI` is set. Collection is a local command; a s
 저장소는 허용 목록(`src/store/rules.ts`)이 허용한 것만 답합니다. 규칙이 있는 서비스, 일치나 부분일치로 표시한 자리, 형식 검사를 통과한 파티션 값입니다. 길이 0인 자리 뒤에 값이 오는 요청은 저장소가 답하지 않습니다. 서울 API가 빈 문자열 뒤의 필터를 모두 무시하기 때문입니다. 나머지는 기존 경로로 넘어가므로 규칙이 모자라면 호출이 한 번 더 나갈 뿐 틀린 답은 나가지 않습니다. `npm run workshop:collect -- verify`가 저장소와 실제 API를 비교하고, 문서에 의미가 적혀 있지 않은 자리를 정합니다.
 
 `STORE_URI`를 설정하지 않으면 꺼져 있습니다. 수집은 로컬 명령으로 하고, 스케줄 Lambda는 선택 사항이며 기본값은 꺼짐입니다.
+
+개정(2026-11-23): 부동산 3종을 연도와 자치구로 나눠 규칙 표에 넣었고 대상은 40종이 됐습니다. 처음에는 한 해 자료를 통째로는 하루 쿼터로 받을 수 없어 뺐습니다. 저장소는 연도와 자치구가 모두 있는 요청에만 답합니다. 설계 스펙 2.4절을 참조하세요.
 
 ## 결과
 - 필터 규칙을 서울 API와 맞춰 두어야 합니다. `verify`가 그 검사이고, tool은 자기 쪽의 중복 필터를 그대로 둡니다.

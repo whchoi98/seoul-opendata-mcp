@@ -4,7 +4,7 @@ import type { Ctx } from './context.js'
 import { isNoData } from '../client/response.js'
 import { ok } from './envelope.js'
 import { BLANK } from './path.js'
-import { kstYear } from './kst.js'
+import { kstMonth, kstYear } from './kst.js'
 import { normalizeDistrict, normalizeRealEstate, normalizeRentDeal, normalizeLandPrice } from '../normalize/realestate.js'
 
 const SALE = 'tbLnOpendataRtmsV'
@@ -41,17 +41,29 @@ type DongLookup =
   | { kind: 'notFound' }
   | { kind: 'unavailable'; reason: string }
 
+/**
+ * 법정동 코드를 찾을 때 볼 공시지가 기준연도. 개별공시지가는 4월 말에 공시되므로 6월부터는 올해 자료를,
+ * 그 전에는 작년 자료를 먼저 본다. 사전 적재 저장소가 받아 둔 연도(올해)와 맞추기 위한 순서다
+ */
+function dongLookupYears(): number[] {
+  const year = kstYear()
+  return kstMonth() >= 6 ? [year, year - 1] : [year - 1, year]
+}
+
 /** 실거래가 API는 법정동을 코드로만 거른다. 공시지가 서비스가 이름으로 같은 코드를 돌려주므로 1행 조회로 얻는다 */
 async function lookupDongCode(ctx: Ctx, district: string, dong: string): Promise<DongLookup> {
   const names = [dong]
   const legal = dong.replace(/\d+동$/, '동') // 행정동(역삼1동)을 법정동(역삼동)으로
   if (legal !== dong) names.push(legal)
   try {
-    for (const name of names) {
-      const u = await ctx.client.getJson(LAND, 1, 1, [district, name, BLANK, BLANK, BLANK, String(kstYear() - 1)])
-      const row = u.rows[0]
-      if (row?.BJDONG_CD) return { kind: 'found', code: String(row.BJDONG_CD), name: row.BJDONG_NM ?? name }
-      if (!isNoData(u)) return { kind: 'unavailable', reason: u.note ?? '응답에 법정동 코드가 없습니다' }
+    // 먼저 보는 연도에서 어느 이름으로도 못 찾았을 때만 다른 연도를 본다(그 연도가 아직 공시 전인 경우)
+    for (const year of dongLookupYears()) {
+      for (const name of names) {
+        const u = await ctx.client.getJson(LAND, 1, 1, [district, name, BLANK, BLANK, BLANK, String(year)])
+        const row = u.rows[0]
+        if (row?.BJDONG_CD) return { kind: 'found', code: String(row.BJDONG_CD), name: row.BJDONG_NM ?? name }
+        if (!isNoData(u)) return { kind: 'unavailable', reason: u.note ?? '응답에 법정동 코드가 없습니다' }
+      }
     }
     return { kind: 'notFound' }
   } catch (e) {

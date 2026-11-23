@@ -3,7 +3,7 @@ import { SeoulApiError, type Unwrapped } from '../../src/client/response.js'
 import { InMemoryLedger, keyIdOf } from '../../src/client/quota.js'
 import {
   CALL_CAP_EXTRA, CALL_DELAY_MS, DAILY_SKIP_MS, PAGE, STATIC_SKIP_MS, collect, formatPlan, formatQuota, formatReport, formatStatus,
-  indexExisting, planCollection, recentDates, recentMonths, remainingQuota, stationCodes, statusOf, type CollectClient,
+  indexExisting, planCollection, recentDates, recentMonths, recentYears, remainingQuota, stationCodes, statusOf, straddling, type CollectClient,
 } from '../../src/store/collector.js'
 import { decodeSnapshot, encodeSnapshot, isHead, snapshotKey, type Snapshot } from '../../src/store/snapshot.js'
 import type { SnapshotStore } from '../../src/store/snapshotStore.js'
@@ -16,6 +16,10 @@ const STATS = 'CardSubwayStatsNew'
 const STATION = 'SearchInfoBySubwayNameService'
 const FIRST_LAST = 'SearchFirstAndLastTrainbyLineServiceNew'
 const TIMETABLE = 'SearchSTNTimeTableByIDService'
+const SALE = 'tbLnOpendataRtmsV'
+const RENT = 'tbLnOpendataRentV'
+const LAND = 'IndividuallyPostedLandPriceService'
+const B = ' '
 
 type Req = { service: string; start: number; end: number; path: string[] }
 
@@ -73,6 +77,14 @@ describe('날짜와 월 후보', () => {
   })
 })
 
+describe('연도 후보', () => {
+  it('올해(KST)부터 거꾸로 n개 연도', () => {
+    expect(recentYears(NOW, 2)).toEqual(['2026', '2025'])
+    expect(recentYears(Date.parse('2026-12-31T15:00:00.000Z'), 1)).toEqual(['2027']) // KST 1월 1일 00:00
+    expect(recentYears(Date.parse('2026-12-31T14:59:59.000Z'), 1)).toEqual(['2026'])
+  })
+})
+
 describe('indexExisting', () => {
   it('서비스별로 파티션 키와 수정 시각을 묶고 형식이 다른 키는 버린다', () => {
     const idx = indexExisting([
@@ -107,6 +119,24 @@ describe('planCollection', () => {
     expect(plans[0].partitions[0]).toEqual(['1호선', '1', '1'])
     expect(plans[0].estimated).toBe(54)
     expect(plans[1]).toMatchObject({ needsStations: true, estimated: 1801 })
+  })
+
+  it('부동산 묶음은 매매 2년, 전월세와 개별공시지가 올해를 자치구 25개로 나눠 받는다. 예상 1,950회다', async () => {
+    const { store } = memoryStore()
+    const plans = await planCollection(store, { bundle: 'realestate', now: NOW })
+    expect(plans.map(p => p.service)).toEqual([SALE, RENT, LAND])
+    expect(plans.every(p => p.mode === 'fixed')).toBe(true)
+    expect(plans.map(p => p.partitions.length)).toEqual([50, 25, 25])
+    expect(plans.map(p => p.estimated)).toEqual([500, 550, 900])
+    expect(plans[0].partitions[0]).toEqual(['2026', '종로구'])
+    expect(plans[0].partitions.at(-1)).toEqual(['2025', '강동구'])
+    expect(plans[1].partitions.every(x => x[0] === '2026')).toBe(true)
+    expect(plans[2].partitions[0]).toEqual(['종로구', '2026'])
+    // 다른 묶음에는 들어가지 않는다
+    for (const bundle of ['daily', 'static'] as const) {
+      const others = await planCollection(store, { bundle, now: NOW })
+      expect(others.some(p => [SALE, RENT, LAND].includes(p.service)), bundle).toBe(false)
+    }
   })
 
   it('--days는 날짜 파티션 세 종의 개수만 바꾼다', async () => {
@@ -196,6 +226,127 @@ describe('collect', () => {
     expect(calls.some(c => c.path.join('_') === '1호선_1_1')).toBe(false)
     expect(calls[0].path).toEqual(['1호선', '1', '2'])
     expect(report.results[0]).toMatchObject({ saved: 53, skipped: 1 })
+  })
+
+  it('부동산은 파티션 사이를 공백으로 채운 경로로 끝 페이지까지 받고, 서버가 찾는 키에 쓴다', async () => {
+    const m = memoryStore()
+    const { client, calls } = fakeClient(r => page(r, r.path[2] === '강남구' ? 2300 : 5))
+    const report = await collect(client, m.store, { bundle: 'realestate', only: [SALE], now: () => NOW, delayMs: 0 })
+    expect(report.ok).toBe(true)
+    expect(report.results[0]).toMatchObject({ service: SALE, saved: 50, calls: 54 }) // 48구 x 1회 + 강남구 2년 x 3회
+    expect(calls.every(c => c.path.length === 3 && c.path[1] === B)).toBe(true)
+    expect(calls.filter(c => c.path[0] === '2026' && c.path[2] === '강남구').map(c => [c.start, c.end]))
+      .toEqual([[1, 1000], [1001, 2000], [2001, 3000]])
+    const s = m.read(SALE, ['2026', '강남구'])
+    expect(s.partition).toEqual(['2026', '강남구'])
+    expect(s.rows).toHaveLength(2300)
+    expect(isHead(s)).toBe(false)
+    expect(m.objects.has('tbLnOpendataRtmsV/2025_강동구.json.gz')).toBe(true)
+  })
+
+  describe('매매: 계약일이 같은 행의 순서가 요청마다 다르다', () => {
+    // 2,300행, 계약일마다 300행. 1,000행과 2,000행 경계가 한 계약일 안에 있다
+    const day = (i: number) => String(20261130 - Math.floor((i - 1) / 300))
+    const all = Array.from({ length: 2300 }, (_, k) => ({ i: k + 1, CTRT_DAY: day(k + 1) }))
+    /** 두 번째 페이지부터는 같은 계약일 안의 순서를 뒤집어 돌려준다 */
+    const flipped = [...new Set(all.map(r => r.CTRT_DAY))].flatMap(d => all.filter(r => r.CTRT_DAY === d).reverse())
+    const unstable = (r: Req, over: (day: string) => Unwrapped | undefined = () => undefined): Unwrapped => {
+      if (r.path[2] !== '강남구' || r.path[0] !== '2026') return noData(r.service)
+      const date = r.path[9]
+      if (date) return over(date) ?? { rows: all.filter(x => x.CTRT_DAY === date), totalCount: 300 }
+      const rows = (r.start === 1 ? all : flipped).slice(r.start - 1, r.end)
+      return rows.length > 0 ? { rows, totalCount: all.length } : noData(r.service)
+    }
+    const run = async (handler: (r: Req) => Unwrapped) => {
+      const m = memoryStore()
+      const { client, calls } = fakeClient(handler)
+      const report = await collect(client, m.store, { bundle: 'realestate', only: [SALE], now: () => NOW, delayMs: 0 })
+      return { m, calls: calls.filter(c => c.path[0] === '2026' && c.path[2] === '강남구'), report }
+    }
+
+    it('페이지를 그대로 이으면 경계의 계약일에서 행이 겹치고 빠진다(고치기 전의 모습)', () => {
+      const joined = [...all.slice(0, 1000), ...flipped.slice(1000, 2000), ...flipped.slice(2000)]
+      expect(joined).toHaveLength(2300)
+      expect(new Set(joined.map(r => r.i)).size).toBeLessThan(2300)
+    })
+
+    it('두 페이지에 걸친 계약일을 그 날짜로 다시 받아 바꿔 넣는다. 스냅샷은 빠짐과 겹침 없이 계약일 내림차순이다', async () => {
+      const { m, calls, report } = await run(r => unstable(r))
+      expect(report.ok).toBe(true)
+      expect(report.results[0].warnings).toEqual([])
+      expect(calls.map(c => c.path[9] ?? `${c.start}-${c.end}`)).toEqual(['1-1000', '1001-2000', '2001-3000', day(1000), day(2000)])
+      expect(calls[3].path).toEqual(['2026', B, '강남구', B, B, B, B, B, B, day(1000)])
+      const s = m.read(SALE, ['2026', '강남구'])
+      expect(s.totalCount).toBe(2300)
+      expect(s.rows.map((r: any) => r.i).sort((a: number, b: number) => a - b)).toEqual(all.map(r => r.i))
+      expect(s.rows.every((r: any, k: number) => k === 0 || r.CTRT_DAY <= s.rows[k - 1].CTRT_DAY)).toBe(true)
+      expect(isHead(s)).toBe(false)
+    })
+
+    it('한 계약일의 행이 1,000건을 넘어 한 번에 받지 못하면 그 스냅샷은 저장하지 않고 경고한다', async () => {
+      const { m, report } = await run(r => unstable(r, () => ({ rows: all.slice(0, 1000), totalCount: 1200 })))
+      expect(m.objects.has('tbLnOpendataRtmsV/2026_강남구.json.gz')).toBe(false)
+      expect(report.results[0].warnings[0]).toContain(`CTRT_DAY ${day(1000)}의 행이 1200건이라 한 번에 받지 못했습니다`)
+    })
+
+    it('다시 받은 뒤에도 전체 건수와 다르면(수집 중에 자료가 바뀜) 저장하지 않고 경고한다', async () => {
+      const { m, report } = await run(r => unstable(r, date => ({ rows: all.filter(x => x.CTRT_DAY === date).slice(1), totalCount: 299 })))
+      expect(m.objects.has('tbLnOpendataRtmsV/2026_강남구.json.gz')).toBe(false)
+      expect(report.results[0].warnings[0]).toContain('전체 2300행과 다릅니다')
+      expect(report.results[0].saved).toBe(0)
+    })
+
+    it('전월세는 순서가 바뀌지 않으므로 경계를 다시 받지 않는다', async () => {
+      const m = memoryStore()
+      const { client, calls } = fakeClient(r => (r.path[2] === '강남구' ? { rows: all.slice(r.start - 1, r.end), totalCount: 2300 } : noData(r.service)))
+      await collect(client, m.store, { bundle: 'realestate', only: [RENT], now: () => NOW, delayMs: 0 })
+      expect(calls.filter(c => c.path[2] === '강남구')).toHaveLength(3)
+      expect(m.read(RENT, ['2026', '강남구']).rows).toHaveLength(2300)
+    })
+  })
+
+  it('straddling은 앞 페이지의 마지막 값과 뒤 페이지의 첫 값이 같은 값만 고른다', () => {
+    const p = (...days: string[]) => days.map(d => ({ CTRT_DAY: d }))
+    expect(straddling([p('3', '2'), p('2', '1'), p('1', '0')], 'CTRT_DAY')).toEqual(['2', '1'])
+    expect(straddling([p('3', '2'), p('1', '1'), p('0')], 'CTRT_DAY')).toEqual([])
+    expect(straddling([p('2', '2'), p('2', '2'), p('2')], 'CTRT_DAY')).toEqual(['2'])
+    expect(straddling([p('3', '2')], 'CTRT_DAY')).toEqual([])
+    expect(straddling([[{}], [{}]], 'CTRT_DAY')).toEqual([]) // 정렬 필드가 없는 행
+  })
+
+  it('개별공시지가는 자치구가 첫 자리, 연도가 여섯째 자리인 경로로 받는다', async () => {
+    const m = memoryStore()
+    const { client, calls } = fakeClient(r => page(r, 3))
+    await collect(client, m.store, { bundle: 'realestate', only: [LAND], now: () => NOW, delayMs: 0 })
+    expect(calls).toHaveLength(25)
+    expect(calls[0].path).toEqual(['종로구', B, B, B, B, '2026'])
+    expect(m.objects.has('IndividuallyPostedLandPriceService/종로구_2026.json.gz')).toBe(true)
+  })
+
+  it('부동산 묶음: 매매와 전월세는 12시간, 개별공시지가는 7일 안에 받은 스냅샷을 건너뛴다. 끊긴 실행을 이어 받는다', async () => {
+    const m = memoryStore()
+    m.seed(SALE, ['2026', '종로구'], [{}], NOW - 11 * HOUR)
+    m.seed(SALE, ['2026', '중구'], [{}], NOW - 13 * HOUR)
+    m.seed(LAND, ['종로구', '2026'], [{}], NOW - 6 * DAY)
+    m.seed(LAND, ['중구', '2026'], [{}], NOW - 8 * DAY)
+    const plans = await planCollection(m.store, { bundle: 'realestate', now: NOW })
+    const sale = plans.find(p => p.service === SALE)!
+    expect(sale.skipped).toBe(1)
+    expect(sale.partitions).toHaveLength(49)
+    expect(sale.partitions[0]).toEqual(['2026', '중구'])
+    const land = plans.find(p => p.service === LAND)!
+    expect(land.skipped).toBe(1)
+    expect(land.partitions[0]).toEqual(['중구', '2026'])
+    expect(land.estimated).toBe(24 * 36)
+  })
+
+  it('아직 공시되지 않은 연도의 개별공시지가는 저장하지 않고 실패로 보지 않는다', async () => {
+    const m = memoryStore()
+    const { client } = fakeClient(r => noData(r.service))
+    const report = await collect(client, m.store, { bundle: 'realestate', only: [LAND], now: () => NOW, delayMs: 0 })
+    expect(report.ok).toBe(true)
+    expect(report.results[0]).toMatchObject({ saved: 0, empty: 25, calls: 25 })
+    expect(m.objects.size).toBe(0)
   })
 
   it('시간표는 역 코드 스냅샷의 1~9호선 역마다 요일 3종, 방향 2종을 받는다', async () => {
@@ -365,7 +516,7 @@ describe('쿼터와 출력', () => {
     m.seed(FIRST_LAST, ['1호선', '1', '1'], [{}], NOW - 31 * DAY)
     m.seed(FIRST_LAST, ['1호선', '1', '2'], [{}], NOW - DAY)
     const list = await statusOf(m.store, NOW)
-    expect(list).toHaveLength(37)
+    expect(list).toHaveLength(40)
     const of = (id: string) => list.find(s => s.service === id)!
     expect(of(PHARMACY)).toMatchObject({ count: 1, state: '기한 내', newest: NOW - 2 * DAY })
     expect(of('ListPublicReservationSport')).toMatchObject({ count: 1, state: '기한 초과' })

@@ -23,7 +23,8 @@ MCP tool 23개를 등록합니다. 도메인 register 파일 6개(`common`, `pop
 ## Gotcha
 - swopenapi(지하철)는 0-based start — `meta.ts`의 `startFor()`를 사용하고, 직접 하드코딩하지 않습니다.
 - 열린데이터광장 경로 파라미터는 자리로 구분됩니다. 건너뛰는 자리에는 공백 `' '`을 넣습니다. 빈 문자열을 넣으면 그 뒤 필터가 모두 무시됩니다. 매매(`tbLnOpendataRtmsV`)와 전월세(`tbLnOpendataRentV`)는 뒤쪽 자리 순서가 다르므로 `realestate.ts`의 `SLOTS`를 고쳐 씁니다.
-- 실거래가의 자치구는 전체 이름(`강남구`)만, 법정동은 코드(`STDG_CD`)만 서버에서 걸러집니다. 입력은 `normalizeDistrict()`와 `lookupDongCode()`로 바꿔 보냅니다.
+- 실거래가의 자치구는 전체 이름(`강남구`)만, 법정동은 코드(`STDG_CD`)만 서버에서 걸러집니다. 입력은 `normalizeDistrict()`와 `lookupDongCode()`로 바꿔 보냅니다. `lookupDongCode()`는 개별공시지가를 6월부터는 올해, 그 전에는 작년 기준연도로 먼저 조회하고 없으면 다른 연도를 봅니다. 사전 적재 저장소가 받아 둔 연도(올해)와 맞추기 위한 순서입니다.
+- 부동산 3종은 연도와 자치구가 모두 있는 요청만 사전 적재 저장소가 답합니다(`src/store/rules.ts`). `year`를 생략한 요청은 서울 API로 갑니다.
 - 생활인구(`SPOP_LOCAL_RESD_DONG`: 날짜, 시간대, 행정동)와 약국(`TbPharmacyOperateInfo`: 주소, 약국명 부분일치)도 경로 자리 필터를 받습니다. 단순 순서 배열은 `positionalPath()`를 씁니다.
 - 클라이언트 응답의 `u.note`(쿼터, stale 안내)는 성공 경로에서도 `notes`에 넣습니다. `u.rows`가 비었으면 빈 결과를 "없음"으로 단정하는 안내를 붙이지 않습니다(`tests/notes.test.ts`).
 - 지하철 첫차·막차와 시간표 서비스는 1~9호선만 데이터를 줍니다(경의선, 공항철도 등은 `INFO-200`). `get_subway_schedule`은 그 밖의 노선을 호출하지 않고 `notes`로 알립니다. 역명 표기가 데이터셋마다 달라(`서울역`, `강남`) `stationNameCandidates()`로 "역"을 붙이거나 떼서 다시 찾습니다.

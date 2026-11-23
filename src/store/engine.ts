@@ -5,6 +5,10 @@ import { isHead, snapshotKey, type Snapshot } from './snapshot.js'
 
 export interface Filter { field: string; kind: 'eq' | 'contains'; value: string }
 
+/** 건너뛰는 자리에 넣는 값. src/tools/path.ts의 BLANK와 같다 */
+const BLANK = ' '
+const PAD4 = /^\d{1,4}$/
+
 export interface RequestPlan {
   service: string
   /** 읽을 스냅샷의 상대 키 */
@@ -38,10 +42,28 @@ export function planRequest(
       partition.push(value)
     } else if (value !== '') {
       if (slot.kind === 'unsupported') return undefined
-      filters.push({ field: slot.field, kind: slot.kind, value })
+      if (slot.kind === 'pad4') {
+        // 서울 API는 지번을 0을 채운 4자리와 비교한다("737"은 "0737"). 숫자 1~4자리가 아니면 답을 추측하지 않는다
+        if (!PAD4.test(value)) return undefined
+        filters.push({ field: slot.field, kind: 'eq', value: value.padStart(4, '0') })
+      } else {
+        filters.push({ field: slot.field, kind: slot.kind, value })
+      }
     }
   }
   return { service, key: snapshotKey(service, partition), partition, filters, rule }
+}
+
+/**
+ * 파티션 값을 제자리에 넣은 서울 API 경로. 수집기와 verify가 스냅샷과 같은 범위를 요청할 때 쓴다.
+ * 파티션 자리 사이의 빈 자리는 tool과 똑같이 공백 한 칸으로 채우고, 끝쪽 빈 자리는 보내지 않는다.
+ * values는 자리 번호 → 필터 값이다
+ */
+export function requestPath(rule: StoreRule, partition: string[], values: Record<number, string> = {}): string[] {
+  let next = 0
+  const path = rule.slots.map((slot, i) => (slot.kind === 'partition' ? partition[next++] ?? BLANK : values[i] ?? BLANK))
+  while (path.length > 0 && path[path.length - 1] === BLANK) path.pop()
+  return path
 }
 
 const text = (v: unknown): string => String(v ?? '').trim()

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { isNoData, noDataNote, unwrap } from '../../src/client/response.js'
-import { answerFrom, planRequest } from '../../src/store/engine.js'
+import { answerFrom, planRequest, requestPath } from '../../src/store/engine.js'
 import { STORE_RULES, type StoreRule } from '../../src/store/rules.js'
 import type { Snapshot } from '../../src/store/snapshot.js'
 
@@ -120,6 +120,53 @@ describe('planRequest', () => {
     expect(planRequest('SearchSTNTimeTableByIDService', ['0222', '4', '1'])).toBeUndefined()
   })
 
+  it('부동산: 연도와 자치구명이 떨어진 자리에 있어도 파티션이 되고, 법정동 코드와 건물명, 용도는 필터가 된다', () => {
+    const sale = planRequest('tbLnOpendataRtmsV', ['2026', B, '강남구', '10100', B, B, B, B, '래미안', B, '아파트'])!
+    expect(sale.key).toBe('tbLnOpendataRtmsV/2026_강남구.json.gz')
+    expect(sale.partition).toEqual(['2026', '강남구'])
+    expect(sale.filters).toEqual([
+      { field: 'STDG_CD', kind: 'eq', value: '10100' }, { field: 'BLDG_NM', kind: 'contains', value: '래미안' },
+      { field: 'BLDG_USG', kind: 'eq', value: '아파트' },
+    ])
+    const rent = planRequest('tbLnOpendataRentV', ['2026', B, '송파구', B, B, B, B, B, '헬리오', '아파트'])!
+    expect(rent.key).toBe('tbLnOpendataRentV/2026_송파구.json.gz')
+    expect(rent.filters.map(f => f.field)).toEqual(['BLDG_NM', 'BLDG_USG'])
+    expect(planRequest('tbLnOpendataRtmsV', ['2026', B, '강남구'])!.filters).toEqual([])
+  })
+
+  it('부동산: 연도나 자치구가 없거나, 자치구 코드처럼 받지 않는 자리에 값이 오면 답하지 않는다', () => {
+    expect(planRequest('tbLnOpendataRtmsV', [])).toBeUndefined() // 전체 연도 최신순
+    expect(planRequest('tbLnOpendataRtmsV', ['2026'])).toBeUndefined() // 자치구 없음
+    expect(planRequest('tbLnOpendataRtmsV', [B, B, '강남구'])).toBeUndefined() // 연도 없음
+    expect(planRequest('tbLnOpendataRtmsV', ['2026', '11680', '강남구'])).toBeUndefined() // CGG_CD
+    expect(planRequest('tbLnOpendataRtmsV', ['2026', B, '강남구', B, B, B, '0737'])).toBeUndefined() // MNO
+    expect(planRequest('tbLnOpendataRtmsV', ['2026', B, '강남구', B, B, B, B, B, B, '20260301'])).toBeUndefined() // CTRT_DAY
+    for (const bad of ['강남', '분당구', '..', '강남구/..', '강남구_2025']) {
+      expect(planRequest('tbLnOpendataRtmsV', ['2026', B, bad]), bad).toBeUndefined()
+    }
+    for (const bad of ['26', '2026-', '../2026']) expect(planRequest('tbLnOpendataRentV', [bad, B, '강남구']), bad).toBeUndefined()
+  })
+
+  it('개별공시지가: 자치구와 연도가 양 끝 파티션이고, 지번은 0을 채운 4자리 일치로 바꾼다', () => {
+    const p = planRequest('IndividuallyPostedLandPriceService', ['강남구', '역삼동', '737', '7', B, '2026'])!
+    expect(p.key).toBe('IndividuallyPostedLandPriceService/강남구_2026.json.gz')
+    expect(p.partition).toEqual(['강남구', '2026'])
+    expect(p.filters).toEqual([
+      { field: 'BJDONG_NM', kind: 'contains', value: '역삼동' },
+      { field: 'BONBEON', kind: 'eq', value: '0737' }, { field: 'BUBEON', kind: 'eq', value: '0007' },
+    ])
+    expect(planRequest('IndividuallyPostedLandPriceService', ['강남구', B, '0737', B, B, '2026'])!.filters)
+      .toEqual([{ field: 'BONBEON', kind: 'eq', value: '0737' }])
+    // 법정동 코드 조회가 보내는 모양
+    expect(planRequest('IndividuallyPostedLandPriceService', ['강남구', '역삼동', B, B, B, '2026'])!.filters)
+      .toEqual([{ field: 'BJDONG_NM', kind: 'contains', value: '역삼동' }])
+    for (const bad of ['산737', '73700', '7-3', '７３７']) {
+      expect(planRequest('IndividuallyPostedLandPriceService', ['강남구', '역삼동', bad, B, B, '2026']), bad).toBeUndefined()
+    }
+    expect(planRequest('IndividuallyPostedLandPriceService', ['강남구', '역삼동', B, B, '1', '2026'])).toBeUndefined() // PILGI_CD
+    expect(planRequest('IndividuallyPostedLandPriceService', ['강남구', '역삼동'])).toBeUndefined() // 연도 없음
+  })
+
   it('규칙 표를 바꿔 넣을 수 있다(verify가 가정을 시험할 때 쓴다)', () => {
     const rules: Record<string, StoreRule> = {
       X: { slots: [{ field: 'A', kind: 'eq' }], bundle: 'daily', scope: 'full', maxAgeMs: DAY, callsPerSnapshot: 1 },
@@ -129,7 +176,50 @@ describe('planRequest', () => {
   })
 })
 
+describe('requestPath', () => {
+  it('파티션 값을 제자리에 넣고 사이는 공백으로 채우며 끝쪽 빈 자리는 보내지 않는다', () => {
+    expect(requestPath(STORE_RULES.tbLnOpendataRtmsV, ['2026', '강남구'])).toEqual(['2026', B, '강남구'])
+    expect(requestPath(STORE_RULES.tbLnOpendataRentV, ['2026', '강남구'], { 9: '아파트' }))
+      .toEqual(['2026', B, '강남구', B, B, B, B, B, B, '아파트'])
+    expect(requestPath(STORE_RULES.IndividuallyPostedLandPriceService, ['강남구', '2026'])).toEqual(['강남구', B, B, B, B, '2026'])
+    expect(requestPath(STORE_RULES.IndividuallyPostedLandPriceService, ['강남구', '2026'], { 1: '역삼동' }))
+      .toEqual(['강남구', '역삼동', B, B, B, '2026'])
+  })
+
+  it('파티션이 맨 앞에 모인 규칙과 파티션이 없는 규칙은 전과 같은 경로가 된다', () => {
+    expect(requestPath(STORE_RULES.SearchFirstAndLastTrainbyLineServiceNew, ['2호선', '1', '1'])).toEqual(['2호선', '1', '1'])
+    expect(requestPath(STORE_RULES.CardSubwayTime, ['202610'], { 2: '강남' })).toEqual(['202610', B, '강남'])
+    expect(requestPath(STORE_RULES.TbPharmacyOperateInfo, [])).toEqual([])
+    expect(requestPath(STORE_RULES.TbPharmacyOperateInfo, [], { 1: '온누리' })).toEqual([B, '온누리'])
+  })
+
+  it('수집기가 보낸 경로를 planRequest에 넣으면 같은 스냅샷 키가 나온다', () => {
+    for (const [service, partition] of [
+      ['tbLnOpendataRtmsV', ['2025', '중구']], ['tbLnOpendataRentV', ['2026', '영등포구']],
+      ['IndividuallyPostedLandPriceService', ['서대문구', '2026']],
+    ] as Array<[string, string[]]>) {
+      const plan = planRequest(service, requestPath(STORE_RULES[service], partition))!
+      expect(plan.partition, service).toEqual(partition)
+      expect(plan.filters, service).toEqual([])
+    }
+  })
+})
+
 describe('answerFrom', () => {
+  it('지번 필터는 0을 채운 4자리 행 값과 일치하는 필지만 남긴다', () => {
+    const rows = [
+      { BJDONG_NM: '역삼동', BONBEON: '0737', BUBEON: '0000' }, { BJDONG_NM: '역삼동', BONBEON: '0737', BUBEON: '0007' },
+      { BJDONG_NM: '역삼동', BONBEON: '7370', BUBEON: '0000' }, { BJDONG_NM: '삼성동', BONBEON: '0737', BUBEON: '0000' },
+    ]
+    const land = 'IndividuallyPostedLandPriceService'
+    const snap = snapshot(land, rows, { partition: ['강남구', '2026'] })
+    const ask = (path: string[]) => answerFrom(snap, planRequest(land, path)!, 1, 10, NOW)!.value
+    expect(ask(['강남구', '역삼동', '737', B, B, '2026'])).toEqual({ rows: [rows[0], rows[1]], totalCount: 2 })
+    expect(ask(['강남구', '역삼동', '737', '7', B, '2026'])).toEqual({ rows: [rows[1]], totalCount: 1 })
+    expect(ask(['강남구', '역삼', B, B, B, '2026']).totalCount).toBe(3)
+    expect(isNoData(ask(['강남구', '역삼동', '73', B, B, '2026']))).toBe(true)
+  })
+
   const all = snapshot('TbPharmacyOperateInfo', pharmacies)
   const plan = (path: string[]) => planRequest('TbPharmacyOperateInfo', path)!
 

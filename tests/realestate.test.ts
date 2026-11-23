@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
@@ -16,7 +16,10 @@ const rentRows = fixture('realestate_rent.json', 'tbLnOpendataRentV')
 const landRows = fixture('landprice.json', 'IndividuallyPostedLandPriceService')
 
 const LAND = 'IndividuallyPostedLandPriceService'
-const kstYear = () => new Date(Date.now() + 9 * 3_600_000).getUTCFullYear()
+const kst = () => new Date(Date.now() + 9 * 3_600_000)
+const kstYear = () => kst().getUTCFullYear()
+/** 법정동 코드 조회가 먼저 보는 공시지가 기준연도: 6월부터 올해, 그 전에는 작년 */
+const lookupYear = () => (kst().getUTCMonth() + 1 >= 6 ? kstYear() : kstYear() - 1)
 
 describe('normalizeDistrict', () => {
   it('서울 25개 자치구를 전체 이름으로 맞춘다', () => {
@@ -181,9 +184,39 @@ describe('get_real_estate_prices — 서버 쪽 필터', () => {
   it('dong은 법정동 코드로 바꿔 서버에서 거른다(공시지가 서비스로 코드 조회)', async () => {
     const { fetchFn, calls } = upstream(c => c.svc === LAND ? { rows: [landRow('10100', '역삼동')] } : { rows: saleRows })
     const body = await callTool(fetchFn, 'get_real_estate_prices', { district: '강남구', dong: '역삼동', year: '2025' })
-    expect(calls[0]).toEqual({ svc: LAND, start: 1, end: 1, path: ['강남구', '역삼동', B, B, B, String(kstYear() - 1)] })
+    expect(calls[0]).toEqual({ svc: LAND, start: 1, end: 1, path: ['강남구', '역삼동', B, B, B, String(lookupYear())] })
     expect(calls[1]).toEqual({ svc: 'tbLnOpendataRtmsV', start: 1, end: 100, path: ['2025', B, '강남구', '10100'] })
     expect(body.data.dong).toBe('역삼동')
+  })
+
+  describe('법정동 코드를 찾는 공시지가 기준연도', () => {
+    afterEach(() => vi.useRealTimers())
+    const lookupYears = async (now: string, publishedFrom = 0) => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date(now))
+      const { fetchFn, calls } = upstream(c => {
+        if (c.svc !== LAND) return { rows: saleRows }
+        return Number(c.path[5]) <= publishedFrom || publishedFrom === 0 ? { rows: [landRow('10100', '역삼동')] } : { rows: [] }
+      })
+      const body = await callTool(fetchFn, 'get_real_estate_prices', { district: '강남구', dong: '역삼동' })
+      return { years: calls.filter(c => c.svc === LAND).map(c => c.path[5]), body }
+    }
+
+    it('6월부터는 올해 자료를 먼저 본다(사전 적재 저장소가 받아 둔 연도)', async () => {
+      expect((await lookupYears('2026-11-23T03:00:00.000Z')).years).toEqual(['2026'])
+      expect((await lookupYears('2026-05-31T15:00:00.000Z')).years).toEqual(['2026']) // KST 6월 1일 00:00
+    })
+
+    it('5월까지는 작년 자료를 먼저 본다(올해 자료는 4월 말에 공시된다)', async () => {
+      expect((await lookupYears('2026-05-31T14:59:59.000Z')).years).toEqual(['2025'])
+      expect((await lookupYears('2026-01-10T03:00:00.000Z')).years).toEqual(['2025'])
+    })
+
+    it('먼저 본 연도에 자료가 없으면 다른 연도로 한 번 더 찾는다', async () => {
+      const late = await lookupYears('2026-06-10T03:00:00.000Z', 2025) // 6월인데 올해 자료가 아직 없다
+      expect(late.years).toEqual(['2026', '2025'])
+      expect(late.body.data.dong).toBe('역삼동')
+    })
   })
 
   it('행정동 이름(역삼1동)이 법정동으로 안 잡히면 숫자를 떼고 한 번 더 찾는다', async () => {

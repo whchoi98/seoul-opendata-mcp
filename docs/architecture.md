@@ -17,7 +17,7 @@ It wraps two upstream HTTP APIs — the general Seoul Open Data Plaza (`openapi.
 
 The same server runs in three ways: as a local stdio process, as a container on AgentCore Runtime called with IAM credentials, and, for workshops, behind an AgentCore Gateway that admits requests carrying a shared workshop code (`infra/`, see the Access and Deployment Layer below).
 
-With `STORE_URI` set, the server answers 37 slow-changing datasets from pre-collected snapshots before it looks at the cache or calls the Seoul API. In the workshop stack the snapshots live in S3. An optional EventBridge Scheduler schedule runs a collector Lambda once a day for the 35 datasets that change daily, and the two timetable datasets are collected with a local command.
+With `STORE_URI` set, the server answers 40 slow-changing datasets from pre-collected snapshots before it looks at the cache or calls the Seoul API. In the workshop stack the snapshots live in S3. An optional EventBridge Scheduler schedule runs a collector Lambda once a day for the 35 datasets that change daily, and the two timetable datasets and the three real-estate datasets are collected with local commands.
 
 ## Components
 
@@ -28,7 +28,7 @@ With `STORE_URI` set, the server answers 37 slow-changing datasets from pre-coll
 - **`src/client/keyPool.ts`** (`KeyPool`, `parseKeys`, `maskKey`) -- `SEOUL_API_KEY` may list several keys separated by commas. Each upstream call uses the first key that is under its daily limit and not cooling down. With two or more keys, a key that returns `ERROR-337` is set aside for 10 minutes (process memory only) and the call is retried once with the next key; a single key, the sample key included, behaves as before. When no key is left the client answers from the cache only.
 - **`src/client/quota.ts`, `src/client/dynamo.ts`** (`QuotaLedger`, `InMemoryLedger`, `DynamoDbLedger`, `DynamoDbCache`, `maybeAttachL2`) -- A daily-quota ledger tracks per-key (general/subway isolated via `keyIdOf`, a sha256-derived id that never stores the raw key) call counts against a KST calendar day (`kstDayKey`); at ≥80% of `QUOTA_DAILY_LIMIT` (default 1000, guarded by `parseQuotaLimit`) responses carry a usage-warning note, and at 100% the client serves cache-only (stale if available, otherwise an empty result with an explanatory note) instead of erroring. `maybeAttachL2` lazily imports `@aws-sdk/client-dynamodb`/`lib-dynamodb` and wires a `DynamoDbCache` (L2) + `DynamoDbLedger` (shared quota) into the client only when `CACHE_TABLE_NAME` is set, so stdio/local users never pay the import cost or the AWS SDK dependency at runtime.
 - **`src/client/env.ts`** (`loadDotEnv`) -- Minimal `.env` parser that only fills environment variables not already set on `process.env`, so an explicitly injected env (for example from an MCPB `user_config`) always wins over a checked-in `.env`.
-- **`src/store/`** (`STORE_RULES`, `planRequest`, `answerFrom`, `SnapshotReader`, `collect`) -- Optional snapshot store. With `STORE_URI` set, `SeoulApiClient` asks it before the cache and the key pool for JSON requests to the general API. It answers 37 slow-changing datasets from gzip JSON snapshots (a directory or S3), applying the argument filters and the row range itself; anything its rule table does not allow falls through unchanged. `npm run workshop:collect` fills it through the same client and records its calls in the quota ledger.
+- **`src/store/`** (`STORE_RULES`, `planRequest`, `answerFrom`, `SnapshotReader`, `collect`) -- Optional snapshot store. With `STORE_URI` set, `SeoulApiClient` asks it before the cache and the key pool for JSON requests to the general API. It answers 40 slow-changing datasets from gzip JSON snapshots (a directory or S3), applying the argument filters and the row range itself; anything its rule table does not allow falls through unchanged. `npm run workshop:collect` fills it through the same client and records its calls in the quota ledger.
 
 ### Processing Layer
 
@@ -57,7 +57,7 @@ With `STORE_URI` set, the server answers 37 slow-changing datasets from pre-coll
 - **stdio** (`src/index.ts`) -- Started by a local MCP client (`npx -y seoul-opendata-mcp`). No AWS dependency is loaded on this path.
 - **`src/http.ts`, `Dockerfile`** -- The same `buildServer()` behind stateless Streamable HTTP (`POST /mcp` and `GET /ping` on `:8000`), packaged as a `linux/arm64` image for AgentCore Runtime. At startup `maybeAttachL2` connects the shared DynamoDB cache and quota ledger when `CACHE_TABLE_NAME` is set.
 - **Workshop gateway** (`infra/seoul-workshop.yaml`) -- An AgentCore Gateway with one target, `seoul`, that points at a dedicated runtime, `seoul_workshop_mcp`. Callers see the tools as `seoul___<tool>`. The gateway calls the runtime with its own IAM role, so the workshop code alone does not reach the runtime.
-- **Snapshot collection** (`infra/lambda/collect.ts`, `scripts/workshop-collect.ts`) -- The workshop bucket holds the snapshots under `store/v1/`, and the workshop runtime reads them through `STORE_URI`. When a collection schedule is set, an EventBridge Scheduler schedule in Asia/Seoul invokes the collector Lambda, which collects the daily bundle (35 datasets; the first run made 98 upstream calls) and counts every call on the quota ledger. A failed run is not retried. `npm run workshop:collect -- daily|static|status|verify` runs the same collector from a terminal; the static bundle (subway timetables, about 1,850 calls) runs only this way because it does not fit in the Lambda's 15-minute limit.
+- **Snapshot collection** (`infra/lambda/collect.ts`, `scripts/workshop-collect.ts`) -- The workshop bucket holds the snapshots under `store/v1/`, and the workshop runtime reads them through `STORE_URI`. When a collection schedule is set, an EventBridge Scheduler schedule in Asia/Seoul invokes the collector Lambda, which collects the daily bundle (35 datasets; the first run made 98 upstream calls) and counts every call on the quota ledger. A failed run is not retried. `npm run workshop:collect -- daily|static|realestate|status|verify` runs the same collector from a terminal; the static bundle (subway timetables, about 1,850 calls) and the real-estate bundle (sales, rentals and assessed land prices split by year and district, about 1,950 calls) run only this way because they do not fit in the Lambda's 15-minute limit.
 - **`scripts/workshop-deploy.ts`, `scripts/workshop-code.ts`, `scripts/workshop-bundle.ts`** -- Create or update the stack in two passes, push the image, bundle and upload the Lambda code, synchronize the gateway target, turn the collection schedule on or off (`--collect-schedule`), and issue or revoke the workshop code.
 
 ## Full Architecture Diagram
@@ -104,7 +104,7 @@ flowchart TB
   TABLE[("DynamoDB table<br/>cache, quota, rate counters")]
   AGENT(["Local MCP client / LLM agent"]) --> STDIO --> TOOLS
   CALLER(["AgentCore caller with IAM"]) --> RUNTIME
-  PARTICIPANT(["Workshop participant<br/>Bearer code"]) --> GATEWAY
+  PARTICIPANT(["General client<br/>Bearer code"]) --> GATEWAY
   RUNTIME --> TOOLS
   CACHE -.->|"L2 and quota ledger"| TABLE
   INTERCEPTOR -.->|"rate counter"| TABLE
@@ -125,7 +125,7 @@ flowchart LR
   Unwrap --> Normalize["normalize/*"]
   Normalize --> Envelope["ok() envelope"]
   Envelope --> Agent
-  Participant(["Workshop participant"]) --> Gateway["AgentCore Gateway<br/>code check"] --> Runtime["AgentCore Runtime"] --> Tool
+  Participant(["General client"]) --> Gateway["AgentCore Gateway<br/>code check"] --> Runtime["AgentCore Runtime"] --> Tool
 ```
 
 ## Infrastructure
@@ -155,7 +155,7 @@ A runtime outside this stack is deployed by hand with [`docs/runbooks/agentcore-
 - **Decouple session count from upstream quota** -- Under AgentCore Runtime, each concurrent session is its own process with a cold L1 cache, so session count and upstream call volume would otherwise scale together against the same shared daily quota. An optional, env-gated (`CACHE_TABLE_NAME`) L2 (DynamoDB) tier shared across sessions, plus stale-while-revalidate and a daily quota ledger that degrades to stale-only instead of erroring, breaks that coupling while leaving the zero-config stdio path (no `CACHE_TABLE_NAME`) byte-for-byte unchanged. Recorded as [ADR-004](decisions/ADR-004-session-scaling-two-tier-cache.md).
 - **Several keys, one cache entry** -- Accept a comma-separated key pool and replace the key segment of the cache key with `{key}`. The daily budget grows with the number of keys, and a response fetched with one key still serves a request that would have used another. A single key behaves exactly as before. Recorded as [ADR-006](decisions/ADR-006-key-pool-with-key-independent-cache-keys.md).
 - **A shared code at the gateway, IAM behind it** -- Workshop participants send one `Authorization: Bearer` code, which a REQUEST interceptor checks; the gateway then calls the runtime with its own IAM role. This needs no identity provider and no per-participant setup, and the code is reissued or revoked with one command. Recorded as [ADR-005](decisions/ADR-005-workshop-shared-code-at-the-gateway.md).
-- **Slow data from snapshots, filtered in the server** -- Pre-collect the 37 datasets that change once a day or less into S3 snapshots and answer them before the cache, so free-text arguments and responses over 380 KB stop spending the daily quota. The store answers only what an allowlist permits and everything else takes the existing path. Recorded as [ADR-007](decisions/ADR-007-snapshot-store-with-server-side-filters.md).
+- **Slow data from snapshots, filtered in the server** -- Pre-collect the 40 datasets that change once a day or less into S3 snapshots and answer them before the cache, so free-text arguments and responses over 380 KB stop spending the daily quota. The store answers only what an allowlist permits and everything else takes the existing path. Recorded as [ADR-007](decisions/ADR-007-snapshot-store-with-server-side-filters.md).
 
 ## Operations
 
@@ -183,7 +183,7 @@ Related architectural decisions are recorded under `docs/decisions/` -- see [ADR
 
 같은 서버가 세 가지 방식으로 실행됩니다. 로컬 stdio 프로세스로, IAM 자격 증명으로 호출하는 AgentCore Runtime 컨테이너로, 그리고 워크숍에서는 공용 워크숍 코드가 있는 요청만 받는 AgentCore Gateway 뒤에서 실행됩니다(`infra/`, 아래 접근과 배포 계층 참조).
 
-`STORE_URI`를 설정하면 서버는 느린 데이터 37종을 미리 받아 둔 스냅샷으로 답합니다. 캐시를 보거나 서울 API를 부르기 전에 스냅샷을 먼저 확인합니다. 워크숍 스택에서는 스냅샷이 S3에 있습니다. 스케줄을 켜면 EventBridge Scheduler가 하루에 한 번 수집 Lambda를 실행해 매일 바뀌는 35종을 받습니다. 시간표 2종은 로컬 명령으로 받습니다.
+`STORE_URI`를 설정하면 서버는 느린 데이터 40종을 미리 받아 둔 스냅샷으로 답합니다. 캐시를 보거나 서울 API를 부르기 전에 스냅샷을 먼저 확인합니다. 워크숍 스택에서는 스냅샷이 S3에 있습니다. 스케줄을 켜면 EventBridge Scheduler가 하루에 한 번 수집 Lambda를 실행해 매일 바뀌는 35종을 받습니다. 시간표 2종과 부동산 3종은 로컬 명령으로 받습니다.
 
 ## 구성요소
 
@@ -194,7 +194,7 @@ Related architectural decisions are recorded under `docs/decisions/` -- see [ADR
 - **`src/client/keyPool.ts`** (`KeyPool`, `parseKeys`, `maskKey`) -- `SEOUL_API_KEY`에 쉼표로 여러 키를 넣을 수 있습니다. 업스트림 호출마다 하루 한도 미만이고 쿨다운 중이 아닌 첫 키를 씁니다. 키가 둘 이상일 때 `ERROR-337`을 돌려준 키는 10분 동안 빼 두고(프로세스 메모리에만 기록) 다음 키로 한 번 다시 호출합니다. 키가 하나면 샘플 키를 포함해 이전과 똑같이 동작합니다. 남은 키가 없으면 캐시로만 응답합니다.
 - **`src/client/quota.ts`, `src/client/dynamo.ts`** (`QuotaLedger`, `InMemoryLedger`, `DynamoDbLedger`, `DynamoDbCache`, `maybeAttachL2`) -- 일일 쿼터 원장이 키별(일반/지하철을 `keyIdOf`로 분리 — 원본 키를 저장하지 않는 sha256 기반 식별자) 호출 수를 KST 기준 하루(`kstDayKey`)에 대해 추적합니다. `QUOTA_DAILY_LIMIT`(기본 1000, `parseQuotaLimit`로 값 검증)의 80% 이상이면 응답에 사용량 경고 note가 붙고, 100%에 도달하면 에러 대신 캐시만으로 응답합니다(가능하면 stale, 없으면 안내 note가 담긴 빈 결과). `maybeAttachL2`는 `CACHE_TABLE_NAME`이 설정된 경우에만 `@aws-sdk/client-dynamodb`/`lib-dynamodb`를 lazy import하여 `DynamoDbCache`(L2)와 `DynamoDbLedger`(공유 쿼터)를 클라이언트에 연결하므로, stdio/로컬 사용자는 이 import 비용이나 AWS SDK 의존을 런타임에 전혀 지불하지 않습니다.
 - **`src/client/env.ts`** (`loadDotEnv`) -- `process.env`에 아직 설정되지 않은 환경변수만 채우는 최소한의 `.env` 파서입니다. 이 때문에 (예: MCPB `user_config`에서) 명시적으로 주입된 환경변수가 항상 커밋된 `.env`보다 우선합니다.
-- **`src/store/`** (`STORE_RULES`, `planRequest`, `answerFrom`, `SnapshotReader`, `collect`) -- 선택적 사전 적재 저장소입니다. `STORE_URI`를 설정하면 `SeoulApiClient`가 일반 API의 JSON 요청을 캐시와 키 풀보다 먼저 저장소에 묻습니다. 느린 데이터 37종을 gzip JSON 스냅샷(디렉터리 또는 S3)으로 답하고, 인자 필터와 행 범위를 직접 적용합니다. 규칙 표가 허용하지 않는 요청은 그대로 지나갑니다. `npm run workshop:collect`가 같은 클라이언트로 저장소를 채우고 호출을 쿼터 장부에 기록합니다.
+- **`src/store/`** (`STORE_RULES`, `planRequest`, `answerFrom`, `SnapshotReader`, `collect`) -- 선택적 사전 적재 저장소입니다. `STORE_URI`를 설정하면 `SeoulApiClient`가 일반 API의 JSON 요청을 캐시와 키 풀보다 먼저 저장소에 묻습니다. 느린 데이터 40종을 gzip JSON 스냅샷(디렉터리 또는 S3)으로 답하고, 인자 필터와 행 범위를 직접 적용합니다. 규칙 표가 허용하지 않는 요청은 그대로 지나갑니다. `npm run workshop:collect`가 같은 클라이언트로 저장소를 채우고 호출을 쿼터 장부에 기록합니다.
 
 ### Processing Layer (처리 계층)
 
@@ -223,7 +223,7 @@ Related architectural decisions are recorded under `docs/decisions/` -- see [ADR
 - **stdio** (`src/index.ts`) -- 로컬 MCP 클라이언트가 시작합니다(`npx -y seoul-opendata-mcp`). 이 경로에서는 AWS 의존성을 불러오지 않습니다.
 - **`src/http.ts`, `Dockerfile`** -- 같은 `buildServer()`를 상태 없는 Streamable HTTP(`:8000`의 `POST /mcp`와 `GET /ping`)로 제공하고, AgentCore Runtime용 `linux/arm64` 이미지로 묶습니다. 시작할 때 `CACHE_TABLE_NAME`이 있으면 `maybeAttachL2`가 공유 DynamoDB 캐시와 쿼터 장부를 연결합니다.
 - **워크숍 Gateway** (`infra/seoul-workshop.yaml`) -- 대상 `seoul` 하나를 가진 AgentCore Gateway이고, 대상은 전용 런타임 `seoul_workshop_mcp`를 가리킵니다. 호출하는 쪽에는 tool이 `seoul___<tool>`로 보입니다. Gateway는 자기 IAM 역할로 런타임을 호출하므로 워크숍 코드만으로는 런타임에 닿지 못합니다.
-- **스냅샷 수집** (`infra/lambda/collect.ts`, `scripts/workshop-collect.ts`) -- 스냅샷은 워크숍 버킷의 `store/v1/` 아래에 있고 워크숍 런타임이 `STORE_URI`로 읽습니다. 수집 스케줄을 켜면 EventBridge Scheduler 스케줄(Asia/Seoul)이 수집 Lambda를 실행합니다. 수집 Lambda는 매일 묶음(35종, 첫 실행에서 서울 API를 98회 호출)을 받고 모든 호출을 쿼터 장부에 기록합니다. 실패한 실행은 다시 시도하지 않습니다. `npm run workshop:collect -- daily|static|status|verify`는 같은 수집기를 터미널에서 실행합니다. 정적 묶음(지하철 시간표, 약 1,850회)은 Lambda의 15분 제한을 넘으므로 이 명령으로만 받습니다.
+- **스냅샷 수집** (`infra/lambda/collect.ts`, `scripts/workshop-collect.ts`) -- 스냅샷은 워크숍 버킷의 `store/v1/` 아래에 있고 워크숍 런타임이 `STORE_URI`로 읽습니다. 수집 스케줄을 켜면 EventBridge Scheduler 스케줄(Asia/Seoul)이 수집 Lambda를 실행합니다. 수집 Lambda는 매일 묶음(35종, 첫 실행에서 서울 API를 98회 호출)을 받고 모든 호출을 쿼터 장부에 기록합니다. 실패한 실행은 다시 시도하지 않습니다. `npm run workshop:collect -- daily|static|realestate|status|verify`는 같은 수집기를 터미널에서 실행합니다. 정적 묶음(지하철 시간표, 약 1,850회)과 부동산 묶음(연도와 자치구로 나눈 매매, 전월세, 개별공시지가, 약 1,950회)은 Lambda의 15분 제한을 넘으므로 이 명령으로만 받습니다.
 - **`scripts/workshop-deploy.ts`, `scripts/workshop-code.ts`, `scripts/workshop-bundle.ts`** -- 스택을 두 단계로 만들거나 갱신합니다. 이미지를 올리고 Lambda 코드를 묶어 올린 뒤 Gateway 대상을 동기화합니다. 수집 스케줄을 켜거나 끄고(`--collect-schedule`) 워크숍 코드를 발급하거나 폐기합니다.
 
 ## 전체 아키텍처 다이어그램
@@ -270,7 +270,7 @@ flowchart TB
   TABLE[("DynamoDB table<br/>cache, quota, rate counters")]
   AGENT(["Local MCP client / LLM agent"]) --> STDIO --> TOOLS
   CALLER(["AgentCore caller with IAM"]) --> RUNTIME
-  PARTICIPANT(["Workshop participant<br/>Bearer code"]) --> GATEWAY
+  PARTICIPANT(["General client<br/>Bearer code"]) --> GATEWAY
   RUNTIME --> TOOLS
   CACHE -.->|"L2 and quota ledger"| TABLE
   INTERCEPTOR -.->|"rate counter"| TABLE
@@ -291,7 +291,7 @@ flowchart LR
   Unwrap --> Normalize["normalize/*"]
   Normalize --> Envelope["ok() envelope"]
   Envelope --> Agent
-  Participant(["Workshop participant"]) --> Gateway["AgentCore Gateway<br/>code check"] --> Runtime["AgentCore Runtime"] --> Tool
+  Participant(["General client"]) --> Gateway["AgentCore Gateway<br/>code check"] --> Runtime["AgentCore Runtime"] --> Tool
 ```
 
 ## 인프라
@@ -321,7 +321,7 @@ flowchart LR
 - **세션 수와 업스트림 쿼터의 분리** -- AgentCore Runtime 환경에서는 동시 세션마다 별도 프로세스와 콜드 L1 캐시를 가지므로, 그대로 두면 세션 수와 업스트림 호출량이 동일한 공용 일일 쿼터를 두고 함께 증가합니다. 선택적이며 env로 게이트된(`CACHE_TABLE_NAME`) 세션 간 공유 L2(DynamoDB) 계층에, stale-while-revalidate와 에러 대신 stale-only로 저하되는 일일 쿼터 원장을 더해 이 결합을 끊으면서도, `CACHE_TABLE_NAME`을 설정하지 않는 무설정 stdio 경로는 바이트 단위로 그대로 유지됩니다. [ADR-004](decisions/ADR-004-session-scaling-two-tier-cache.md)로 기록되어 있습니다.
 - **키는 여러 개, 캐시 항목은 하나** -- 쉼표로 구분한 키 풀을 받고 캐시 키의 키 자리를 `{key}`로 바꿉니다. 하루 예산은 키 수만큼 늘고, 한 키로 받은 응답이 다른 키를 썼을 요청에도 그대로 쓰입니다. 키가 하나면 이전과 똑같이 동작합니다. [ADR-006](decisions/ADR-006-key-pool-with-key-independent-cache-keys.md)으로 기록되어 있습니다.
 - **Gateway에서는 공용 코드, 그 뒤는 IAM** -- 워크숍 참가자는 `Authorization: Bearer` 코드 하나를 보내고 REQUEST 인터셉터가 이를 확인합니다. 그다음 Gateway가 자기 IAM 역할로 런타임을 호출합니다. ID 공급자와 참가자별 설정이 필요 없고, 코드는 명령 하나로 다시 발급하거나 폐기합니다. [ADR-005](decisions/ADR-005-workshop-shared-code-at-the-gateway.md)로 기록되어 있습니다.
-- **느린 데이터는 스냅샷으로, 필터는 서버에서** -- 하루에 한 번 이하로 바뀌는 37종을 미리 받아 S3 스냅샷으로 두고 캐시보다 먼저 답합니다. 자유 인자와 380KB를 넘는 응답이 하루 쿼터를 쓰지 않게 됩니다. 저장소는 허용 목록이 허용한 것만 답하고 나머지는 기존 경로로 갑니다. [ADR-007](decisions/ADR-007-snapshot-store-with-server-side-filters.md)에 기록했습니다.
+- **느린 데이터는 스냅샷으로, 필터는 서버에서** -- 하루에 한 번 이하로 바뀌는 40종을 미리 받아 S3 스냅샷으로 두고 캐시보다 먼저 답합니다. 자유 인자와 380KB를 넘는 응답이 하루 쿼터를 쓰지 않게 됩니다. 저장소는 허용 목록이 허용한 것만 답하고 나머지는 기존 경로로 갑니다. [ADR-007](decisions/ADR-007-snapshot-store-with-server-side-filters.md)에 기록했습니다.
 
 ## 운영
 

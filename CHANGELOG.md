@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Real-estate snapshots: sales (`tbLnOpendataRtmsV`), rentals (`tbLnOpendataRentV`) and assessed land prices (`IndividuallyPostedLandPriceService`) join the snapshot store, split by year and district, which makes 40 datasets. The store answers a request that names both a year and a district and filters by legal-dong code, building name, building type, legal-dong name and lot number. A request without a year or a district takes the existing path.
+- `npm run workshop:collect -- realestate`: collects two years of sales and the current year of rentals and land prices, about 1,950 calls. The daily collector Lambda does not run this bundle.
+
+### Changed
+- The collector fetches again the contract dates that straddle a page boundary when it collects sales, because the Seoul API returns rows of the same contract date in a different order on every request and paging alone duplicates and drops rows. `verify` reports a difference only in the order of rows with the same contract date as an order difference.
+- `get_real_estate_prices` looks up the legal-dong code in the current year's land prices from June and in the previous year's before that, and tries the other year when the first has no data.
+
 ## [0.8.0] - 2026-11-21
 
 ### Added
@@ -176,6 +184,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 따릅니다.
 
 ## [Unreleased]
+
+### Added
+- 부동산 스냅샷: 매매(`tbLnOpendataRtmsV`), 전월세(`tbLnOpendataRentV`), 개별공시지가(`IndividuallyPostedLandPriceService`)를 연도와 자치구로 나눠 사전 적재 저장소에 추가(대상 40종). 연도와 자치구가 모두 있는 요청에 답하고 법정동 코드, 건물명, 건물 용도, 법정동명, 지번으로 거름. 연도나 자치구가 없는 요청은 기존 경로 그대로
+- `npm run workshop:collect -- realestate`: 매매 2년, 전월세와 개별공시지가 올해 수집(약 1,950회). 매일 수집 Lambda는 이 묶음을 돌리지 않음
+
+### Changed
+- 매매 수집 시 페이지 경계에 걸친 계약일을 다시 받도록 변경. 서울 API가 같은 계약일의 행 순서를 요청마다 다르게 돌려줘 나눠 받기만 하면 행이 겹치거나 빠짐. `verify`는 같은 계약일 안의 순서 차이를 순서 차이로 보고
+- `get_real_estate_prices`의 법정동 코드 조회 기준연도를 6월부터는 올해, 그 전에는 작년으로 변경. 먼저 본 연도에 자료가 없으면 다른 연도 조회
 
 ## [0.8.0] - 2026-11-21
 

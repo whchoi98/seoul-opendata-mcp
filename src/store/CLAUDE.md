@@ -1,17 +1,17 @@
 # Store Module
 
 ## Role
-사전 적재 저장소입니다. 하루 단위 이상으로 바뀌는 데이터셋 37종을 미리 받아 gzip JSON 스냅샷으로 저장하고, 서버가 서울 API보다 스냅샷을 먼저 읽게 합니다. 설계는 `docs/superpowers/specs/2026-11-21-snapshot-store-design.md`입니다.
+사전 적재 저장소입니다. 하루 단위 이상으로 바뀌는 데이터셋 40종을 미리 받아 gzip JSON 스냅샷으로 저장하고, 서버가 서울 API보다 스냅샷을 먼저 읽게 합니다. 설계는 `docs/superpowers/specs/2026-11-21-snapshot-store-design.md`입니다.
 
 ## Key Files
-- `rules.ts` - 규칙 표 `STORE_RULES`. 서비스별 자리 규칙(일치, 부분일치, 파티션, 미지원), 묶음, 범위, 기한, 스냅샷당 호출 수.
-- `engine.ts` - 순수 함수 `planRequest()`(읽을 스냅샷과 필터 결정)와 `answerFrom()`(필터, 범위, 기한 적용).
+- `rules.ts` - 규칙 표 `STORE_RULES`. 서비스별 자리 규칙(일치, 부분일치, 4자리 숫자 일치, 파티션, 미지원), 묶음(`daily`, `static`, `realestate`), 범위, 기한, 스냅샷당 호출 수, 건너뛰는 시간, 정렬 필드(`order`). 자치구 목록 `DISTRICTS`.
+- `engine.ts` - 순수 함수 `planRequest()`(읽을 스냅샷과 필터 결정), `answerFrom()`(필터, 범위, 기한 적용), `requestPath()`(파티션 값을 제자리에 넣은 서울 API 경로. 수집기와 `verify`가 씁니다).
 - `snapshot.ts` - 스냅샷 형식, gzip 직렬화, 객체 키(`<서비스>/<파티션 키>.json.gz`), 접두사 `store/v1`.
 - `snapshotStore.ts` - `SnapshotStore` 인터페이스(`get`, `put`, `list`)와 디렉터리 구현 `DirectoryStore`(테스트와 로컬 개발용).
 - `s3Store.ts` - S3 구현 `S3Store`. `createS3Store()` 안에서만 `@aws-sdk/client-s3`를 lazy import합니다. 없는 객체(404)는 `undefined`, 그 밖의 오류는 던집니다. 시간 제한은 연결 2초, 읽기와 목록 조회 10초(본문 읽기 포함), 쓰기 2분입니다.
 - `reader.ts` - `SnapshotReader`. 메모리 보관(96MB, 오래 안 쓴 것부터 버림), 10분 뒤 ETag 재확인, 없는 객체와 오류 5분 기억, 동시 읽기 합치기, 3초 시간 제한. 재확인이 3초를 넘거나 이미 진행 중이면 가진 스냅샷으로 답합니다.
 - `attach.ts` - `openStore()`(주소가 `s3://`면 S3, 아니면 디렉터리)와 `maybeAttachStore()`(`STORE_URI`가 있을 때만 `SeoulApiClient.attachStore()` 호출, 실패해도 서버는 계속 동작).
-- `collector.ts` - 수집 계획(`planCollection`), 실행(`collect`), 증분 건너뛰기, 예산 검사, 상태(`statusOf`), 출력 문자열. `scripts/workshop-collect.ts`와 수집 Lambda가 함께 씁니다.
+- `collector.ts` - 수집 계획(`planCollection`), 실행(`collect`), 증분 건너뛰기, 예산 검사, 페이지 경계에 걸친 값 다시 받기(`straddling`), 상태(`statusOf`), 출력 문자열. `scripts/workshop-collect.ts`와 수집 Lambda가 함께 씁니다.
 - `verify.ts` - 실제 API 대비 검사(`casesFor`, `runVerify`). 일치로 비교하는 자리는 예시 값과 똑같은 값의 행이, 부분일치 자리는 그 값을 포함한 행이 있어야 예시 값을 쓰고 없으면 스냅샷의 첫 값을 씁니다. 자리마다 값 전체와 앞부분으로 시험하며 `지원 자리 전부`는 한 행에서 값을 모을 수 있습니다. 양쪽 모두 0건이면 그 값을 포함한 행이 있을 때만 통과로 세고 출력에는 보낸 값을 적습니다.
 
 ## Rules
@@ -22,5 +22,7 @@
 - 저장소의 실패는 요청을 실패시키지 않습니다. 로그만 남기고 답하지 않음으로 처리합니다.
 - `src/client`만 import합니다(`verify.ts`는 `src/data/catalog.ts`도). `src/tools`와 `src/normalize`는 import하지 않습니다. `src/client`는 이 디렉터리를 import하지 않습니다.
 - 규칙을 바꾸면 `tests/store/rules.test.ts`를 먼저 고치고, 배포 전에 `npm run workshop:collect -- verify`로 실제 API와 비교합니다.
+- 부동산 3종은 연도와 자치구가 파티션이고 파티션 자리가 떨어져 있습니다. 서울 API에 보낼 경로는 파티션 배열을 그대로 쓰지 않고 `requestPath()`로 만듭니다.
+- 매매(`tbLnOpendataRtmsV`)는 계약일이 같은 행의 순서가 요청마다 다릅니다. 새 데이터셋을 여러 페이지로 받기 전에 같은 요청을 두 번 보내 순서가 같은지 확인하고, 다르면 규칙에 `order.unstable`을 적습니다.
 - 수집기는 `client.getJson()`만 씁니다. 빈 응답이 `isNoData()`가 아니면 쿼터 소진이나 호출 제한이므로 실행을 끝냅니다. 스냅샷은 모든 페이지를 받은 뒤에만 씁니다.
 - 수집기의 출력과 로그에 원문 키를 넣지 않습니다. 키는 `maskKey()`로만 보여 줍니다.

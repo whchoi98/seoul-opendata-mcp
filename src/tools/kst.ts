@@ -4,6 +4,9 @@ const kst = (offsetHours = 0) => new Date(Date.now() + (9 + offsetHours) * HOUR)
 
 export const kstYear = () => kst().getUTCFullYear()
 
+/** 1~12 (KST) */
+export const kstMonth = () => kst().getUTCMonth() + 1
+
 /** 'HH:MM' (KST 현재 시각) */
 export const kstHHMM = () => kst().toISOString().slice(11, 16)
 

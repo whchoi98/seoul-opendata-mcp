@@ -186,7 +186,7 @@ Besides the stdio server above, this repo also ships a Streamable HTTP entrypoin
    | `SEOUL_SUBWAY_API_KEY` | Subway-only key (same as stdio mode). | falls back to the first key of `SEOUL_API_KEY` |
    | `CACHE_TABLE_NAME` | Optional — DynamoDB table name for the shared global L2 cache and daily quota ledger. Unset means L1-only, per-session cache and quota. | (unset) |
    | `QUOTA_DAILY_LIMIT` | Daily per-key call budget before the server switches to stale-only responses. | `1000` |
-   | `STORE_URI` | Optional — `s3://<bucket>/store/v1` or a directory holding pre-collected snapshots. When set, 37 slow-changing datasets are answered from snapshots before the cache and the Seoul API. See [docs/workshop.md](docs/workshop.md). | (unset) |
+   | `STORE_URI` | Optional — `s3://<bucket>/store/v1` or a directory holding pre-collected snapshots. When set, 40 slow-changing datasets are answered from snapshots before the cache and the Seoul API. See [docs/workshop.md](docs/workshop.md). | (unset) |
    | `PORT` | HTTP listen port. | `8000` |
 
 4. **Extending via AgentCore Gateway** — to expose these 23 tools to other agents/orchestrators without touching any code, register the deployed Runtime endpoint as an `mcpServer`-type target on an [AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html). The Streamable HTTP contract this server already implements is exactly what a Gateway target expects, so this is a registration-only step — no changes to this repository.
@@ -522,7 +522,7 @@ kiro-cli mcp add --name seoul-opendata --command npx --args "-y,seoul-opendata-m
    | `SEOUL_SUBWAY_API_KEY` | 지하철 전용 키(stdio 모드와 동일). | `SEOUL_API_KEY`의 첫 키로 폴백 |
    | `CACHE_TABLE_NAME` | 선택 — 전역 L2 캐시와 일일 쿼터 원장에 쓰이는 DynamoDB 테이블명. 미설정 시 L1 전용, 세션별 캐시·쿼터로 동작. | (미설정) |
    | `QUOTA_DAILY_LIMIT` | 쿼터 소진 시 stale-only 응답으로 전환되기 전까지의 키별 일일 호출 예산. | `1000` |
-   | `STORE_URI` | 선택 사항. 미리 받아 둔 스냅샷이 있는 `s3://<버킷>/store/v1` 또는 디렉터리. 설정하면 느린 데이터 37종을 캐시와 서울 API보다 먼저 스냅샷으로 답합니다. [docs/workshop.md](docs/workshop.md) 참조. | (미설정) |
+   | `STORE_URI` | 선택 사항. 미리 받아 둔 스냅샷이 있는 `s3://<버킷>/store/v1` 또는 디렉터리. 설정하면 느린 데이터 40종을 캐시와 서울 API보다 먼저 스냅샷으로 답합니다. [docs/workshop.md](docs/workshop.md) 참조. | (미설정) |
    | `PORT` | HTTP 리슨 포트. | `8000` |
 
 4. **AgentCore Gateway로 확장** — 코드를 전혀 바꾸지 않고 이 23개 tool을 다른 에이전트/오케스트레이터에 노출하려면, 배포된 Runtime 엔드포인트를 [AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html)의 `mcpServer` 타입 타깃으로 등록하세요. 이 서버가 이미 구현하고 있는 Streamable HTTP 계약이 Gateway 타깃이 기대하는 형태와 정확히 일치하므로, 등록만 하면 되는 단계이며 이 저장소에는 어떤 변경도 필요 없습니다.

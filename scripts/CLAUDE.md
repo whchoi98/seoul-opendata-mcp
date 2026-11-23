@@ -12,7 +12,7 @@
 - `workshop-code.ts` - `npm run workshop:code -- new|revoke|show`. 워크숍 코드를 발급, 폐기, 조회합니다.
 - `workshop-lib.ts` - 워크숍 스크립트의 순수 함수와 상수입니다(리전, 스택 이름, 코드 생성, 해시, 만료 계산, 스택 파라미터, 이미지 태그, `stackBlocker`). `tests/workshopLib.test.ts`가 검사합니다.
 - `workshop-aws.ts` - `aws` CLI와 `docker` 호출 래퍼입니다(`run`, `aws`, `describeStack`, `createStack`, `updateStack`, `deleteStack`). `tests/workshopAws.test.ts`가 검사합니다.
-- `workshop-collect.ts` - `npm run workshop:collect -- daily|static|status|verify`. 스택에서 버킷, 테이블, 하루 한도를 읽고 `src/store/collector.ts`와 `verify.ts`를 실행합니다. `--store <디렉터리>`를 주면 로컬에 저장합니다.
+- `workshop-collect.ts` - `npm run workshop:collect -- daily|static|realestate|status|verify`. 스택에서 버킷, 테이블, 하루 한도를 읽고 `src/store/collector.ts`와 `verify.ts`를 실행합니다. `--store <디렉터리>`를 주면 로컬에 저장합니다.
 - `workshop-bundle.ts` - 수집 Lambda(`infra/lambda/collect.ts`)를 esbuild로 한 파일로 묶습니다. `tests/workshopBundle.test.ts`가 검사합니다.
 
 ## Rules
@@ -24,4 +24,4 @@
 - 판단 로직은 `workshop-lib.ts`에 순수 함수로 두고 테스트를 먼저 씁니다. 배포와 코드 스크립트의 main 흐름은 단위 테스트가 없으므로 얇게 유지합니다.
 - 픽스처 캡처는 원본 응답이 필요해 `fetch`를 직접 씁니다. 다른 스크립트는 서울 API를 직접 부르지 않고, Gateway 확인은 `@modelcontextprotocol/sdk` 클라이언트로 합니다.
 - 픽스처를 다시 받을 때는 갱신할 파일만 먼저 지웁니다(`tests/CLAUDE.md` 참조).
-- `workshop-collect.ts`의 `daily`, `static`, `verify`는 실제 서울 API를 불러 쿼터를 쓰고 워크숍 버킷에 씁니다. 사용자 승인 뒤에만 실행합니다. `--help`, `--dry-run`, `status`는 서울 API를 부르지 않습니다.
+- `workshop-collect.ts`의 `daily`, `static`, `realestate`, `verify`는 실제 서울 API를 불러 쿼터를 쓰고 워크숍 버킷에 씁니다. `realestate`는 약 1,950회를 씁니다. 사용자 승인 뒤에만 실행합니다. `--help`, `--dry-run`, `status`는 서울 API를 부르지 않습니다.

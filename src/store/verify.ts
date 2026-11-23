@@ -5,12 +5,10 @@
 import { isNoData, type Unwrapped } from '../client/response.js'
 import { CATALOG } from '../data/catalog.js'
 import { CALL_DELAY_MS, PAGE, indexExisting, type CollectClient } from './collector.js'
-import { answerFrom, planRequest } from './engine.js'
+import { answerFrom, planRequest, requestPath } from './engine.js'
 import { STORE_RULES, type SlotRule, type StoreRule } from './rules.js'
 import { ALL, decodeSnapshot, snapshotKey, type Snapshot } from './snapshot.js'
 import type { SnapshotStore } from './snapshotStore.js'
-
-const BLANK = ' '
 
 export interface VerifyCase {
   service: string
@@ -39,25 +37,21 @@ const NO_VALUE = '스냅샷에 이 필드 값이 없어 검사하지 못함'
 export function casesFor(service: string, rule: StoreRule, partition: string[], rows?: any[]): VerifyCase[] {
   const examples = examplesOf(service, rule)
   /** values: 자리 번호 → 넣을 값. 파티션 자리에는 저장된 파티션 값이 들어간다 */
-  const pathWith = (values: Record<number, string>): string[] => {
-    const path = rule.slots.map((_, i) => (i < partition.length ? partition[i] : values[i] ?? BLANK))
-    while (path.length > 0 && path[path.length - 1] === BLANK) path.pop()
-    return path
-  }
+  const pathWith = (values: Record<number, string>): string[] => requestPath(rule, partition, values)
   /** 자리 번호 → 시험할 값. 스냅샷에 그 필드 값이 없으면 undefined */
   const probes = rule.slots.map((s, i): string | undefined => {
     if (!rows) return examples[i]
     const stored = rows.map(r => fieldText(r, s.field)).filter(v => v !== '')
     const example = (examples[i] ?? '').trim()
     // 일치로 비교하는 자리에 행 값의 일부를 넣으면 맞는 규칙에서도 양쪽이 0건이라 아무것도 확인하지 못한다
-    const byEquality = s.kind === 'eq' || (s.kind === 'unsupported' && s.decide === true)
+    const byEquality = s.kind === 'eq' || s.kind === 'pad4' || (s.kind === 'unsupported' && s.decide === true)
     if (example !== '' && stored.some(v => (byEquality ? v === example : v.includes(example)))) return example
     // '/'는 경로에서 %2F가 되고 서울 API가 이를 어떻게 다루는지 모른다. 거부되면 검사 전체가 끝나므로 다른 값이 있으면 피한다
     return stored.find(v => !v.includes('/')) ?? stored[0]
   })
   // 끝의 공백은 저장소가 잘라 내지만 서울 API에는 그대로 간다. 앞부분이 공백으로 끝나지 않게 한다
   const frontOf = (value: string): string => value.slice(0, Math.max(1, Math.ceil(value.length / 2))).trimEnd()
-  const supported = rule.slots.flatMap((s, i) => (s.kind === 'eq' || s.kind === 'contains' ? [i] : []))
+  const supported = rule.slots.flatMap((s, i) => (s.kind === 'eq' || s.kind === 'contains' || s.kind === 'pad4' ? [i] : []))
   const cases: VerifyCase[] = [{ service, path: pathWith({}), label: '인자 없음' }]
   for (const i of supported) {
     const field = rule.slots[i].field
@@ -149,7 +143,23 @@ function compare(c: VerifyCase, snapshot: Snapshot, rule: StoreRule, live: Unwra
   const b = live.rows.map(r => JSON.stringify(r))
   if (sameList(a, b)) return { ...base, status: 'ok', detail: `${live.totalCount}건 일치` }
   if (sameList([...a].sort(), [...b].sort())) return { ...base, status: 'order', detail: `${live.totalCount}건, 행은 같고 순서만 다름` }
+  const tied = rule.order ? tiedOnly(mine.rows, live.rows, rule.order.field) : undefined
+  if (tied) return { ...base, status: 'order', detail: `${live.totalCount}건, ${rule.order!.field}가 같은 행의 순서만 다름(${tied.edge}보다 뒤의 ${tied.above}행 일치)` }
   return { ...base, status: 'fail', detail: `행 집합 다름: 저장소 ${a.length}행, 서울 API ${b.length}행(전체 ${live.totalCount}건)` }
+}
+
+/**
+ * 정렬 필드의 내림차순으로 오는 서비스에서, 요청 범위가 결과보다 작을 때의 비교. 값이 같은 행끼리의 순서가 정해져 있지 않으면
+ * 범위의 마지막 값을 가진 행은 양쪽이 다르게 고를 수 있다. 그 값보다 큰 행의 집합이 같고 양쪽이 같은 값에서 끝나면 순서만 다른 것이다
+ */
+function tiedOnly(mine: any[], live: any[], field: string): { edge: string; above: number } | undefined {
+  const descending = (rows: any[]): boolean => rows.every((r, i) => i === 0 || fieldText(r, field) <= fieldText(rows[i - 1], field))
+  if (mine.length === 0 || mine.length !== live.length || !descending(mine) || !descending(live)) return undefined
+  const edge = fieldText(mine.at(-1), field)
+  if (edge === '' || edge !== fieldText(live.at(-1), field)) return undefined
+  const above = (rows: any[]): string[] => rows.filter(r => fieldText(r, field) > edge).map(r => JSON.stringify(r)).sort()
+  const a = above(mine)
+  return sameList(a, above(live)) ? { edge, above: a.length } : undefined
 }
 
 /**

@@ -130,6 +130,28 @@ describe('casesFor', () => {
     expect(casesFor('CardBusStatisticsServiceNew', RULES.CardBusStatisticsServiceNew, ['20261116']).map(c => c.path)).toEqual([['20261116']])
   })
 
+  it('파티션 자리가 떨어져 있으면(부동산) 저장된 파티션 값을 제자리에 넣고 사이를 공백으로 채운다', () => {
+    const sale = casesFor('tbLnOpendataRtmsV', STORE_RULES.tbLnOpendataRtmsV, ['2026', '강남구'])
+    expect(sale[0]).toMatchObject({ label: '인자 없음', path: ['2026', B, '강남구'] })
+    expect(sale.find(c => c.label === 'STDG_CD만')!.path).toEqual(['2026', B, '강남구', '10100'])
+    expect(sale.find(c => c.label === 'BLDG_USG만')!.path).toEqual(['2026', B, '강남구', B, B, B, B, B, B, B, '아파트'])
+    expect(sale.every(c => c.path[0] === '2026' && c.path[2] === '강남구')).toBe(true)
+    const land = casesFor('IndividuallyPostedLandPriceService', STORE_RULES.IndividuallyPostedLandPriceService, ['강남구', '2026'])
+    expect(land[0].path).toEqual(['강남구', B, B, B, B, '2026'])
+    expect(land.every(c => c.path[0] === '강남구' && c.path[5] === '2026')).toBe(true)
+  })
+
+  it('지번 자리는 스냅샷의 4자리 값과 그 앞부분으로 시험한다', () => {
+    const rows = [{ SIGUNGU_NM: '강남구', BJDONG_NM: '역삼동', BONBEON: '0601', BUBEON: '0019', PILGI_CD: '1', YEAR: '2026' }]
+    const land = casesFor('IndividuallyPostedLandPriceService', STORE_RULES.IndividuallyPostedLandPriceService, ['강남구', '2026'], rows)
+    expect(land.map(c => c.label)).toEqual([
+      '인자 없음', 'BJDONG_NM만', 'BJDONG_NM만(앞부분)', 'BONBEON만', 'BONBEON만(앞부분)', 'BUBEON만', 'BUBEON만(앞부분)', '지원 자리 전부',
+    ])
+    expect(land.find(c => c.label === 'BONBEON만')!.path).toEqual(['강남구', B, '0601', B, B, '2026'])
+    expect(land.find(c => c.label === 'BONBEON만(앞부분)')!.path).toEqual(['강남구', B, '06', B, B, '2026'])
+    expect(land.at(-1)!.path).toEqual(['강남구', '역삼동', '0601', '0019', B, '2026'])
+  })
+
   it('예시 값을 포함한 행이 스냅샷에 있으면 예시 값을, 없으면 그 필드의 첫 값을 쓴다', () => {
     const stored = [{ DUTYADDR: '서울특별시 서초구 3', DUTYNAME: '서초약국' }, { DUTYADDR: '서울특별시 강남구 1', DUTYNAME: '강남온누리약국' }]
     expect(casesFor(PHARMACY, RULES[PHARMACY], [], stored).map(c => c.path)).toEqual([
@@ -455,6 +477,48 @@ describe('runVerify', () => {
     expect(report.decisions).toEqual([{ service: SENIOR, field: 'SISUL_NM', verdict: '재현 못 함' }])
   })
 
+  describe('계약일 내림차순으로 오는 서비스(매매, 전월세)', () => {
+    const SALE = 'tbLnOpendataRtmsV'
+    // 1,200행, 계약일마다 400행. 요청 범위(1,000행)의 끝이 세 번째 계약일 안에 있다
+    const all = Array.from({ length: 1200 }, (_, k) => ({ i: k + 1, CTRT_DAY: String(20261120 - Math.floor(k / 400)) }))
+    /** 서울 API는 같은 계약일 안의 순서를 다르게 돌려준다 */
+    const flipped = [...new Set(all.map(r => r.CTRT_DAY))].flatMap(d => all.filter(r => r.CTRT_DAY === d).reverse())
+    const check = async (live: any[], rule: StoreRule = STORE_RULES[SALE]) => {
+      const m = memoryStore()
+      m.seed(SALE, ['2026', '강남구'], all)
+      const { client, calls } = fakeClient(() => ({ rows: live.slice(0, 1000), totalCount: 1200 }))
+      const report = await runVerify(client, m.store, { only: [SALE], now: () => NOW, delayMs: 0, rules: { [SALE]: rule } })
+      return { first: report.results[0], report, calls }
+    }
+
+    it('범위의 마지막 계약일에서 고른 행만 다르면 순서 차이로 본다. 그 계약일보다 뒤의 행은 모두 같아야 한다', async () => {
+      const { first, report, calls } = await check(flipped)
+      expect(calls[0].path).toEqual(['2026', B, '강남구'])
+      expect(first).toMatchObject({ label: '인자 없음', status: 'order' })
+      expect(first.detail).toBe('1200건, CTRT_DAY가 같은 행의 순서만 다름(20261118보다 뒤의 800행 일치)')
+      expect(report.ok).toBe(true)
+    })
+
+    it('마지막 계약일보다 뒤의 행이 하나라도 다르면 실패다', async () => {
+      const changed = flipped.map(r => (r.i === 5 ? { ...r, i: 9999 } : r))
+      const { first, report } = await check(changed)
+      expect(first).toMatchObject({ status: 'fail', detail: '행 집합 다름: 저장소 1000행, 서울 API 1000행(전체 1200건)' })
+      expect(report.ok).toBe(false)
+    })
+
+    it('서울 API가 계약일 내림차순이 아니거나 다른 계약일에서 끝나면 실패다', async () => {
+      const unsorted = [flipped[999], ...flipped.slice(0, 999)]
+      expect((await check(unsorted)).first.status).toBe('fail')
+      const shifted = [{ i: 0, CTRT_DAY: '20261121' }, ...all].slice(0, 1000).map((r, k) => (k >= 790 ? { ...r, CTRT_DAY: '20261119' } : r))
+      expect((await check(shifted)).first.status).toBe('fail')
+    })
+
+    it('정렬 필드를 적지 않은 규칙은 같은 차이를 실패로 본다', async () => {
+      const { order: _order, ...plain } = STORE_RULES[SALE]
+      expect((await check(flipped, plain)).first.status).toBe('fail')
+    })
+  })
+
   it('파티션이 있는 서비스는 가장 최근에 저장된 파티션으로 검사한다', async () => {
     const m = memoryStore()
     m.seed('CardSubwayStatsNew', ['20261115'], [{ USE_YMD: '20261115' }])
@@ -470,7 +534,7 @@ describe('runVerify', () => {
     const { client, calls } = fakeClient(r => noData(r.service))
     const report = await runVerify(client, m.store, { now: () => NOW, delayMs: 0, rules: RULES })
     expect(calls).toHaveLength(0)
-    expect(report.results).toHaveLength(18)
+    expect(report.results).toHaveLength(21)
     expect(report.results.every(r => r.status === 'skip' && r.detail === '스냅샷 없음')).toBe(true)
     expect(report.ok).toBe(true)
   })
@@ -550,7 +614,7 @@ describe('verify 호출 수', () => {
     let bound = 0
     for (const [service, rule] of Object.entries(STORE_RULES)) {
       if (rule.slots.length === 0) continue
-      const supported = rule.slots.filter(s => s.kind === 'eq' || s.kind === 'contains').length
+      const supported = rule.slots.filter(s => s.kind === 'eq' || s.kind === 'contains' || s.kind === 'pad4').length
       const decide = rule.slots.filter(s => s.kind === 'unsupported' && s.decide).length
       // 인자 없음 1, 지원 자리마다 값 전체와 앞부분 2, 지원 자리가 둘 이상이면 전부 채운 요청 1, 결정할 자리마다 2
       const n = 1 + 2 * supported + (supported > 1 ? 1 : 0) + 2 * decide

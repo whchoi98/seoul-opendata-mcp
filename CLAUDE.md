@@ -33,7 +33,7 @@ docs/           architecture, api-reference, onboarding, workshop 안내, decisi
 - `bash scripts/install-hooks.sh` - git `pre-commit`(비밀 검사)과 `commit-msg` 훅 설치 (clone 직후 1회)
 - `npm run workshop:deploy` - 워크숍 Gateway 스택 배포(승인 후에만 실행, `docs/workshop.md` 참조)
 - `npm run workshop:code -- new|revoke|show` - 워크숍 코드 발급, 폐기, 조회
-- `npm run workshop:collect -- daily|static|status|verify` - 사전 적재 스냅샷 수집, 상태 조회, 실제 API 대비 검사(실제 API를 부르므로 승인 후에만 실행)
+- `npm run workshop:collect -- daily|static|realestate|status|verify` - 사전 적재 스냅샷 수집, 상태 조회, 실제 API 대비 검사(실제 API를 부르므로 승인 후에만 실행)
 
 ## Conventions
 - `tests/fixtures/`의 픽스처는 실API 캡처 결과로 불변입니다. 직접 수정하지 않고, 재캡처는 `scripts/capture-fixtures.ts`로만 합니다(`tests/CLAUDE.md` 참조).

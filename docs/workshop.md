@@ -81,6 +81,16 @@ npm run workshop:collect -- static --dry-run   # 계획과 남은 한도 확인
 npm run workshop:collect -- static
 ```
 
+참가자가 부동산 데이터를 쓴다면 부동산 스냅샷도 받아 둡니다. 매매 2년, 전월세와 개별공시지가 올해를 자치구별로 받습니다. 약 1,950회를 부르고 15~20분 걸리므로 워크숍 당일이 아닌 날에 합니다. 12시간 안에 다시 실행하면 이어 받습니다.
+
+```bash
+npm run workshop:collect -- realestate --dry-run
+npm run workshop:collect -- realestate
+npm run workshop:collect -- verify --only tbLnOpendataRtmsV,tbLnOpendataRentV,IndividuallyPostedLandPriceService
+```
+
+`get_real_estate_prices`와 `get_land_price`는 연도와 자치구를 모두 지정한 요청만 스냅샷으로 답합니다. 연도를 생략한 요청은 서울 API로 갑니다. 매매와 전월세 스냅샷의 기한은 7일, 개별공시지가는 30일이고, 기한이 지나면 그 요청은 다시 서울 API로 갑니다.
+
 ### 워크숍 전날
 
 `--days N`은 코드를 발급한 시각부터 N×24시간 뒤에 만료됩니다. 전날 오후에 발급하면 `--days 1`은 워크숍 당일 같은 시각에 끝나므로, 하루짜리 워크숍은 `--days 2`, 이틀짜리 해커톤은 `--days 3`으로 발급합니다.
@@ -105,7 +115,7 @@ SEOUL_WORKSHOP_CODE=<새 코드> npm run workshop:deploy -- --skip-image   # 코
 
 | 상황 | 명령 |
 |---|---|
-| 분당 한도에 자주 걸림 | `npm run workshop:deploy -- --skip-image --rate-per-minute 240` |
+| 분당 한도에 자주 걸림 | `npm run workshop:deploy -- --skip-image --rate-per-minute 720`. 한도는 모든 참가자가 함께 쓰므로 참가자 수 × 30을 기준으로 잡습니다(24명이면 720) |
 | 코드가 유출됨 | `npm run workshop:code -- new` 후 새 코드를 다시 안내 |
 | 만료 시각 확인 | `npm run workshop:code -- show` |
 | 스냅샷이 오래됨(응답의 수집 날짜가 지난 날짜) | `npm run workshop:collect -- daily`. 10분 안에 런타임에 반영됩니다 |
@@ -150,3 +160,15 @@ npm run workshop:code -- revoke
 | 생활인구(`SPOP_LOCAL_RESD_DONG`) | 수집되지 않았습니다. 서울 API의 가장 최근 날짜가 2026-07-31이라 수집 범위(최근 13일) 밖입니다. 날짜를 지정한 `get_living_population` 요청은 서울 API로 갑니다. 매일 수집은 이 데이터를 찾는 데 13회를 씁니다 |
 | 매일 자동 수집 스케줄 | 켰습니다(2026-11-22, 매일 05:00 KST, `cron(0 5 * * ? *)`). 수집 Lambda를 한 번 직접 실행해 성공했습니다(5.9초, 최대 메모리 138MB, 호출 19회, 1시간 안에 받은 스냅샷은 건너뜀). 스냅샷 쓰기는 그 실행에서 일어나지 않아 수집 역할의 권한을 IAM 정책 시뮬레이션으로 확인했습니다(`store/v1/` 쓰기, 읽기, 목록 조회와 쿼터 장부 갱신 허용, `code/` 쓰기 거부) |
 | `static` 수집과 `get_subway_schedule` | 아직 하지 않음. 워크숍 당일이 아닌 날 `npm run workshop:collect -- static` 뒤에 확인 |
+
+### 부동산 스냅샷 (2026-11-23)
+
+| 항목 | 결과 |
+|---|---|
+| Gateway 시험(클라이언트 하나) | 한 시간에 `tools/call` 955건. `get_real_estate_prices`와 `get_land_price`가 통과 624건, 분당 한도 초과 213건. 16:10에 263건, 16:12에 190건이 들어와 각각 120건만 통과했습니다. 첫 키의 하루 사용량이 70%까지 올라갔습니다 |
+| 분당 한도 | 720으로 올렸습니다(24명 × 분당 30건) |
+| 매매의 행 순서 | 같은 요청을 두 번 보내면 1,000행 중 126행만 같은 자리에 있었습니다. 경계의 계약일을 다시 받기 전에는 강남구 2026년 4,389행 중 서로 다른 행이 4,330개였습니다. 전월세(31,423행)와 개별공시지가(33,450필지)는 순서가 바뀌지 않았습니다 |
+| `realestate` 첫 수집 | 호출 1,904회(예상 상한 1,950회), 스냅샷 100개 저장, 경고 0, 약 15분. 매매 480회(50개), 전월세 523회(25개), 개별공시지가 901회(25개) |
+| `verify --only`(부동산 3종, 중랑구) | 통과 13, 순서 11, 실패 0, 호출 24회. 순서 11건은 같은 계약일 안의 순서(매매, 전월세)와 지번으로 거른 개별공시지가의 순서입니다. 전체 건수와 행 집합은 모두 같았습니다 |
+| 스냅샷 읽기(로컬 디렉터리, 강남구) | 매매 12ms(원본 1.8MB), 개별공시지가 44ms(7.2MB), 전월세 94ms(13.3MB) |
+| 스냅샷을 붙인 서버의 tool 호출(서울 API 차단) | 연도와 자치구가 있는 `get_real_estate_prices` 3건(법정동, 건물명, 전세 조건 포함)과 `get_land_price` 2건이 서울 API 호출 0회로 답했습니다. 역삼동 737번지 71,160,000원/㎡로 서울 API와 같았습니다. 연도를 생략한 요청과 스냅샷이 없는 자치구는 서울 API로 갔습니다 |
