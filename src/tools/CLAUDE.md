@@ -10,7 +10,7 @@ MCP tool 23개를 등록합니다. 도메인 register 파일 6개(`common`, `pop
 - `common.ts`/`population.ts`/`traffic.ts`/`culture.ts`/`environment.ts` - 도메인별 `registerXTools`.
 - `realestate.ts` - `get_real_estate_prices`(매매, 전월세)와 `get_land_price`(개별공시지가). 서비스별 경로 자리 표 `SLOTS`, `buildPath()`, 법정동 코드 조회 `lookupDongCode()`.
 - `meta.ts`/`stats.ts`/`health.ts` - 카탈로그 검색/호출, 배치 통계, 약국 tool.
-- `kst.ts` - KST 기준 날짜와 시각: `kstYear()`, `kstHHMM()`, `serviceDayType()`(지하철 운행일 요일, 새벽 4시 전은 전날), `kstMonthsAgo()`.
+- `kst.ts` - KST 기준 날짜와 시각: `kstYear()`, `kstHHMM()`, `serviceDayType()`(지하철 운행일 요일, 새벽 4시 전은 전날), `kstMonthsAgo()`, `kstDaysAgo()`(오늘에서 'YYYYMMDD'까지 지난 날 수).
 - `path.ts` - 경로 자리 공용 도구: `BLANK`(공백 자리), `positionalPath()`(중간 빈 자리는 공백, 끝쪽 빈 자리는 생략).
 
 ## Rules — 신규 tool 추가 절차 (5단계)
@@ -31,4 +31,6 @@ MCP tool 23개를 등록합니다. 도메인 register 파일 6개(`common`, `pop
 - `GetParkInfo`는 같은 주차장이 여러 행으로 옵니다(1,000행에 고유 코드 약 200개). `uniqueByCode()`로 중복을 없애고, 실시간 주차장(`GetParkingInfo`)과 코드 체계가 같아 코드로 겹침을 뺍니다.
 - 공공서비스예약은 종합 서비스(`tvYeyakCOllect`) 대신 분야별 서비스 5개를 씁니다. 종합 서비스는 상세 HTML 때문에 1,000행이 약 5MB입니다.
 - 빈 결과를 "없음"으로 안내할지는 `isNoData(u)`(`client/response.ts`)로 판단합니다.
+- `get_air_quality`의 `grade`는 통합대기환경지수 등급입니다. 미세먼지 등급은 `pm10Grade`, `pm25Grade`이고, 장소 단위 미세먼지는 `get_weather`가 줍니다(citydata의 `PM10_INDEX`, `PM25_INDEX`). LLM이 이름만 보고 tool을 고르므로 설명에 갈 곳을 적어 둡니다.
+- 일별 승하차(`CardSubwayStatsNew`)는 약 9개월 전부터 3일 전까지만 있습니다(2026-11-24 확인). 빈 날짜의 안내는 `stats.ts`의 `emptyDateNote()`가 날짜가 최근인지 오래됐는지에 따라 고르고, 응답 행이 있는데 걸러서 비었으면 조건을 안내합니다.
 - 서버가 못 거르는 조건(`rentType`, district 없는 `dong`, 해제 거래 제외)을 코드에서 거를 때는 그 범위를 `notes`에 적습니다.

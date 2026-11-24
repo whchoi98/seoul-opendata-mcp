@@ -31,6 +31,8 @@ The server has a second deployment path (v0.4.0): a Streamable HTTP entrypoint (
 ## Decision
 Decouple "how many AgentCore Runtime sessions are open" from "how much upstream quota is consumed" by adding an optional, env-gated second cache tier (L2/DynamoDB, `src/client/dynamo.ts`'s `DynamoDbCache`) behind the existing L1 (`InMemoryCache`) via `CompositeCache` (`src/client/cache.ts`). Cache entries carry a source-aligned soft TTL under a single hard 24h ceiling (`HARD_TTL_MS`), with stale-while-revalidate (serve immediately, refresh once in the background) and an in-process single-flight per request URL. A daily-quota ledger (`QuotaLedger` — `InMemoryLedger` by default, `DynamoDbLedger` when L2 is active), keyed per API key on a KST calendar day, tracks real usage and serves stale-only responses instead of erroring once the budget (`QUOTA_DAILY_LIMIT`, default 1000) is spent. Grounded in this plan's T1-T4 commits: `6e9ddaf` (cache backend abstraction — `InMemoryCache`/`CompositeCache`), `e3e2b86` (source-aligned soft TTLs, stale-while-revalidate, single-flight), `6df1ce7` (daily quota ledger with warning notes and stale-only exhaustion mode), `baff5bc` (`parseQuotaLimit` guard, subway/general key isolation), `ace9112` (DynamoDB L2 cache and quota ledger behind the `CACHE_TABLE_NAME` gate), `b085fac` (`DynamoDbLedger` uses the same `parseQuotaLimit` guard).
 
+Update (2026-11-25): a stale entry is now returned immediately only while it is no older than three times its soft TTL (`MAX_STALE_FACTOR`). A workshop test showed that places called once in a while always came back hours old, because the fresh copy arrived only on the second call. Older entries are refreshed before the response. The upstream call count is unchanged, since the background refresh made that call anyway.
+
 ## Consequences
 
 ### Positive
@@ -78,6 +80,8 @@ Decouple "how many AgentCore Runtime sessions are open" from "how much upstream 
 
 ## 결정
 "AgentCore Runtime 세션이 몇 개 열려 있는가"와 "업스트림 쿼터가 얼마나 소진되는가"를 분리하기 위해, 기존 L1(`InMemoryCache`) 뒤에 `CompositeCache`(`src/client/cache.ts`)를 통해 선택적이고 env로 게이트된 2번째 캐시 계층(L2/DynamoDB, `src/client/dynamo.ts`의 `DynamoDbCache`)을 추가합니다. 캐시 엔트리는 하나의 hard 24시간 상한(`HARD_TTL_MS`) 아래에서 원천에 맞춘 soft TTL을 가지며, stale-while-revalidate(즉시 서빙 + 백그라운드에서 한 번만 갱신)와 요청 URL당 프로세스 내 single-flight를 적용합니다. 일일 쿼터 원장(`QuotaLedger` — 기본은 `InMemoryLedger`, L2 활성 시 `DynamoDbLedger`)은 API 키별로 KST 달력일을 기준으로 실제 사용량을 추적하며, 예산(`QUOTA_DAILY_LIMIT`, 기본 1000)이 소진되면 에러 대신 캐시만으로 응답합니다. 이 플랜의 T1~T4 커밋에 근거합니다: `6e9ddaf`(캐시 백엔드 추상화 — `InMemoryCache`/`CompositeCache`), `e3e2b86`(원천 정렬 soft TTL, stale-while-revalidate, single-flight), `6df1ce7`(경고 note와 stale-only 소진 모드가 있는 일일 쿼터 원장), `baff5bc`(`parseQuotaLimit` 가드, 지하철/일반 키 분리), `ace9112`(`CACHE_TABLE_NAME` 게이트 뒤의 DynamoDB L2 캐시·쿼터 원장), `b085fac`(`DynamoDbLedger`도 동일한 `parseQuotaLimit` 가드 사용).
+
+개정(2026-11-25): soft TTL이 지난 값을 바로 돌려주는 범위를 soft TTL의 3배(`MAX_STALE_FACTOR`)까지로 줄였습니다. 워크숍 테스트에서 가끔 부르는 장소는 매번 몇 시간 전 값이 나갔습니다. 새 값이 두 번째 호출에서야 오기 때문입니다. 더 오래된 값은 새로 받아서 답합니다. 백그라운드 갱신도 같은 호출을 했으므로 업스트림 호출 수는 그대로입니다.
 
 ## 영향
 

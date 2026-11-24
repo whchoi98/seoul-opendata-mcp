@@ -12,6 +12,11 @@ const SUBWAY_BASE = 'http://swopenapi.seoul.go.kr/api/subway'
 export const KEY_COOLDOWN_MS = 600_000
 
 export const DEFAULT_SOFT_TTL = 3_600_000
+/**
+ * soft TTL이 지난 값을 바로 돌려주는 한도(soft TTL의 배수). 5분짜리 실시간 데이터면 15분까지다.
+ * 이보다 오래된 값은 새로 받아서 답한다. 한도가 없으면 가끔 부르는 장소는 매번 몇 시간 전 값이 나간다
+ */
+export const MAX_STALE_FACTOR = 3
 // 원천 데이터 갱신 주기에 정렬 — 스펙 §5
 export const SOFT_TTL: Record<string, number> = {
   citydata: 300_000, citydata_ppltn: 300_000, citydata_cmrcl: 300_000,
@@ -31,6 +36,17 @@ export const SOFT_TTL: Record<string, number> = {
   // 공공서비스예약은 접수 상태가 하루 중에도 바뀐다
   ListPublicReservationCulture: 3_600_000, ListPublicReservationSport: 3_600_000, ListPublicReservationInstitution: 3_600_000,
   ListPublicReservationEducation: 3_600_000, ListPublicReservationMedical: 3_600_000,
+}
+
+/**
+ * 응답 본문에서 호출에 쓴 키를 가린다. 서울 API는 ERROR-500 문구에 요청 URL(키 포함)을 되돌려 주는 일이 있다.
+ * 파싱하기 전에 가려야 오류 메시지, 잘라 인용한 본문, 캐시 어디에도 원문 키가 남지 않는다.
+ * 앞뒤가 글자나 숫자가 아닌 곳(URL 경로, 쿼리 값)만 바꾼다. 본문 낱말의 일부와 우연히 겹친 것은 데이터이므로 두어야 한다
+ */
+export function hideKey(text: string, key: string): string {
+  if (key === SAMPLE_KEY || !text.includes(key)) return text
+  const literal = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return text.replace(new RegExp(`(?<![A-Za-z0-9])${literal}(?![A-Za-z0-9])`, 'g'), maskKey(key))
 }
 
 /** 기존 note를 보존하며 안내를 병합한 사본 반환 */
@@ -240,19 +256,33 @@ export class SeoulApiClient {
 
     if (cached?.freshness === 'fresh') return cached.entry.value
 
-    if (cached) {
-      // stale: 즉시 반환 + 백그라운드 갱신 (실패는 로그만 — 다음 요청이 재시도). 고를 키가 있으므로 갱신 발화 허용
-      void this.fetchFresh(call, picked).catch(e =>
-        console.error(`[cache] 백그라운드 갱신 실패(${service}): ${(e as Error).message}`))
-      const ageMin = Math.round((this.nowFn() - cached.entry.storedAt) / 60_000)
-      return withNote(cached.entry.value, `캐시된 데이터(약 ${ageMin}분 경과) — 백그라운드 갱신 중`)
+    const fresh = async (): Promise<Unwrapped> => {
+      const result = await this.fetchFresh(call, picked)
+      return budget.ratio >= 0.8
+        ? withNote(result, `일일 API 쿼터 ${Math.round(budget.ratio * 100)}% 사용(${budget.used}/${budget.limit})`)
+        : result
     }
 
-    const result = await this.fetchFresh(call, picked)
-    if (budget.ratio >= 0.8) {
-      return withNote(result, `일일 API 쿼터 ${Math.round(budget.ratio * 100)}% 사용(${budget.used}/${budget.limit})`)
+    if (cached) {
+      const age = this.nowFn() - cached.entry.storedAt
+      const ageMin = Math.round(age / 60_000)
+      if (age <= cached.entry.softTtlMs * MAX_STALE_FACTOR) {
+        // 조금 지난 값: 즉시 반환 + 백그라운드 갱신 (실패는 로그만 — 다음 요청이 재시도). 고를 키가 있으므로 갱신 발화 허용
+        void this.fetchFresh(call, picked).catch(e =>
+          console.error(`[cache] 백그라운드 갱신 실패(${service}): ${(e as Error).message}`))
+        return withNote(cached.entry.value, `캐시된 데이터(약 ${ageMin}분 경과) — 백그라운드 갱신 중`)
+      }
+      // 많이 지난 값은 바로 주지 않는다. 어차피 같은 호출로 갱신하므로 쿼터는 같고, 기다린 만큼 새 값이 나간다.
+      // 새로 받지 못했을 때만 가진 값으로 답한다
+      try {
+        return await fresh()
+      } catch (e) {
+        console.error(`[cache] 갱신 실패(${service}), 캐시로 응답: ${(e as Error).message}`)
+        return withNote(cached.entry.value, `서울 API 호출에 실패해 캐시된 데이터(약 ${ageMin}분 경과)로 응답합니다`)
+      }
     }
-    return result
+
+    return fresh()
   }
 
   /** 실제 업스트림 호출 — 같은 캐시 키의 동시 요청은 고른 키가 달라도 1회로 병합(single-flight) */
@@ -286,7 +316,7 @@ export class SeoulApiClient {
 
   private async fetchWithKey(call: Call, picked: PickedKey): Promise<Unwrapped> {
     const url = this.buildUrl(call.base, picked.key, call.type, call.service, call.start, call.end, call.path)
-    const text = await this.request(url, picked.key)
+    const text = hideKey(await this.request(url, picked.key), picked.key)
     await this.safeIncrement(picked.keyId) // 원장 장애는 요청을 죽이지 않는다
     const payload = call.type === 'xml' ? this.xml.parse(text) : this.parseJsonWithXmlFallback(call.service, text)
     const result = unwrap(call.service, payload)

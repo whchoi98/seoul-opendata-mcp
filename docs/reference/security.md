@@ -19,6 +19,7 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 | `KeyPool` | `src/client/keyPool.ts` | Picks the first key under its daily limit that is not cooling down; raw keys stay in memory and the ledger sees only `keyIdOf()` hashes |
 | `maskKey` / `maskedKey` / `maskedSubwayKey` | `src/client/keyPool.ts`, `src/client/seoulApi.ts` | Expose only the first 4 characters of a real key (or the literal `sample`); `maskedKey()` appends `외 N개` when the pool holds more keys |
 | `request` error paths | `src/client/seoulApi.ts` | Embed only the masked key that was actually used in `HTTP-<status>`, `TIMEOUT` and `NETWORK` `SeoulApiError` messages |
+| `hideKey` | `src/client/seoulApi.ts` (`fetchWithKey`) | Replaces the key that was sent with its masked form in the response body before parsing. The Seoul API can echo the request URL, key included, in an `ERROR-500` message; hiding it here keeps it out of error messages, quoted bodies and the cache |
 | Cache key | `src/client/seoulApi.ts` (`fetchUnwrapped`) | The request URL with the key segment replaced by `{key}` (`sample` in sample mode), so neither L1, L2 nor the single-flight map holds a raw key |
 | `fetchUnwrapped` sample clamp | `src/client/seoulApi.ts` | Clamps `end` to `start + 4` when the pool is the sample key alone, limiting every request to at most 5 rows |
 | `KEY_GUIDE` | `src/normalize/util.ts:9-10` | Shared key-signup URL string surfaced in `SAMPLE_NOTE` and in `INFO-100`/key-related error hints |
@@ -48,6 +49,7 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 - `src/client/seoulApi.ts` — key selection and `isSample` derivation
 - `src/client/seoulApi.ts` — `maskedKey()` / `maskedSubwayKey()`
 - `src/client/seoulApi.ts` — `request()`, masked key embedded in error messages
+- `src/client/seoulApi.ts` — `hideKey()`, hides a key echoed in the response body
 - `src/client/seoulApi.ts` — `fetchUnwrapped()` sample-mode row clamp
 - `src/normalize/util.ts:9-10` — `KEY_GUIDE`
 - `src/tools/envelope.ts:1-10` — `SAMPLE_NOTE` and its attachment in `ok()`
@@ -74,6 +76,7 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 | `KeyPool` | `src/client/keyPool.ts` | 하루 한도 미만이고 쿨다운 중이 아닌 첫 키를 고릅니다. 원문 키는 메모리에만 두고 장부에는 `keyIdOf()` 해시만 넘깁니다 |
 | `maskKey` / `maskedKey` / `maskedSubwayKey` | `src/client/keyPool.ts`, `src/client/seoulApi.ts` | 실제 키의 앞 4글자만(또는 리터럴 `sample`) 보여 줍니다. 풀에 키가 더 있으면 `maskedKey()`가 `외 N개`를 붙입니다 |
 | `request` 에러 경로 | `src/client/seoulApi.ts` | `HTTP-<status>`, `TIMEOUT`, `NETWORK` `SeoulApiError` 메시지에 실제로 호출에 쓴 키의 마스킹만 넣습니다 |
+| `hideKey` | `src/client/seoulApi.ts`(`fetchWithKey`) | 응답 본문을 파싱하기 전에 호출에 쓴 키를 마스킹 표기로 바꿉니다. 서울 API가 `ERROR-500` 문구에 키가 든 요청 URL을 되돌려 주는 일이 있습니다. 여기서 가리므로 오류 메시지, 인용한 본문, 캐시에 원문 키가 남지 않습니다 |
 | 캐시 키 | `src/client/seoulApi.ts`(`fetchUnwrapped`) | 요청 URL의 키 자리를 `{key}`(샘플 모드는 `sample`)로 바꾼 값입니다. L1, L2, single-flight 맵 어디에도 원문 키가 남지 않습니다 |
 | `fetchUnwrapped` 샘플 클램프 | `src/client/seoulApi.ts` | 키 풀이 샘플 키 하나일 때 `end`를 `start + 4`로 클램프하여 요청당 최대 5행으로 제한합니다 |
 | `KEY_GUIDE` | `src/normalize/util.ts:9-10` | `SAMPLE_NOTE`와 `INFO-100` 등 키 관련 에러 힌트에 사용되는 공용 키 발급 URL 문자열 |
@@ -103,6 +106,7 @@ The security layer governs how the two Seoul Open Data Plaza API keys (`SEOUL_AP
 - `src/client/seoulApi.ts` -- 키 선택 및 `isSample` 도출
 - `src/client/seoulApi.ts` -- `maskedKey()` / `maskedSubwayKey()`
 - `src/client/seoulApi.ts` -- `request()`, 에러 메시지에 마스킹된 키 포함
+- `src/client/seoulApi.ts` -- `hideKey()`, 응답 본문에 되돌아온 키 가리기
 - `src/client/seoulApi.ts` -- `fetchUnwrapped()` 샘플 모드 행 수 클램프
 - `src/normalize/util.ts:9-10` -- `KEY_GUIDE`
 - `src/tools/envelope.ts:1-10` -- `SAMPLE_NOTE`와 `ok()`에서의 부착 로직

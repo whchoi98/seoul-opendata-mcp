@@ -4,7 +4,7 @@
 서울 열린데이터광장 API 전용 HTTP 클라이언트입니다. 키 폴백(일반/지하철), 2단 캐시(L1 인메모리 + 선택적 L2 DynamoDB), 일일 쿼터 원장, 페이지네이션, 1회 재시도, JSON 응답이 XML 에러로 오는 경우의 폴백 파싱, `.env` 로딩을 담당합니다. 이 디렉토리 밖에서는 `fetch`를 직접 호출하지 않습니다. `src/http.ts`(AgentCore Runtime 진입점)도 이 모듈의 `SeoulApiClient`/`maybeAttachL2`를 그대로 사용합니다.
 
 ## Key Files
-- `seoulApi.ts` - `SeoulApiClient` 본체. `SOFT_TTL` 맵(데이터셋별 원천 정렬 soft TTL), `buildUrl`/`request`(재시도)/`parseJsonWithXmlFallback`, `getJson`/`getXml`/`getSubway`, `maskedKey()`/`maskedSubwayKey()`, 캐시 키(`{key}` 자리표시자가 든 URL)별 single-flight(`inflight` 맵), stale-while-revalidate·쿼터 소진 처리(`fetchUnwrapped`).
+- `seoulApi.ts` - `SeoulApiClient` 본체. `SOFT_TTL` 맵(데이터셋별 원천 정렬 soft TTL), `buildUrl`/`request`(재시도)/`parseJsonWithXmlFallback`, `getJson`/`getXml`/`getSubway`, `maskedKey()`/`maskedSubwayKey()`, 캐시 키(`{key}` 자리표시자가 든 URL)별 single-flight(`inflight` 맵), stale-while-revalidate·쿼터 소진 처리(`fetchUnwrapped`), 오래된 값의 상한 `MAX_STALE_FACTOR`, 응답 본문의 키 가리기 `hideKey()`.
 - `keyPool.ts` - `parseKeys`(쉼표 목록, 비면 `['sample']`) / `maskKey`(로그와 오류 메시지의 유일한 키 표기) / `KeyPool`(앞 키부터 하루 한도까지 쓰고 다음 키로, `ERROR-337` 쿨다운은 프로세스 메모리에만).
 - `cache.ts` - `CacheBackend`(인터페이스) / `InMemoryCache`(L1, `MAX_L1_ENTRIES` 1000개 상한 LRU) / `CompositeCache`(L1+선택적 L2, soft/hard TTL 판정 — `HARD_TTL_MS` 24h). L2 실패는 잡아서 로그만 남기고 L1으로 폴백.
 - `quota.ts` - `QuotaLedger`(인터페이스) / `InMemoryLedger`(기본, 프로세스별) / `kstDayKey`(KST 하루 경계) / `keyIdOf`(키를 저장하지 않는 sha256 식별자) / `parseQuotaLimit`(`QUOTA_DAILY_LIMIT` 검증, 기본 1000).
@@ -22,6 +22,8 @@
 - 일반 키 풀이 샘플 키 하나뿐이면 sample 모드입니다(`KeyPool.isSample`). `isSample`로 판별합니다.
 - L2(`CACHE_TABLE_NAME`)와 쿼터 원장의 모든 실패 경로는 요청을 실패시키지 않고 로그만 남긴 뒤 L1/인메모리 원장으로 폴백해야 합니다 — 새 실패 지점을 추가할 때도 이 규칙을 지킵니다.
 - `@aws-sdk/*`는 `dynamo.ts`의 `createDocClient()`와 `src/store/s3Store.ts`의 `createS3Store()` 안에서만 lazy import합니다(stdio/로컬 경로에 비용을 지우지 않기 위함). 다른 곳에서 top-level import하지 않습니다.
+- 응답 본문은 파싱하기 전에 `hideKey()`로 호출에 쓴 키를 가립니다. 서울 API가 `ERROR-500` 문구에 키가 든 요청 URL을 되돌려 주기 때문입니다. 본문을 인용하는 오류 메시지는 이 뒤에서만 만듭니다. 테스트나 스크립트에서 서울 API 오류 문구를 찍을 때도 같은 이유로 키를 가립니다.
+- soft TTL이 지난 값은 그 3배(`MAX_STALE_FACTOR`)까지만 바로 돌려주고 뒤에서 갱신합니다. 더 오래된 값은 새로 받아서 답하고, 받지 못했을 때만 가진 값과 경과 안내로 답합니다. 뒤에서 갱신해도 같은 호출을 하므로 쿼터는 같습니다.
 - 캐시 키(L1, L2, single-flight 맵)에는 원문 키를 넣지 않습니다. URL의 키 자리를 `{key}`(샘플 모드는 `sample`)로 바꾼 값을 씁니다.
 - 호출에 쓸 키는 `KeyPool.pick()`만 고릅니다. 오류 메시지에는 실제로 호출에 쓴 키를 `maskKey()`로만 넣습니다.
 - `fetchUnwrapped`의 순서는 샘플 범위 제한, 사전 적재 저장소 조회(일반 API의 JSON 요청만), 캐시 조회와 키 선택, 서울 API 호출입니다. 저장소가 답한 요청은 캐시, 키 풀, 쿼터 장부를 건드리지 않습니다. 키가 없고 캐시도 없을 때만 기한 지난 스냅샷을 한 번 더 찾습니다.

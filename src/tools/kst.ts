@@ -25,3 +25,10 @@ export function kstMonthsAgo(n: number): string {
   const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - n, 1))
   return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}`
 }
+
+/** 오늘(KST)에서 'YYYYMMDD'까지 지난 날 수. 미래 날짜면 음수 */
+export function kstDaysAgo(yyyymmdd: string): number {
+  const target = Date.UTC(Number(yyyymmdd.slice(0, 4)), Number(yyyymmdd.slice(4, 6)) - 1, Number(yyyymmdd.slice(6, 8)))
+  const now = kst()
+  return Math.round((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - target) / 86_400_000)
+}

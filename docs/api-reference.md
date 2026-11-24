@@ -357,7 +357,7 @@ The five services together hold the same rows as the combined `tvYeyakCOllect` s
 
 ### `get_air_quality`
 
-Real-time air quality (PM10/PM2.5, grade) for Seoul districts. Omit `district` to get all 25.
+Real-time air quality for Seoul districts: PM10/PM2.5 values with their own grades, plus the composite air index grade. Omit `district` to get all 25. For one hotspot use `get_weather`, which returns PM10/PM2.5 levels at that place.
 
 **Input Schema**
 
@@ -368,7 +368,10 @@ Real-time air quality (PM10/PM2.5, grade) for Seoul districts. Omit `district` t
 **Output Summary**
 
 - `count` — number of matched districts
-- `airQuality` — `{region, district, pm10, pm25, ozone, no2, co, so2, grade, index, mainPollutant, measuredAt}[]`
+- `airQuality` — `{region, district, pm10, pm25, pm10Grade, pm25Grade, ozone, no2, co, so2, grade, index, mainPollutant, measuredAt}[]`
+- `pm10Grade`, `pm25Grade` — fine-dust grades computed from the Ministry of Environment forecast bands: PM10 up to 30, 80, 150 and PM2.5 up to 15, 35, 75 ㎍/㎥ are 좋음, 보통, 나쁨, and anything above is 매우나쁨
+- `grade`, `index`, `mainPollutant` — the composite air index (CAI), its value, and the pollutant that set it. It is not a fine-dust grade: ozone alone can make it 보통
+- A station that reports no fine-dust reading (source `0` with an empty grade) gives `pm10`, `pm25` and `index` as `null`, empty grades, and a note naming the district
 
 **Example question** — "How's the fine dust in Gangnam-gu today?" / "오늘 강남구 미세먼지 어때?"
 
@@ -399,7 +402,7 @@ Current temperature, precipitation, fine dust (PM10/PM2.5), UV, sunrise/sunset, 
 
 ### `get_subway_ridership`
 
-Per-station daily subway boarding/alighting counts for a date (data available up to ~2-4 days ago; today's data does not exist).
+Per-station daily subway boarding/alighting counts for a date. The Seoul API serves about the last nine months, up to about three days ago (checked 2026-11-24: 21 November was the latest date, 1 March had data and 26 February did not). When a date is empty, `notes` says whether it is not collected yet, too old, or whether the station or line filter matched nothing.
 
 **Input Schema**
 
@@ -495,6 +498,7 @@ Seoul real-estate transaction records, sales (`tbLnOpendataRtmsV`) or rentals (`
 - `count` — number of deals returned
 - `deals` for `sale` — `{year, district, dong, building, amount, area, landArea, floor, contractDate, use, buildYear, dealMethod, rightType, cancelDate}[]`. `cancelDate` is non-empty only for cancelled deals
 - `deals` for `rent` — `{year, district, dong, building, rentType, deposit, monthlyRent, area, floor, contractDate, contractPeriod, use, buildYear, contractType, renewalRightUsed, prevDeposit, prevMonthlyRent}[]`. `contractType` is `신규` or `갱신`; `prevDeposit` / `prevMonthlyRent` are set on renewals
+- `buildYear` is an empty string when the source has `0`, which it does for presale and move-in rights where the building does not exist yet
 
 **Behavior notes**
 
@@ -665,6 +669,6 @@ The workshop gateway answers before the server is reached in three cases:
 | `CardSubwayStatsNew`, `CardBusStatisticsServiceNew`, `SPOP_LOCAL_RESD_DONG`, `SPOP_DAILYSUM_JACHI`, `TbPharmacyOperateInfo`, `TbHospitalInfo`, `ChildCareInfo`, `IndividuallyPostedLandPriceService` | 24 hours |
 | Any other catalog dataset (via `call_dataset`) | 1 hour (`DEFAULT_SOFT_TTL`) |
 
-Within the soft TTL a cached entry is served as-is. Between soft and hard TTL it is served immediately with a `notes[]` age disclosure while one background refresh runs (stale-while-revalidate); identical concurrent requests share one upstream call (single-flight).
+Within the soft TTL a cached entry is served as-is. Up to three times the soft TTL (`MAX_STALE_FACTOR`, 15 minutes for 5-minute data) it is served immediately with a `notes[]` age disclosure while one background refresh runs (stale-while-revalidate). An older entry is refreshed before the response, which costs the same upstream call the background refresh would have made; if that refresh fails the cached copy is returned with `서울 API 호출에 실패해 캐시된 데이터(약 N분 경과)로 응답합니다`. Identical concurrent requests share one upstream call (single-flight).
 
 A daily quota ledger (`QUOTA_DAILY_LIMIT`, default 1000 per key per KST day) adds a usage note at 80% and switches to cache-only serving at 100%. With several keys both use the pool totals, and the client moves to the next key before it falls back to the cache. When the only keys still under their limit are cooling down after `ERROR-337`, the response carries a rate-limit note with a retry time instead of the daily-quota note. It is a soft limit: concurrent requests right at the limit can overshoot it slightly. Sample keys are additionally clamped to at most 5 rows per request by `fetchUnwrapped`.

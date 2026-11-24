@@ -6,10 +6,24 @@ import { normalizeSubwayRidership, normalizeLivingPopulation, normalizeSubwayHou
 import { lineInput, stationNameCandidates } from '../normalize/subwaySchedule.js'
 import { isNoData, type Unwrapped } from '../client/response.js'
 import { positionalPath } from './path.js'
-import { kstMonthsAgo } from './kst.js'
+import { kstDaysAgo, kstMonthsAgo } from './kst.js'
 
 const total = (h: HourCount) => (h.boardings ?? 0) + (h.alightings ?? 0)
 const byTotal = (hours: HourCount[]) => hours.map(h => ({ hour: h.hour, total: total(h) }))
+
+// 일별 승하차의 제공 범위. 2026-11-24 서울 API 확인: 3일 전(11월 21일)까지 있고, 3월 1일부터 있으며 2월 26일은 없다
+const RIDERSHIP_RANGE_NOTE = '배치 통계입니다. 보통 3일 전 날짜까지 올라오고, 서울 API는 최근 약 9개월 치만 제공합니다.'
+const RECENT_DAYS = 5
+const OLD_DAYS = 260
+
+/** 날짜에 행이 하나도 없을 때의 안내. 최근이면 집계 전, 오래됐으면 제공 기간 밖이라 권할 방향이 반대다 */
+function emptyDateNote(date: string): string {
+  const days = kstDaysAgo(date)
+  if (days < 0) return '미래 날짜입니다. 지난 날짜로 조회하세요.'
+  if (days <= RECENT_DAYS) return '아직 집계되지 않은 날짜입니다. 더 이전 날짜로 시도하세요.'
+  if (days >= OLD_DAYS) return '서울 API가 제공하지 않는 오래된 날짜입니다. 더 최근 날짜로 시도하세요.'
+  return '해당 날짜 데이터가 없습니다. 앞뒤 날짜로 시도하세요.'
+}
 
 export function registerStatsTools(server: McpServer, ctx: Ctx) {
   server.registerTool(
@@ -17,10 +31,10 @@ export function registerStatsTools(server: McpServer, ctx: Ctx) {
     {
       title: 'Daily subway ridership statistics',
       description:
-        'Get per-station daily subway boarding/alighting counts for a date (data available up to ~2-4 days ago). ' +
+        'Get per-station daily subway boarding/alighting counts for a date (available from about 9 months back up to ~3 days ago). ' +
         '지하철 역별 일별 승하차 인원. "강남역 하루 승객 몇 명?" 류 질문에 사용.',
       inputSchema: {
-        date: z.string().regex(/^\d{8}$/).describe('사용일자 YYYYMMDD (오늘 데이터는 없음 — 보통 2~4일 전까지 제공)'),
+        date: z.string().regex(/^\d{8}$/).describe('사용일자 YYYYMMDD (보통 3일 전까지 올라오고, 약 9개월보다 오래된 날짜는 없음)'),
         station: z.string().optional().describe('역명 필터 (부분일치, 예: "강남")'),
         line: z.string().optional().describe('호선 필터 (부분일치, 예: "2호선")'),
         limit: z.number().int().min(1).max(100).optional().describe('최대 건수 (기본 20)'),
@@ -36,8 +50,11 @@ export function registerStatsTools(server: McpServer, ctx: Ctx) {
         {
           source: '지하철 일별 승하차 (CardSubwayStatsNew)', asOf: date,
           notes: [
-            '배치 통계 — 보통 2~4일 전 데이터까지 제공됩니다.',
-            ...(rows.length === 0 ? ['해당 날짜 데이터가 없습니다. 더 이전 날짜로 시도하세요.'] : []),
+            RIDERSHIP_RANGE_NOTE,
+            // 응답 행이 있는데 걸러서 비었으면 조건 문제다. 응답을 못 받았으면(쿼터 소진 등) 날짜를 탓하지 않는다
+            ...(rows.length > 0 ? []
+              : u.rows.length > 0 ? ['해당 날짜에 조건에 맞는 역이 없습니다. station은 "강남"처럼 역 이름만, line은 "2호선"처럼 적어 보세요.']
+              : isNoData(u) ? [emptyDateNote(date)] : []),
             ...(u.note ? [u.note] : []),
           ],
           sample: ctx.client.isSample,

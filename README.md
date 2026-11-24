@@ -263,10 +263,10 @@ cp .env.example .env
 | `search_cultural_events` | Search Seoul cultural events (concerts, exhibitions, festivals) by keyword/category/district/date range/free-only. | `keyword`, `category`, `district`, `from`, `to`, `freeOnly`, `limit` (all optional) |
 | `search_public_reservations` | Search bookable public services on yeyak.seoul.go.kr (sports facilities, cultural and kids programs, rooms and camping, classes, clinics) with status, fee, and booking URL. | `category` (`culture`/`sports`/`facility`/`education`/`medical`), `subcategory`, `district`, `keyword`, `target`, `freeOnly`, `openOnly`, `limit` (1-50, default 10) |
 | **Environment** | | |
-| `get_air_quality` | Real-time air quality (PM10/PM2.5, grade) by district. Omit district for all 25. | `district` (string, optional) |
+| `get_air_quality` | Real-time air quality by district: PM10/PM2.5 with their own grades and the composite air index. Omit district for all 25; use `get_weather` for one hotspot. | `district` (string, optional) |
 | `get_weather` | Current temperature, precipitation, fine dust (PM10/PM2.5), UV, sunrise/sunset and weather warnings at a hotspot. | `place` (string) |
 | **Statistics (batch)** | | |
-| `get_subway_ridership` | Per-station daily subway boarding/alighting counts for a date (data available up to ~2-4 days ago). | `date` (YYYYMMDD), `station`/`line` (optional filters), `limit` (1-100, default 20) |
+| `get_subway_ridership` | Per-station daily subway boarding/alighting counts for a date (from about 9 months back up to ~3 days ago). | `date` (YYYYMMDD), `station`/`line` (optional filters), `limit` (1-100, default 20) |
 | `get_subway_hourly_ridership` | Monthly boarding/alighting counts by hour (04-03h) for a station, with the busiest and quietest hours. | `station` (string), `line` (optional), `month` (YYYYMM, defaults to the latest published) |
 | `get_living_population` | De-facto (living) population estimates by administrative dong and hour (batch, ~5-day lag). | `date` (YYYYMMDD, optional), `timeSlot` (00-23, optional), `dongCode` (optional), `limit` (1-100, default 20) |
 | **Real Estate** | | |
@@ -599,10 +599,10 @@ cp .env.example .env
 | `search_cultural_events` | 키워드/분류/자치구/기간/무료 여부로 서울시 문화행사(공연·전시·축제)를 검색합니다. | `keyword`, `category`, `district`, `from`, `to`, `freeOnly`, `limit` (모두 선택) |
 | `search_public_reservations` | 서울시 공공서비스예약(yeyak.seoul.go.kr)에서 체육시설, 문화체험과 키즈카페, 공간 대관과 캠핑장, 교육강좌, 진료복지를 접수 상태, 요금, 예약 링크와 함께 검색합니다. | `category` (`culture`/`sports`/`facility`/`education`/`medical`), `subcategory`, `district`, `keyword`, `target`, `freeOnly`, `openOnly`, `limit` (1~50, 기본 10) |
 | **환경** | | |
-| `get_air_quality` | 자치구별 실시간 대기질(PM10/PM2.5, 등급)을 조회합니다. 자치구를 생략하면 25개 전체를 반환합니다. | `district` (문자열, 선택) |
+| `get_air_quality` | 자치구별 실시간 대기질(PM10/PM2.5와 각각의 등급, 통합대기환경지수)을 조회합니다. 자치구를 생략하면 25개 전체를 반환합니다. 특정 장소는 `get_weather`를 씁니다. | `district` (문자열, 선택) |
 | `get_weather` | 핫스팟 기준 현재 기온, 강수, 미세먼지(PM10/PM2.5), 자외선, 일출/일몰, 기상특보를 조회합니다. | `place` (문자열) |
 | **통계(배치)** | | |
-| `get_subway_ridership` | 지하철 역별 일별 승하차 인원을 조회합니다(보통 2~4일 전 데이터까지 제공). | `date` (YYYYMMDD), `station`/`line` (선택 필터), `limit` (1~100, 기본 20) |
+| `get_subway_ridership` | 지하철 역별 일별 승하차 인원을 조회합니다(약 9개월 전부터 보통 3일 전까지 제공). | `date` (YYYYMMDD), `station`/`line` (선택 필터), `limit` (1~100, 기본 20) |
 | `get_subway_hourly_ridership` | 역의 시간대별(04~03시) 승하차 인원 월 합계와 가장 붐비는, 한산한 시간대를 조회합니다. | `station` (문자열), `line` (선택), `month` (YYYYMM, 생략하면 최근 제공월) |
 | `get_living_population` | 행정동·시간대별 생활인구 통계를 조회합니다(배치, 약 5일 지연). | `date` (YYYYMMDD, 선택), `timeSlot` (00~23, 선택), `dongCode` (선택), `limit` (1~100, 기본 20) |
 | **부동산** | | |

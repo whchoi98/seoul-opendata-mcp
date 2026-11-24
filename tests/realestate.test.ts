@@ -37,6 +37,23 @@ describe('normalizeDistrict', () => {
   })
 })
 
+// 건축연도 0은 연도가 아니다. 분양권과 입주권처럼 건물이 아직 없는 거래에 원본이 0을 넣는다
+const yearOf = (v: unknown) => (String(v ?? '') === '0' ? '' : String(v ?? ''))
+
+describe('건축연도 0', () => {
+  it('매매: 원본이 0이면 빈 값으로 둔다', () => {
+    const zero = saleRows.find((r: any) => String(r.ARCH_YR) === '0')
+    expect(zero).toBeDefined()
+    expect(normalizeRealEstate([zero])[0].buildYear).toBe('')
+    expect(normalizeRealEstate([{ ...zero, ARCH_YR: '1994' }])[0].buildYear).toBe('1994')
+  })
+
+  it('전월세: 원본이 0이면 빈 값으로 둔다', () => {
+    expect(normalizeRentDeal([{ ...rentRows[0], ARCH_YR: 0 }])[0].buildYear).toBe('')
+    expect(normalizeRentDeal([{ ...rentRows[0], ARCH_YR: '2003' }])[0].buildYear).toBe('2003')
+  })
+})
+
 describe('normalizeRealEstate (매매) — 매핑 동등성', () => {
   it('모든 필드가 원본 행과 일치', () => {
     const a = normalizeRealEstate(saleRows)
@@ -52,7 +69,7 @@ describe('normalizeRealEstate (매매) — 매핑 동등성', () => {
       expect(a[i].floor).toBe(num(r.FLR))
       expect(a[i].contractDate).toBe(String(r.CTRT_DAY ?? ''))
       expect(a[i].use).toBe(r.BLDG_USG ?? '')
-      expect(a[i].buildYear).toBe(String(r.ARCH_YR ?? ''))
+      expect(a[i].buildYear).toBe(yearOf(r.ARCH_YR))
       expect(a[i].dealMethod).toBe(r.DCLR_SE ?? '')
       expect(a[i].rightType).toBe(r.RGHT_SE ?? '')
       expect(a[i].cancelDate).toBe(String(r.RTRCN_DAY ?? ''))
@@ -77,7 +94,7 @@ describe('normalizeRentDeal (전월세) — 매핑 동등성', () => {
       expect(a[i].contractDate).toBe(String(r.CTRT_DAY ?? ''))
       expect(a[i].contractPeriod).toBe(r.CTRT_PRD ?? '')
       expect(a[i].use).toBe(r.BLDG_USG ?? '')
-      expect(a[i].buildYear).toBe(String(r.ARCH_YR ?? ''))
+      expect(a[i].buildYear).toBe(yearOf(r.ARCH_YR))
       expect(a[i].contractType).toBe(r.NEW_UPDT_YN ?? '')
       expect(a[i].renewalRightUsed).toBe(String(r.CTRT_UPDT_USE_YN ?? '').trim() !== '')
       expect(a[i].prevDeposit).toBe(num(r.BFR_GRFE))

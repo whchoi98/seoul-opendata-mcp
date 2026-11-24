@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { SeoulApiClient } from '../src/client/seoulApi.js'
+import { SeoulApiClient, hideKey } from '../src/client/seoulApi.js'
 import { InMemoryLedger, keyIdOf } from '../src/client/quota.js'
 
 const jsonResponse = (body: unknown) =>
@@ -596,5 +596,124 @@ describe('SeoulApiClient 사전 적재 저장소', () => {
     const c = new SeoulApiClient({ apiKey: 'K', fetchFn: vi.fn() as any, ledger, now: () => NOW })
     c.attachStore(fakeStore(() => hit([{ a: 1 }])))
     expect((await c.getJson(PHARMACY, 1, 10)).note).toBe('사전 적재 데이터(11월 21일 수집)')
+  })
+})
+
+describe('오류 문구의 키 가리기', () => {
+  const KEY = 'SECRETKEY12345678'
+  // 서울 API는 ERROR-500 문구에 요청 URL을 그대로 넣는다. URL에는 키가 들어 있다
+  const echo = (type: string) =>
+    `서버 오류입니다.(HTTP operation failed invoking http://openapi.seoul.go.kr:8088/${KEY}/${type}/citydata_ppltn/1/5 with statusCode: 500)`
+
+  async function failure(run: (c: SeoulApiClient) => Promise<unknown>, body: string): Promise<Error & { code?: string }> {
+    const fetchFn = vi.fn().mockImplementation(async () => new Response(body, { status: 200 }))
+    const c = new SeoulApiClient({ apiKey: KEY, fetchFn: fetchFn as any })
+    return run(c).then(() => { throw new Error('오류가 나야 한다') }, (e: Error) => e)
+  }
+
+  it('JSON 오류 응답이 요청 URL을 되돌려 줘도 메시지와 스택에 원문 키가 없다', async () => {
+    const e = await failure(c => c.getJson('citydata_ppltn', 1, 5), JSON.stringify({ RESULT: { CODE: 'ERROR-500', MESSAGE: echo('json') } }))
+    expect(e.code).toBe('ERROR-500')
+    expect(e.message).toContain('HTTP operation failed')
+    expect(e.message).not.toContain(KEY)
+    expect(e.message).toContain('SECR…(masked)')
+    expect(String(e.stack)).not.toContain(KEY)
+  })
+
+  it('XML 오류 응답도 같다', async () => {
+    const e = await failure(c => c.getXml('citydata_ppltn', 1, 5), `<RESULT><CODE>ERROR-500</CODE><MESSAGE>${echo('xml')}</MESSAGE></RESULT>`)
+    expect(e.code).toBe('ERROR-500')
+    expect(e.message).not.toContain(KEY)
+    expect(e.message).toContain('SECR…(masked)')
+  })
+
+  it('알 수 없는 응답 형태를 인용할 때도 원문 키가 없다', async () => {
+    const e = await failure(c => c.getJson('citydata_ppltn', 1, 5), JSON.stringify({ Map: { 'RESULT.CODE': 'ERROR-500', 'RESULT.MESSAGE': echo('json') } }))
+    expect(e.code).toBe('PARSE')
+    expect(e.message).not.toContain(KEY)
+  })
+
+  it('파싱에 실패한 본문을 잘라 인용할 때 키 조각도 남지 않는다', async () => {
+    // 인용은 앞 120자다. 키가 그 경계에 걸려도 앞부분이 남으면 안 된다
+    const e = await failure(c => c.getJson('bikeList', 1, 5), `${'x'.repeat(108)} ${KEY} gateway failure`)
+    expect(e.code).toBe('PARSE')
+    expect(e.message).not.toContain(KEY.slice(0, 8))
+  })
+})
+
+describe('오래된 캐시 값의 상한', () => {
+  // bikeList의 soft TTL은 300초다. 그 3배(900초)까지만 지난 값을 바로 준다
+  const twoPages = () => vi.fn()
+    .mockResolvedValueOnce(standardPage([{ v: 1 }], 1))
+    .mockResolvedValueOnce(standardPage([{ v: 2 }], 1))
+
+  it('soft TTL의 3배까지는 지난 값을 바로 주고 뒤에서 갱신한다', async () => {
+    let t = 0
+    const fetchFn = twoPages()
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any, now: () => t })
+    await c.getJson('bikeList', 1, 5)
+    t = 900_000
+    const stale = await c.getJson('bikeList', 1, 5)
+    expect(stale.rows[0].v).toBe(1)
+    expect(stale.note).toContain('백그라운드 갱신 중')
+  })
+
+  it('soft TTL의 3배를 넘긴 값은 주지 않고 새로 받아서 답한다', async () => {
+    let t = 0
+    const fetchFn = twoPages()
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any, now: () => t })
+    await c.getJson('bikeList', 1, 5)
+    t = 900_001
+    const fresh = await c.getJson('bikeList', 1, 5)
+    expect(fresh.rows[0].v).toBe(2)
+    expect(fresh.note).toBeUndefined()
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('새로 받기에 실패하면 가진 값과 경과 시간 안내로 답한다', async () => {
+    let t = 0
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce(standardPage([{ v: 1 }], 1))
+      .mockRejectedValue(new Error('socket hang up'))
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any, now: () => t, retryDelayMs: 0 })
+    await c.getJson('bikeList', 1, 5)
+    t = 3_600_000
+    const stale = await c.getJson('bikeList', 1, 5)
+    expect(stale.rows[0].v).toBe(1)
+    expect(stale.note).toBe('서울 API 호출에 실패해 캐시된 데이터(약 60분 경과)로 응답합니다')
+  })
+
+  it('새로 받은 값에도 쿼터 80% 경고를 붙인다', async () => {
+    let t = 0
+    const ledger = new InMemoryLedger(5)
+    for (let i = 0; i < 3; i++) await ledger.increment(keyIdOf('K'))
+    const fetchFn = twoPages()
+    const c = new SeoulApiClient({ apiKey: 'K', fetchFn: fetchFn as any, ledger, now: () => t })
+    await c.getJson('bikeList', 1, 5)          // 4/5
+    t = 900_001
+    const fresh = await c.getJson('bikeList', 1, 5)
+    expect(fresh.rows[0].v).toBe(2)
+    expect(fresh.note).toContain('쿼터 80%')
+  })
+})
+
+describe('hideKey', () => {
+  it('URL 경로와 쿼리 값으로 온 키를 가린다', () => {
+    expect(hideKey('invoking http://openapi.seoul.go.kr:8088/ABCD1234/json/x/1/5', 'ABCD1234'))
+      .toBe('invoking http://openapi.seoul.go.kr:8088/ABCD…(masked)/json/x/1/5')
+    expect(hideKey('KEY=ABCD1234&type=json', 'ABCD1234')).toBe('KEY=ABCD…(masked)&type=json')
+  })
+
+  it('본문 낱말의 일부와 겹친 것은 건드리지 않는다', () => {
+    const body = '{"PKLT_CD":"R1","PKLT_NM":"KT 주차장"}'
+    expect(hideKey(body, 'K')).toBe(body)
+  })
+
+  it('정규식 특수문자가 든 키도 글자 그대로 찾는다', () => {
+    expect(hideKey('/a.b+c/ and /aXb+c/', 'a.b+c')).toBe('/a.b+…(masked)/ and /aXb+c/')
+  })
+
+  it('샘플 키는 비밀이 아니므로 그대로 둔다', () => {
+    expect(hideKey('http://openapi.seoul.go.kr:8088/sample/json/x', 'sample')).toBe('http://openapi.seoul.go.kr:8088/sample/json/x')
   })
 })

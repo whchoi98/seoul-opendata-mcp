@@ -20,6 +20,13 @@ export interface RealEstateDeal {
   contractDate: string; use: string; buildYear: string
   dealMethod: string; rightType: string; cancelDate: string
 }
+
+/** 건축연도. 분양권과 입주권처럼 건물이 아직 없는 거래는 원본이 0이다. 연도가 아니므로 빈 값으로 둔다 */
+function buildYearOf(value: unknown): string {
+  const year = String(value ?? '')
+  return year === '0' ? '' : year
+}
+
 export function normalizeRealEstate(rows: any[]): RealEstateDeal[] {
   return rows.map(r => ({
     year: String(r.RCPT_YR ?? ''),
@@ -32,7 +39,7 @@ export function normalizeRealEstate(rows: any[]): RealEstateDeal[] {
     floor: num(r.FLR),
     contractDate: String(r.CTRT_DAY ?? ''),
     use: r.BLDG_USG ?? '',
-    buildYear: String(r.ARCH_YR ?? ''),
+    buildYear: buildYearOf(r.ARCH_YR),
     dealMethod: r.DCLR_SE ?? '',       // 중개거래 | 직거래
     rightType: r.RGHT_SE ?? '',        // 입주권 등, 일반 매매는 빈 문자열
     cancelDate: String(r.RTRCN_DAY ?? ''), // 값이 있으면 해제된 거래
@@ -61,7 +68,7 @@ export function normalizeRentDeal(rows: any[]): RentDeal[] {
     contractDate: String(r.CTRT_DAY ?? ''),
     contractPeriod: r.CTRT_PRD ?? '',  // 예: 26.12~28.12
     use: r.BLDG_USG ?? '',
-    buildYear: String(r.ARCH_YR ?? ''),
+    buildYear: buildYearOf(r.ARCH_YR),
     contractType: r.NEW_UPDT_YN ?? '', // 신규 | 갱신
     renewalRightUsed: String(r.CTRT_UPDT_USE_YN ?? '').trim() !== '', // 원본은 '○' 또는 빈 문자열
     prevDeposit: num(r.BFR_GRFE),      // 갱신 계약의 종전 보증금(만원)

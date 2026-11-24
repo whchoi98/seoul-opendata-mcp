@@ -128,3 +128,50 @@ describe('get_subway_hourly_ridership tool', () => {
     expect(body.notes.join(' ')).toContain('데이터가 없습니다')
   })
 })
+
+// ── tool 경로: 날짜가 비었을 때 이유에 맞는 안내를 한다 ──
+// 2026-11-24 서울 API 확인: 11월 21일(3일 전)까지 있고, 3월 1일부터 있으며 2월 26일은 없다
+describe('get_subway_ridership — 빈 결과 안내', () => {
+  afterEach(() => { vi.useRealTimers() })
+  const gangnam = { ...subwayRows[0], SBWY_ROUT_LN_NM: '2호선', SBWY_STNS_NM: '강남' }
+  const run = async (args: Record<string, unknown>, rows: any[] = []) => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-24T15:00:00+09:00'))
+    const { fetchFn } = rowsUpstream(() => ({ rows }))
+    const body = await callTool(fetchFn, 'get_subway_ridership', args)
+    return body.notes.join(' ') as string
+  }
+
+  it('최근 날짜면 아직 집계 전이라고 안내한다', async () => {
+    const notes = await run({ date: '20261123' })
+    expect(notes).toContain('아직 집계되지 않은 날짜')
+    expect(notes).toContain('더 이전 날짜')
+  })
+
+  it('오래된 날짜면 제공 기간 밖이라고 안내하고 더 이전 날짜를 권하지 않는다', async () => {
+    const notes = await run({ date: '20251224' })
+    expect(notes).toContain('최근 약 9개월')
+    expect(notes).not.toContain('더 이전 날짜')
+  })
+
+  it('미래 날짜는 미래라고 안내한다', async () => {
+    expect(await run({ date: '20261201' })).toContain('미래 날짜')
+  })
+
+  it('그 사이 날짜가 비면 앞뒤 날짜를 권한다', async () => {
+    const notes = await run({ date: '20260801' })
+    expect(notes).toContain('해당 날짜 데이터가 없습니다. 앞뒤 날짜로 시도하세요.')
+  })
+
+  it('날짜에는 데이터가 있는데 역이나 호선 조건에 맞는 행이 없으면 날짜가 아니라 조건을 안내한다', async () => {
+    const notes = await run({ date: '20261120', station: '없는역' }, [gangnam])
+    expect(notes).toContain('조건에 맞는 역이 없습니다')
+    expect(notes).not.toContain('해당 날짜 데이터가 없습니다')
+  })
+
+  it('행이 있으면 빈 결과 안내를 붙이지 않는다', async () => {
+    const notes = await run({ date: '20261120', station: '강남' }, [gangnam])
+    expect(notes).not.toContain('없습니다')
+    expect(notes).toContain('약 9개월')   // 제공 범위는 늘 알린다
+  })
+})

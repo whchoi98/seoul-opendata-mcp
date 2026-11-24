@@ -18,10 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Real-estate snapshots: sales (`tbLnOpendataRtmsV`), rentals (`tbLnOpendataRentV`) and assessed land prices (`IndividuallyPostedLandPriceService`) join the snapshot store, split by year and district, which makes 40 datasets. The store answers a request that names both a year and a district and filters by legal-dong code, building name, building type, legal-dong name and lot number. A request without a year or a district takes the existing path.
 - `npm run workshop:collect -- realestate`: collects two years of sales and the current year of rentals and land prices, about 1,950 calls. The daily collector Lambda does not run this bundle.
+- `get_air_quality` returns `pm10Grade` and `pm25Grade`, computed from the Ministry of Environment forecast bands (PM10 30/80/150, PM2.5 15/35/75 ㎍/㎥), with a note that `grade` is the composite air index.
 
 ### Changed
 - The collector fetches again the contract dates that straddle a page boundary when it collects sales, because the Seoul API returns rows of the same contract date in a different order on every request and paging alone duplicates and drops rows. `verify` reports a difference only in the order of rows with the same contract date as an order difference.
 - `get_real_estate_prices` looks up the legal-dong code in the current year's land prices from June and in the previous year's before that, and tries the other year when the first has no data.
+- Cached entries older than three times their soft TTL are refreshed before the response instead of being returned as they are (`MAX_STALE_FACTOR`). A five-minute dataset used to come back hours old on the first call for a place. The upstream call count does not change. If the refresh fails, the cached copy is returned with the note `서울 API 호출에 실패해 캐시된 데이터(약 N분 경과)로 응답합니다`.
+- `get_air_quality`: a station with no fine-dust reading (source `0` with an empty grade) gives `null` and is named in `notes`. The description points place-level questions to `get_weather`.
+- `get_subway_ridership`: the empty-result note tells apart a date not collected yet, a date older than the roughly nine months the Seoul API serves, and a station or line filter that matched nothing.
+- `buildYear` in `get_real_estate_prices` is an empty string when the source has `0` (presale and move-in rights).
+
+### Security
+- The API key is hidden in upstream response text before parsing (`hideKey`). The Seoul API can echo the request URL, key included, in an `ERROR-500` message, and that text reached `SeoulApiError` messages unmasked.
 
 ## [0.8.0] - 2026-11-21
 
@@ -188,10 +196,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - 부동산 스냅샷: 매매(`tbLnOpendataRtmsV`), 전월세(`tbLnOpendataRentV`), 개별공시지가(`IndividuallyPostedLandPriceService`)를 연도와 자치구로 나눠 사전 적재 저장소에 추가(대상 40종). 연도와 자치구가 모두 있는 요청에 답하고 법정동 코드, 건물명, 건물 용도, 법정동명, 지번으로 거름. 연도나 자치구가 없는 요청은 기존 경로 그대로
 - `npm run workshop:collect -- realestate`: 매매 2년, 전월세와 개별공시지가 올해 수집(약 1,950회). 매일 수집 Lambda는 이 묶음을 돌리지 않음
+- `get_air_quality`에 미세먼지 등급 `pm10Grade`, `pm25Grade` 추가. 환경부 예보 등급 구간(PM10 30/80/150, PM2.5 15/35/75 ㎍/㎥)으로 계산하며 `grade`가 통합대기환경지수임을 안내
 
 ### Changed
 - 매매 수집 시 페이지 경계에 걸친 계약일을 다시 받도록 변경. 서울 API가 같은 계약일의 행 순서를 요청마다 다르게 돌려줘 나눠 받기만 하면 행이 겹치거나 빠짐. `verify`는 같은 계약일 안의 순서 차이를 순서 차이로 보고
 - `get_real_estate_prices`의 법정동 코드 조회 기준연도를 6월부터는 올해, 그 전에는 작년으로 변경. 먼저 본 연도에 자료가 없으면 다른 연도 조회
+- soft TTL의 3배보다 오래된 캐시 값은 그대로 주지 않고 새로 받아서 응답하도록 변경(`MAX_STALE_FACTOR`). 5분짜리 데이터가 장소별 첫 호출에서 몇 시간 전 값으로 나가던 문제 해소. 업스트림 호출 수는 그대로. 새로 받지 못하면 `서울 API 호출에 실패해 캐시된 데이터(약 N분 경과)로 응답합니다` 안내와 함께 가진 값 반환
+- `get_air_quality`: 미세먼지 측정값이 없는 측정소(원본 `0`과 빈 등급)를 `null`로 표시하고 `notes`에 자치구 이름 안내. 설명에 장소 단위 질문은 `get_weather`를 쓰도록 명시
+- `get_subway_ridership`: 빈 결과 안내를 집계 전 날짜, 서울 API가 제공하지 않는 약 9개월 이전 날짜, 역이나 호선 조건 불일치로 구분
+- `get_real_estate_prices`의 `buildYear`: 원본이 `0`(분양권, 입주권)이면 빈 문자열
+
+### Security
+- 서울 API 응답 본문을 파싱하기 전에 호출에 쓴 키를 가리도록 변경(`hideKey`). 서울 API가 `ERROR-500` 문구에 키가 든 요청 URL을 되돌려 주면 `SeoulApiError` 메시지에 원문 키가 남던 문제 수정
 
 ## [0.8.0] - 2026-11-21
 
